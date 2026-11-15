@@ -223,6 +223,7 @@ function frame() {
     if (o.e) drawEnt(o.e, now);
     else { const im = image('obj', o.d[0]); if (im) blit(o.d[9], () => ctx.drawImage(im, o.d[1], o.d[2], o.d[3], o.d[4], o.x, o.y, o.d[3], o.d[4])); }
   }
+  drawBullets(now);
   for (const e of visible) drawLabels(e, now);
   ctx.font = `bold 14px ${FONT}`; ctx.textAlign = 'center';
   for (let i = floaters.length - 1; i >= 0; i--) {
@@ -233,6 +234,60 @@ function frame() {
   if (me) {
     $('hud').innerHTML = `<b>${map.name}</b> (맵 ${map.id})${isSafe(me.x, me.y) ? ' · <span style="color:#8f8">안전지대</span>' : ''}<br>위치 ${me.x}, ${me.y}${me.z ? "" : "\u00b7"} · ${runToggle ? '달리기' : '걷기'}`;
   }
+}
+
+// ---------- 기술 효과 그림 (총알) ----------
+// 기술 정보의 e(+8) 가 총알 그림 번호다: DATAs/Bul/bul<e>.rmd (Main.dll 0x10023f33 에서 기술의 +8 바이트를 총알 만들기 0x1002f820 에 넘긴다).
+// 총알 그림의 동작 0 은 날아가는 모양(방향별), 동작 1 은 맞은 자리의 모양. 동작 0 이 없으면 맞은 자리 모양만 나온다.
+// 날아가는 속도(한 칸 50ms 에 몇 점)는 총알 번호마다 정해져 있다 (Main.dll 0x1002f87f 의 분기표, 나머지는 23).
+const BUL_SPEED = { 1: 15, 2: 15, 3: 15, 6: 25, 13: 20, 16: 15, 18: 13, 19: 18, 23: 10, 24: 10, 25: 10, 40: 18, 43: 23, 52: 10, 53: 10, 54: 14, 64: 15, 65: 15, 67: 15, 71: 8, 81: 1, 82: 1, 83: 10, 84: 10, 85: 1, 86: 1, 87: 1, 88: 1, 90: 12 };
+const bulSets = new Map(), bullets = [];
+function bulSet(no) {
+  let s = bulSets.get(no);
+  if (!s) { s = { def: null, pages: [] }; bulSets.set(no, s); fetch(`assets/bul/${no}.json`).then(r => r.ok ? r.json() : null).then(d => { s.def = d; }).catch(() => {}); }
+  return s.def ? s : null;
+}
+function bulPage(s, no, pg) {
+  let e = s.pages[pg];
+  if (!e) { e = s.pages[pg] = { img: new Image(), ok: false }; e.img.onload = () => { e.ok = true; }; e.img.src = `assets/bul/${no}_${pg}.png`; }
+  return e.ok ? e.img : null;
+}
+function pxDir(ax, ay, bx, by) {                                   // grid.direction 과 같은 규칙을 화면 좌표에 적용
+  const dx = Math.round(bx - ax), dy = Math.round(by - ay), adx = Math.abs(dx), ady = Math.abs(dy);
+  if (dy === 0) return dx > 0 ? 6 : dx < 0 ? 4 : 2;
+  if (dx === 0) return dy > 0 ? 2 : 8;
+  if (2 * ady < adx) return dx > 0 ? 6 : 4;
+  if (dx > 0) return dy > 0 ? (2 * adx >= ady ? 3 : 2) : (2 * adx >= ady ? 9 : 8);
+  return dy > 0 ? (2 * adx < ady ? 2 : 1) : (2 * adx < ady ? 8 : 7);
+}
+// from: 시작 엔티티(없으면 to 자리에서 바로 터짐), to: 엔티티 또는 {px, py}
+function addBullet(no, from, to) {
+  if (!no) return;
+  bulSet(no);
+  bullets.push({ no, x: from ? from.px : to.px, y: from ? from.py - 40 : to.py, to, t0: performance.now(), phase: from ? 0 : 1, dir: from ? pxDir(from.px, from.py, to.px, to.py) : 2 });
+}
+function drawBullets(now) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i], s = bulSet(b.no);
+    if (!s) { if (now - b.t0 > 3000) bullets.splice(i, 1); continue; }
+    const tx = b.to.px, ty = b.to.py - 40;
+    if (b.phase === 0) {
+      const fly = s.def.anims[0] && (s.def.anims[0][b.dir] || s.def.anims[0][2]);
+      const step = (BUL_SPEED[b.no] || 23) * (now - (b.last || b.t0)) / ANIM_MS; b.last = now;
+      const dx = tx - b.x, dy = ty - b.y, d = Math.hypot(dx, dy);
+      if (!fly || d <= step) { b.phase = 1; b.t0 = now; b.x = tx; b.y = ty; }
+      else { b.x += dx / d * step; b.y += dy / d * step; drawBulFrame(s, b, fly[Math.floor((now - b.t0) / ANIM_MS) % fly.length]); continue; }
+    }
+    const hit = s.def.anims[1] && (s.def.anims[1][b.dir] || s.def.anims[1][2]);
+    const k = Math.floor((now - b.t0) / ANIM_MS);
+    if (!hit || k >= hit.length) { bullets.splice(i, 1); continue; }
+    b.x = tx; b.y = b.to.py; drawBulFrame(s, b, hit[k]);
+  }
+}
+function drawBulFrame(s, b, fi) {
+  const f = s.def.frames[fi], g = s.def.adds && s.def.adds[fi];
+  if (f && f[3]) { const im = bulPage(s, b.no, f[0]); if (im) ctx.drawImage(im, f[1], f[2], f[3], f[4], Math.round(b.x) + f[5], Math.round(b.y) + f[6], f[3], f[4]); }
+  if (g && g[3]) { const im = bulPage(s, b.no, g[0]); if (im) { ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(im, g[1], g[2], g[3], g[4], Math.round(b.x) + g[5], Math.round(b.y) + g[6], g[3], g[4]); ctx.globalCompositeOperation = 'source-over'; } }
 }
 
 // ---------- 입력 ----------
@@ -341,6 +396,7 @@ const handlers = {
     const now = performance.now(), a = ents.get(m.id), d = ents.get(m.tid);
     if (a) { a.dir = m.dir; a.act = m.k ? 'attack2' : 'attack'; a.actAt = now; a.moving = false; a.shownAt = now; }
     if (!d) return;
+    if (m.sk && !m.area) addBullet(UI.skillBul(m.sk), a, d);   // 한 대상 기술: 시전자에서 대상까지 날아간다
     d.hp = m.hp; d.shownAt = now;
     if (!m.miss && !d.act && !d.moving) { d.act = 'hit'; d.actAt = now; }
     floaters.push({ x: d.px, y: d.py, text: m.miss ? '빗나감' : m.crit ? m.dmg + '!' : String(m.dmg), color: m.miss ? '#bbb' : d.mob ? '#ffe066' : '#ff5a5a', t0: now });
@@ -364,7 +420,13 @@ const handlers = {
     drawSkills();
   },
   note(m) { log(esc(m.text), 'sys'); },
-  cast(m) { const a = ents.get(m.id); if (a) { a.act = 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; } },
+  cast(m) {
+    const a = ents.get(m.id); if (a) { a.act = 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; }
+    const no = UI.skillBul(m.sk);
+    if (m.r !== undefined) { const [px, py] = cellPx(m.x, m.y, m.z); addBullet(no, null, { px, py }); }   // 범위 기술: 중심 자리
+    else if (m.tid) { const d = ents.get(m.tid); if (d) addBullet(no, a, d); }                       // 약화 등 대상 기술
+    else if (a) addBullet(no, null, a);                                                              // 자기 기술
+  },
   fx(m) { UI.fx(m.fx); },
   shop(m) { UI.shop(m); },
   shopclose() { UI.closeShop(); },
