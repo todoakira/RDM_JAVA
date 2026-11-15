@@ -61,8 +61,8 @@ const UI = (() => {
   function drawChr() {
     if (!stat) return;
     const hp = el('gh'), mp = el('gm'), sp = el('gs');
-    hp.style.height = Math.round(120 * Math.max(0, stat.hp) / stat.maxHp) + 'px'; mp.style.height = Math.round(120 * stat.mp / stat.maxMp) + 'px'; sp.style.height = Math.round(120 * stat.sp / 2000) + 'px';
-    el('gauge').title = `체력 ${stat.hp} / ${stat.maxHp}\n마력 ${stat.mp} / ${stat.maxMp}\n기력 ${stat.sp} / 2000`;
+    hp.style.height = Math.round(120 * Math.max(0, stat.hp) / stat.maxHp) + 'px'; mp.style.height = Math.round(120 * stat.mp / stat.maxMp) + 'px'; sp.style.height = Math.round(120 * stat.sp / 2000) + 'px'; el('gd').style.height = Math.round(120 * (stat.dp || 0) / (stat.maxDp || 1)) + 'px';
+    el('gauge').title = `체력 ${stat.hp} / ${stat.maxHp}\n마력 ${stat.mp} / ${stat.maxMp}\n기력 ${stat.sp} / 2000\n위험 점수(DP) ${stat.dp || 0} / ${stat.maxDp || 0}`;
     if (el('winChr').style.display !== 'block') return;
     el('cface').style.background = `url(assets/int/${FACE[stat.chr] || 114}.png)`;
     el('cname').textContent = `${stat.name}\n${CLASS_KR[stat.chr] || ''}  Lv.${stat.level}\n공격 ${Math.floor(stat.atk * stat.minPct / 100)}~${stat.atk}  방어 ${stat.armor}`;
@@ -182,7 +182,8 @@ const UI = (() => {
       const id = list[skTop + i]; if (!id) continue;
       h += `<div class="skc" data-sk="${id}" style="left:${SK_CELL_X[i]}px;top:${SK_ROW_Y[0]}px;${skIcon(id, id === sel ? 1 : 0)}"></div>`;
     }
-    if (stat.special) h += `<div class="skc" data-sk="${stat.special}" data-sp="1" style="left:${SK_CELL_X[0]}px;top:${SK_ROW_Y[1]}px;${skIcon(stat.special, 2)}"></div>`;
+    // 특수 기술: DP 가 가득 차야 쓸 수 있다. 덜 찼으면 사용 불가 모양
+    if (stat.special) h += `<div class="skc" data-sk="${stat.special}" style="left:${SK_CELL_X[0]}px;top:${SK_ROW_Y[1]}px;${skIcon(stat.special, stat.dp >= stat.maxDp ? (stat.special === sel ? 1 : 0) : 2)}"></div>`;
     h += `<div class="ska" data-d="-1" style="left:12px;top:${SK_ROW_Y[0]}px"></div><div class="ska" data-d="1" style="left:196px;top:${SK_ROW_Y[0]}px"></div>`;
     el('skcells').innerHTML = h;
     const show = skHover || sel;
@@ -204,6 +205,7 @@ const UI = (() => {
   el('winSk').addEventListener('mouseleave', () => { skHover = 0; drawSk(); });
   setInterval(() => { if (fxList.length) drawFx(); }, 1000);
   const isSelfSkill = id => !!(skInfo && skInfo[id] && skInfo[id].l === 0);
+  const isAreaSkill = id => !!(skInfo && skInfo[id] && skInfo[id].l >= 10000);
   // 걸려 있는 효과: [효과 번호, 남은 초, 건 기술]. 서버는 끝날 때만 다시 알려 주므로 초는 여기서 센다.
   let fxList = [], fxAt = 0;
   function drawFx(list) {
@@ -217,5 +219,5 @@ const UI = (() => {
     el('skquick').title = id ? skText(id).name : '';
   }
 
-  return { isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

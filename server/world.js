@@ -164,16 +164,29 @@ class World {
   }
   // 기술 쓰기: 지금은 몬스터 한 마리를 노리는 공격 기술(효과 종류 0)만 된다.
   // 사거리 밖이면 걸어가서 쓴다. 원작은 이 걸음을 클라이언트가 하고 서버는 사거리만 확인한다 (UseSkill 0x45ed73)
+  // 쓸 수 있는 기술인지: 일반 기술은 목록에 있어야 하고, 특수 기술은 직업의 특수 기술이면서 DP 가 가득 차야 한다
+  skillReady(p, sid, s) {
+    if (s.a === 1) { if (sid !== SK.SPECIAL[p.chr]) return false; if (p.dp < p.maxDp) { p.send({ t: 'note', text: 'DP가 가득 차야 쓸 수 있습니다.' }); return false; } return true; }
+    return SK.list(p).includes(sid);
+  }
   skillCmd(p, sid, id, run) {
-    const m = this.mobs.get(id), s = SK.get(sid);
-    if (p.dead || !m || !s) return;
-    if (!SK.list(p).includes(sid)) return;
-    if (s.a !== 0 || !(s.n === 0 && SK.formulaKnown(sid) || s.n === 7) || !(s.l > 0 && s.l < 10000)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    const m = id ? this.mobs.get(id) : null, s = SK.get(sid);
+    if (p.dead || !s || !this.skillReady(p, sid, s)) return;
+    const area = s.l >= 10000;
+    const ok = area ? s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))
+      : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n === 7);
+    if (!ok) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    if (!m) {                                                   // 대상 없이 쓰는 범위 기술은 내 자리가 중심
+      if (!area) return;
+      const now = Date.now(); if (now < (p.skillAt || 0)) return;
+      p.skillAt = now + SK.USE_MS; this.castArea(p, null, s, sid, now); return;
+    }
     p.cast = { sid, id }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0;
   }
   // 자기에게 쓰는 기술 (사거리 0)
   selfSkillCmd(p, sid) {
     const s = SK.get(sid), now = Date.now();
+    if (s && s.l >= 10000) { this.skillCmd(p, sid, 0); return; }   // 범위 기술을 대상 없이
     if (p.dead || !s || !SK.list(p).includes(sid)) return;
     if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
     if (now < (p.skillAt || 0)) return;
@@ -203,10 +216,40 @@ class World {
   // 명중률에 몬스터 약화(+25)를 더한다 (GetAttackSuccessful 0x45fc3a)
   hitChance(a, d, base, now) { return Math.min(100, base + (d.mob && this.fxOn(d, 4, now) ? 25 : 0)); }
   // 기술 한 번 (UseSkill 0x45e3xx → UseSkillAttackSingleMop 0x44d6xx → DoSkillAttackMop 0x45f890)
-  castSkill(p, m, s, sid, now) {
+  // 기술 값 치르기: 특수 기술은 DP 를 0 으로, 일반 기술은 마력을 줄인다 (0x44d825~0x44d846)
+  payForSkill(p, s) {
+    if (s.a === 1) { if (p.dp < p.maxDp) return -1; p.dp = 0; this.game.sendStat(p); return 0; }
     const cost = SK.mpCost(s, p.maxMp);
-    if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return; }
-    p.mp -= cost; this.game.sendStat(p);                         // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
+    if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return -1; }
+    p.mp -= cost; this.game.sendStat(p); return cost;
+  }
+  // 범위 공격 (UseSkillAttackRange 0x454600)
+  castArea(p, target, s, sid, now) {
+    const { rad } = SK.areaOf(sid, s, !!target);
+    const center = target ? { x: target.x, y: target.y, z: target.z } : { x: p.x, y: p.y, z: p.z };
+    const cost = this.payForSkill(p, s); if (cost < 0) return;
+    this.fxOff(p, 1);                                            // 위장이 풀린다 (0x454956)
+    if (target) { const d = G.direction(p, target); if (d !== 5) p.dir = d; }
+    this.near(p, { t: 'cast', id: p.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
+    for (const m of [...this.mobs.values()]) {
+      if (m.hp <= 0 || G.dist(center, m) > rad || !this.noObstacle(center, m)) continue;
+      let dmg;
+      if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o);            // 특수: 반드시 맞음 (0x45d409)
+      else {
+        if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, m.spi), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
+        dmg = SK.damage(cost, s.o);                                               // 일반: 공격 값 = 마력 소모량 (0x45d094)
+      }
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now), now, { k: 2, sk: sid, area: 1 });
+    }
+  }
+  castSkill(p, m, s, sid, now) {
+    const cost = this.payForSkill(p, s); if (cost < 0) return;   // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
+    if (s.a === 1) {                                             // 특수 기술: 반드시 맞음 (0x44f81c)
+      this.fxOff(p, 1);
+      const d = G.direction(p, m); if (d !== 5) p.dir = d;
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o)), now), now, { k: 2, sk: sid });
+      return;
+    }
     this.fxOff(p, 1);                                            // 공격 기술을 쓰면 위장이 풀린다 (0x44d873)
     const d = G.direction(p, m); if (d !== 5) p.dir = d;
     if (s.n === 7) {                                             // 81번 약화 (0x44f98b)
@@ -450,6 +493,7 @@ class World {
   }
   applyDamage(a, d, dmg, now, extra) {
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
+    if (!d.mob) { d.dp = Math.min(d.maxDp, (d.dp || 0) + dmg); this.game.sendStat(d); }   // 맞은 만큼 DP 가 찬다 (CMapServerClient::DecreaseHP 0x43935f)
     if (d.mob && !a.mob) { const dd = G.direction(d, a); if (dd !== 5) d.dir = dd; }   // 맞은 몬스터는 공격자를 본다 (DoSkillAttackMop 0x45f8d3)
     this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, ...extra });
     if (d.hp > 0) return;
@@ -494,9 +538,12 @@ class World {
       if (p.cast) {
         const m = this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
         if (!m || !s) p.cast = null;
-        else if (G.dist(p, m) <= s.l && this.noObstacle(p, m)) {
+        else if (s.l >= 10000 ? G.dist(p, m) <= s.l - 10000 : G.dist(p, m) <= s.l && this.noObstacle(p, m)) {
           p.path = [];
-          if (now >= (p.skillAt || 0) && now >= p.nextAt) { const sid = p.cast.sid; p.cast = null; p.skillAt = now + SK.USE_MS; this.castSkill(p, m, s, sid, now); }
+          if (now >= (p.skillAt || 0) && now >= p.nextAt) {
+            const sid = p.cast.sid; p.cast = null; p.skillAt = now + SK.USE_MS;
+            if (s.l >= 10000) this.castArea(p, m, s, sid, now); else this.castSkill(p, m, s, sid, now);
+          }
         } else if (now >= p.repathAt) {
           p.repathAt = now + 400;
           const pa = this.findPath(p, m, 1500);
@@ -595,15 +642,16 @@ class Game {
     // 공격력 = 근력에서 나온 값 + 무기 공격 합 (DoAttackMop 0x46f8a3)
     p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str); p.wAtk = wAtk; p.atk = p.strAtk + wAtk; p.minPct = F.minPct(p.str, p.dex);
     p.armor = armor; p.range = range;
+    p.maxDp = F.dpMax(p.pow); p.dp = Math.min(p.dp || 0, p.maxDp);
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
-  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
+  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
-      hp: p.hp, mp: p.mp, sp: p.sp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y };
+      hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y };
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -638,6 +686,7 @@ class Game {
     this.recalc(p, true);
     if (!d) { p.hp = NEW_CHAR.hp; p.mp = NEW_CHAR.mp; p.sp = NEW_CHAR.sp; const s0 = beginner ? NEW_CHAR.startBeginner : NEW_CHAR.start; const w0 = this.world(s0.map); if (w0) { w0.enter(p, s0.x, s0.y); return p; } }
     if (d && !d.dead) { p.hp = Math.max(1, Math.min(p.maxHp, d.hp ?? p.maxHp)); p.mp = Math.min(p.maxMp, d.mp ?? p.maxMp); p.sp = Math.min(F.SP_MAX, d.sp ?? F.SP_MAX); }
+    if (d) p.dp = Math.min(p.maxDp, d.dp || 0);
     const w = d && !d.dead && this.world(d.map);
     if (w) w.enter(p, d.x, d.y); else { const t = this.startPoint(); t.world.enter(p, t.x, t.y); }
     return p;

@@ -115,4 +115,22 @@ function isGun(e) {
 // 지속 ⌊정신력/20⌋ + p 초 (UseSkillAttackSingleMop 0x44f98b, CMopServer::DoSkillEffect 0x479771).
 // 이 표시가 붙은 몬스터를 공격하면 명중률 +25 (GetAttackSuccessful 0x45fc3a, 최대 100)
 
-module.exports = { SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+// ---------- 범위 기술과 특수 기술 ----------
+// 사거리(l)가 10000 이상이면 범위 기술 (UseSkill 0x45ea0b). 효과 종류가 1, 8, 11, 25, 34, 53, 62, 64 면 범위 효과(UseSkillRangeEffect), 나머지는 범위 공격(UseSkillAttackRange 0x454600).
+// 범위 공격: R = l − 10000. 대상을 찍었으면 대상이 R 안에 있어야 하고(아니면 실패), 중심을 대상 자리로 옮기고 반경을 ⌊2R/3⌋ 로 줄인다(374번만 ⌊R/4⌋).
+// 대상이 없으면 시전자 자리를 중심으로 반경 R. 반경 안(거리 계산은 grid.dist)이면서 중심에서 막힘이 없는 몬스터 모두가 대상 (CMopManager::FirstInDistanceEntry, 0x45b92c NoObstacle).
+const RANGE_EFFECT_TYPES = new Set([1, 8, 11, 25, 34, 53, 62, 64]);
+function areaOf(sid, s, hasTarget) {
+  const R = s.l - 10000;
+  if (!hasTarget) return { R, rad: R };
+  return { R, rad: sid === 374 ? Math.floor(R / 4) : Math.trunc(2 * R / 3) };
+}
+// 범위 공격에서 몬스터에게 쓰는 식 (몬스터 쪽 분기 0x45b996): 효과 종류 0 의 일반 기술은 정신력 명중 판정 후 공격 값 = 마력 소모량 (0x45d057).
+// 42, 46, 49, 67, 351 과 rm3944 가 따로 보내는 325, 336, 384 는 고유한 식이 있어 아직 옮기지 않았다.
+const AREA_OWN = new Set([42, 46, 49, 67, 351, 325, 336, 384]);
+const areaFormulaKnown = id => !AREA_OWN.has(id);
+// 특수 기술(a=1): 위험 점수(DP)가 가득 차야 쓸 수 있고(UseSkill 0x45e55e, 최대 DP 와 비교) 쓰면 DP 는 0 (0x44d840, 0x454927).
+// 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
+const specialAttack = level => Math.floor(level * level / 6) + 50;
+
+module.exports = { RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

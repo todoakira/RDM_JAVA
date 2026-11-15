@@ -6,6 +6,8 @@ const rand100 = () => fl(Math.random() * 100);
 
 // 최대 체력: 기골 기준. CMapServerClient::InitializeHPMax (0x4346c0), 몬스터는 CMopInfoFile::ReadMopInfo (0x476543)
 const hpMax = pow => fl(pow / 15) * fl(pow / 10) + 50;
+// 최대 위험 점수(DP): 기골 기준. InitializeDPMax (0x434820). 1만 이하는 ⌊기골²/150⌋ + 50
+const dpMax = pow => pow > 10000 ? fl(pow / 15) * fl(pow / 10) + 50 : fl(pow * pow / 150) + 50;
 // 최대 마력: 정신력 기준. InitializeMPMax (0x434780)
 const mpMax = spi => spi <= 20000 ? fl(spi / 15) * fl(spi / 10) + 50 : spi * 273 - 2792950;
 
@@ -96,4 +98,4 @@ const expAfterDeath = exp => fl(exp * 5 / 10);
 const deathDropPct = lv => lv <= 15 ? 0 : Math.min(100, lv < 500 ? fl(lv / 25) : 20);
 const RESPAWN = { map: 21, x: 100, y: 100 };           // 부활 위치: 맵 21 (100,100). ResetUserData (0x43bf56)
 
-module.exports = { INV_SLOTS, MONEY_MAX, weightMax, REGEN_MS, SP_MAX, spRegen, runCost, hpRegen, mpRegen, EV_MP_REST, expAfterDeath, deathDropPct, RESPAWN, hpMax, mpMax, attack, minPct, hitPct, critPct, rollDamage, rand100, expTable, classGain, BASE_STAT, bonusForLevelUp, bonusTotal, EXP_CAP_DIV, MAX_LEVEL, MOB_STEP_MS, PLAYER_DEX_DEFENCE, mobStats };
+module.exports = { dpMax, INV_SLOTS, MONEY_MAX, weightMax, REGEN_MS, SP_MAX, spRegen, runCost, hpRegen, mpRegen, EV_MP_REST, expAfterDeath, deathDropPct, RESPAWN, hpMax, mpMax, attack, minPct, hitPct, critPct, rollDamage, rand100, expTable, classGain, BASE_STAT, bonusForLevelUp, bonusTotal, EXP_CAP_DIV, MAX_LEVEL, MOB_STEP_MS, PLAYER_DEX_DEFENCE, mobStats };

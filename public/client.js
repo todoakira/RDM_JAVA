@@ -255,6 +255,7 @@ cv.addEventListener('pointerdown', e => {
   // 오른쪽 단추: 고른 기술을 그 몬스터에게 쓴다. 왼쪽 단추: 일반 공격
   if (e.button === 2) {
     if (skillSel && UI.isSelfSkill(skillSel)) useSelfSkill(skillSel);
+    else if (!m && skillSel && UI.isAreaSkill(skillSel)) useSelfSkill(skillSel);     // 범위 기술을 빈 곳에: 내 자리가 중심
     else if (m && skillSel) { targetId = m.id; send({ t: 'skill', sk: skillSel, id: m.id, run: runToggle !== shift }); }
     return;
   }

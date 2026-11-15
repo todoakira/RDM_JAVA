@@ -77,7 +77,8 @@ wss.on('connection', ws => {
       const it = /^\/(?:아이템|item)\s+(\d+)\s+(\d+)(?:\s+(\d+))?$/.exec(String(m.text || '').trim());
       const lv = /^\/(?:레벨|level)\s+(\d+)$/.exec(String(m.text || '').trim());
       const mo = /^\/(?:돈|money)\s+(\d+)$/.exec(String(m.text || '').trim());
-      if (mo) { player.money = Math.min(4000000000, Number(mo[1])); game.sendInv(player); }
+      if (/^\/(?:dp|DP)$/.test(String(m.text || '').trim())) { player.dp = player.maxDp; game.sendStat(player); }   // 시험용: DP 가득
+      else if (mo) { player.money = Math.min(4000000000, Number(mo[1])); game.sendInv(player); }
       else if (lv) game.cheatLevel(player, Number(lv[1]));
       else if (it) { if (!game.cheatItem(player, Number(it[1]), Number(it[2]), Number(it[3] || 1))) send({ t: 'chat', id: 0, name: '안내', text: '그런 아이템이 없습니다.' }); }
       else if (g) { if (!game.gotoMap(player, Number(g[1]))) send({ t: 'chat', id: 0, name: '안내', text: '그 번호의 맵이 없습니다.' }); }
