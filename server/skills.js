@@ -127,9 +127,14 @@ const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 //   n=9  (0x447ae5): 효과 6 (+0x1a |= 0x40) — 몬스터에게 맞으면 체력 대신 마력이 2 × 피해 + ⌊피해/4⌋ 만큼 준다.
 //                    이때는 체력이 줄지 않으므로 DP 도 차지 않는다. 마력이 0 이 되면 효과가 끝난다 (CMopServer::Attack 0x47f581~0x47f5bf)
 //   n=12 (0x447c49): 효과 9 (+0x1b |= 2) — 내 자리가 아닌 곳의 아이템도 그 자리가 들어갈 수 있는 곳이면 줍는다 (ProcessGetItem 0x42edda, CrsMap::CheckEnter)
-const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 9: 6, 10: 7, 11: 8, 12: 9 };
+//   n=27 (0x447d8c): 효과 19 (+0x1c |= 8) — 숨기. 이미 숨어 있으면 풀린다. 지속 ⌊정신력 ÷ 5⌋ + p 초. 공격하면 풀린다 (ProcessUserAttack 0x43a8e8).
+//                    원작에서 숨기를 따지는 곳은 주인공끼리의 공격(DoAttack)뿐이라, 몬스터와의 싸움에는 영향이 없다.
+//   n=28 (0x447e11): 효과 20 (+0x1c |= 0x10) — 공포. 4칸 안의, 정신력이 (2 × 주인공 정신력) 이하인 몬스터가 달아난다
+//   n=29 (0x447e62): 효과 21 (+0x1c |= 0x20) — 유인. 8칸 안의 몬스터가 다가온다
+//   (공포·유인: CMopServer::FindNextAction 0x47d06e~0x47d31b, DoNextAction 0x47c13f. 몬스터 그림 종류 0x62 는 걸리지 않는다)
+const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 9: 6, 10: 7, 11: 8, 12: 9, 27: 19, 28: 20, 29: 21 };
 const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.eqSpi || 0) / 100));
-const duration = (p, s) => Math.floor(p.spi / 20) + s.p;
+const duration = (p, s) => Math.floor(p.spi / (s.n === 27 ? 5 : 20)) + s.p;
 // 효과 2가 붙는 무기 (분류, 번호) (CMopServer::GetAttack 0x47acff~0x47ad93)
 function isGun(e) {
   if (!e) return false;

@@ -201,6 +201,7 @@ class World {
       const e = SK.SELF_EFFECT[s.n];
       if (e === 7) for (const bad of [5, 12, 14, 16, 18]) if (p.fx) delete p.fx[bad];   // 나쁜 효과 지우기 (0x447b74~0x447bb0)
       if (e === 8) p.guard = SK.guardValue(p);
+      if (e === 19 && this.fxOn(p, 19, now)) { this.fxOff(p, 19); this.near(p, { t: 'cast', id: p.id, sk: sid }); this.game.sendStat(p); return; }   // 숨기 풀기 (0x447dae)
       (p.fx ||= {})[e] = now + SK.duration(p, s) * 1000; (p.fxSk ||= {})[SK.SELF_EFFECT[s.n]] = sid;
       this.sendFx(p);
     }
@@ -231,7 +232,7 @@ class World {
     const { rad } = SK.areaOf(sid, s, !!target);
     const center = target ? { x: target.x, y: target.y, z: target.z } : { x: p.x, y: p.y, z: p.z };
     const cost = this.payForSkill(p, s); if (cost < 0) return;
-    this.fxOff(p, 1);                                            // 위장이 풀린다 (0x454956)
+    this.fxOff(p, 1); this.fxOff(p, 19);                                            // 위장이 풀린다 (0x454956)
     if (target) { const d = G.direction(p, target); if (d !== 5) p.dir = d; }
     this.near(p, { t: 'cast', id: p.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
     for (const m of [...this.mobs.values()]) {
@@ -248,12 +249,12 @@ class World {
   castSkill(p, m, s, sid, now) {
     const cost = this.payForSkill(p, s); if (cost < 0) return;   // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
     if (s.a === 1) {                                             // 특수 기술: 반드시 맞음 (0x44f81c)
-      this.fxOff(p, 1);
+      this.fxOff(p, 1); this.fxOff(p, 19);
       const d = G.direction(p, m); if (d !== 5) p.dir = d;
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o)), now), now, { k: 2, sk: sid });
       return;
     }
-    this.fxOff(p, 1);                                            // 공격 기술을 쓰면 위장이 풀린다 (0x44d873)
+    this.fxOff(p, 1); this.fxOff(p, 19);                                            // 공격 기술을 쓰면 위장이 풀린다 (0x44d873)
     const d = G.direction(p, m); if (d !== 5) p.dir = d;
     if (s.n === 7) {                                             // 81번 약화 (0x44f98b)
       if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, m.spi), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return; }
@@ -401,7 +402,11 @@ class World {
       const e = this.eventAt(u.x, u.y), lure = !!e && e[0] === EV_LURE;
       if (lure && d <= Math.min(R, 10) && rec) return [6, u];
       if (best < 5 && d <= 1 && rec) { best = 5; bu = u; continue; }
-      if (best < 4 && lure && d <= 10 && rec && canMove) { best = 4; bu = u; continue; }
+      // 주인공 효과: 유인(21)이면 8칸 안에서 다가오고, 공포(20)면 4칸 안에서 (몬스터 정신력 ≤ 2 × 주인공 정신력일 때) 달아난다
+      const free13 = !this.fxOn(m, 13), notImmune = info.img !== 0x62;
+      if (best < 4 && notImmune && this.fxOn(u, 21) && d <= 8 && free13 && rec && canMove) { best = 4; bu = u; m.fear = false; continue; }
+      if (best < 4 && notImmune && this.fxOn(u, 20) && m.spi <= 2 * u.base.spi && d <= 4 && free13 && rec && canMove) { best = 4; bu = u; m.fear = true; continue; }
+      if (best < 4 && lure && d <= 10 && rec && canMove) { best = 4; bu = u; m.fear = false; continue; }
       if (best < 3 && d <= R && rec) { best = 3; bu = u; }
       else if (best < 2 && d <= info.sight && rec && canMove) { best = 2; bu = u; }
       else if (best < 1 && canMove) { best = 1; bu = u; }
@@ -487,7 +492,7 @@ class World {
         if (m.pattern === 1) this.flee(m, u, step); else this.moveToward(m, u, step); return;
       case 3: case 5: if (this.mobAttack(m, u, now) || !canMove) return;
         if (m.pattern === 1) this.flee(m, u, step); else if (m.pattern === 6) this.roam(m, u, step); else this.moveToward(m, u, step); return;
-      case 4: this.moveToward(m, u, step); return;
+      case 4: if (m.fear && this.fxOn(u, 20)) this.flee(m, u, step); else this.moveToward(m, u, step); return;   // 공포면 달아난다 (DoNextAction 0x47c13f)
       case 2: if (m.pattern === 1) this.flee(m, u, step); else if (m.pattern === 6) this.roam(m, u, step); else this.moveToward(m, u, step); return;
       case 1: if (!IMG_STILL.includes(info.img)) this.roam(m, m.home, T400); return;
     }
@@ -498,7 +503,7 @@ class World {
     // 치명타면 반드시 맞고 피해 2배, 아니면 명중 판정
     const crit = F.rand100() < F.critPct(a.dex, d.dex);
     const defDex = d.mob ? d.dex : Math.floor(d.dex * F.PLAYER_DEX_DEFENCE);
-    if (!a.mob) this.fxOff(a, 1);                                // 공격하면 위장이 풀린다 (ProcessUserAttack 0x43a931)
+    if (!a.mob) { this.fxOff(a, 1); this.fxOff(a, 19); }                                // 공격하면 위장이 풀린다 (ProcessUserAttack 0x43a931)
     if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(a.dex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp }); return; }
     // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
     let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));

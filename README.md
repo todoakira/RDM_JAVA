@@ -235,6 +235,9 @@ data/              서버만 쓰는 자료: 몬스터 표, 맵별 배치·이벤
 | 5 | 51번 Sharpshoot | 총 종류 무기를 들었을 때 피해 + ⌊피해/5⌋ | CMopServer::GetAttack 0x47acf6 |
 | 9 | 13번 Absolute Defense | 몬스터에게 맞으면 체력 대신 마력이 2 × 피해 + ⌊피해/4⌋ 줄어듦(체력이 줄지 않아 DP 도 안 참). 마력이 0 이 되면 끝남 | UseSkillAlone 0x447ae5, CMopServer::Attack 0x47f581 |
 | 12 | 33번 Psycho Kinesis | 걸어가지 않고 떨어진 곳의 아이템을 바로 주움 (원작 서버는 그 자리가 들어갈 수 있는 곳인지만 확인, 거리 제한은 클라이언트 쪽) | ProcessGetItem 0x42edda |
+| 27 | 34번 Hide | 숨기(다시 쓰면 풀림, 공격하면 풀림). 지속 ⌊정신력 ÷ 5⌋ + p 초. 원작은 주인공끼리의 공격에서만 따지므로 몬스터에게는 영향 없음 | UseSkillAlone 0x447d8c |
+| 28 | 35번 Horror | 4칸 안의 몬스터 중 정신력이 (2 × 내 정신력) 이하인 것이 달아남 | FindNextAction 0x47d09e, DoNextAction 0x47c13f |
+| 29 | 43번 Roar | 8칸 안의 몬스터가 다가옴 | FindNextAction 0x47d07a·0x47d2a0 |
 | 10 | 22번 | 걸려 있던 나쁜 효과(5, 12, 14, 16, 18번)를 지움 | UseSkillAlone 0x447b36 |
 | 11 | 23·62번 | 받는 피해 × v ÷ 100 (v = 100 − min(50, 25 + ⌊장비 정신력 ÷ 100⌋)), 방어를 뺀 뒤 곱하고 최소 1 | UseSkillAlone 0x447bdb, CMapServerClient::GetAttack 0x4102ce |
 | 7 | 81번 Enticement | 정신력 명중 판정 후 몬스터에 표시. 표시된 몬스터를 공격하면 명중률 +25 | UseSkillAttackSingleMop 0x44f98b, GetAttackSuccessful |
