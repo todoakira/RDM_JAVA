@@ -198,7 +198,10 @@ class World {
       else { const use = Math.min(Math.floor((p.maxHp - Math.min(p.hp, p.maxHp)) / 2), p.mp); p.mp -= use; p.hp = Math.min(p.maxHp, p.hp + use * 2); }
     } else {
       p.mp -= cost;
-      (p.fx ||= {})[SK.SELF_EFFECT[s.n]] = now + SK.duration(p, s) * 1000; (p.fxSk ||= {})[SK.SELF_EFFECT[s.n]] = sid;
+      const e = SK.SELF_EFFECT[s.n];
+      if (e === 7) for (const bad of [5, 12, 14, 16, 18]) if (p.fx) delete p.fx[bad];   // 나쁜 효과 지우기 (0x447b74~0x447bb0)
+      if (e === 8) p.guard = SK.guardValue(p);
+      (p.fx ||= {})[e] = now + SK.duration(p, s) * 1000; (p.fxSk ||= {})[SK.SELF_EFFECT[s.n]] = sid;
       this.sendFx(p);
     }
     this.near(p, { t: 'cast', id: p.id, sk: sid });
@@ -265,6 +268,7 @@ class World {
     const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
     const before = m.hp;
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
+    if (sid === 66 && m.hp > 0) (m.fx ||= {})[13] = now + SK.duration(p, s) * 1000;   // 몬스터 효과 13 (0x44de8c)
     const dr = SK.DRAIN[sid], dealt = before - Math.max(0, m.hp);
     if (dr && dealt > 0 && !p.dead) {                            // 흡수: 몬스터 체력이 줄어든 만큼의 비율 (0x44dcb3, 0x44deee, 0x44dfa8)
       if (dr.hp) p.hp = Math.min(p.maxHp, p.hp + Math.floor(dealt * dr.hp[0] / dr.hp[1]));
@@ -377,7 +381,7 @@ class World {
   // 다음에 할 일을 고른다. 돌려주는 값: 0 없음, 1 배회, 2 쫓기, 3·5·6 공격, 4 유인된 쫓기 (CMopServer::FindNextAction 0x47cc60)
   // 원작에는 기술에 걸린 상태(혼란·은신·도발 등)에 따른 갈래가 더 있다. 기술이 아직 없어서 그 갈래는 옮기지 않았다.
   findNextAction(m) {
-    const info = m.info, R = m.maxRange, canMove = info.speed > 0;
+    const info = m.info, R = this.fxOn(m, 13) ? 1 : m.maxRange, canMove = info.speed > 0;
     if (m.targetName) {       // 기억해 둔 대상이 있으면 먼저 본다
       let u = null; for (const q of this.players.values()) if (q.name === m.targetName) { u = q; break; }
       if (u && this.inMgmt(m, u)) {
@@ -450,6 +454,7 @@ class World {
   mobAttack(m, u, now) {
     const info = m.info, d = G.dist(m, u), r1 = info.range, r2 = info.range2 || 0;
     if (d > r1 && d > r2) return false;
+    if (d > 1 && this.fxOn(m, 13, now)) return false;           // 효과 13: 공격 사거리 1 (FindNextAction 0x47cffd)
     const second = rnd(20) > 9 ? d <= r2 : d > r1;
     m.delay = Math.ceil((second ? info.interval2 : info.interval) / MOB_TICK);
     const dir = G.direction(m, u); if (dir !== 5) m.dir = dir;
@@ -496,6 +501,7 @@ class World {
     if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(a.dex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp }); return; }
     // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
     let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
+    if (!d.mob && this.fxOn(d, 8, now)) dmg = Math.max(1, Math.floor(dmg * d.guard / 100));   // 효과 8 (CMapServerClient::GetAttack 0x4102ce)
     if (d.mob && !a.mob) dmg = this.mobDamage(a, dmg, now);
     this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0 });
   }
@@ -646,7 +652,7 @@ class Game {
       wAtk += Math.max(0, f.atk || 0); armor += Math.max(0, f.def || 0); (f.v || []).forEach((v, q) => { add[q] += v; });
       if (slot === 7 && f.range) range = f.range;
     });
-    STATS.forEach((k, q) => { p[k] = p.base[k] + add[q]; }); p.eqDex = add[STATS.indexOf('dex')];   // 장비 민첩성 합 (T+0x98)
+    STATS.forEach((k, q) => { p[k] = p.base[k] + add[q]; }); p.eqDex = add[STATS.indexOf('dex')]; p.eqSpi = add[STATS.indexOf('spi')];   // 장비 민첩성 합 (T+0x98)
     // 공격력 = 근력에서 나온 값 + 무기 공격 합 (DoAttackMop 0x46f8a3)
     p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str); p.wAtk = wAtk; p.atk = p.strAtk + wAtk; p.minPct = F.minPct(p.str, p.dex);
     p.armor = armor; p.range = range;

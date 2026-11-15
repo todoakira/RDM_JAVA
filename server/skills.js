@@ -88,7 +88,7 @@ const hitStat = id => DEX_HIT.has(id) ? 'dex' : 'spi';
 //   36·37 (0x44dd1a): Y = X + 10 × 장비 민첩성(T+0x98) 일 때 2Y + ⌊Y/2⌋ + T+0x30
 //   39 (0x44dd31): 3Y + T+0x30
 //   50 (0x44dd92): 28 × ⌊X/10⌋ + T+0x30
-//   66 (0x44de0b): 2X + ⌊2X/4⌋ + T+0x30, 살아 있으면 몬스터 효과 13 (아직 옮기지 않음)
+//   66 (0x44de0b): 2X + ⌊2X/4⌋ + T+0x30, 살아 있으면 몬스터 효과 13: 지속 동안 몬스터의 공격 사거리가 1 (CMopServer::DoSkillEffect 0x4798c2, FindNextAction 0x47cfdb)
 //   68 (0x44de9d): 3X + ⌊X/8⌋ + T+0x30, 준 피해의 ⌊3/10⌋ 만큼 체력·마력·기력 회복
 //   69 (0x44df2e, rm3944 NewSingleAttack 0x1000318d): 3X + ⌊X/2⌋ + T+0x30
 //   76 (0x44df73): 마력 소모량 + 2 × T+0x34, 준 피해의 ⌊1/2⌋ 만큼 체력 회복
@@ -121,7 +121,11 @@ const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 //   n=4 (0x4479bf): 효과 0 (+0x1a |= 1) — 몬스터에게 주는 피해 + ⌊피해/5⌋ (rm3944 NewAttackBuffsFix 0x10003cb4)
 //   n=5 (0x447a12): 효과 2 (+0x1a |= 4) — 총 종류 무기를 들었을 때 피해 + ⌊피해/5⌋ (CMopServer::GetAttack 0x47acf6)
 // 지속 시간(초) = ⌊(기본+장비 정신력) ÷ 20⌋ + p. 효과 1은 공격하면 바로 풀린다 (ProcessUserAttack 0x43a931, UseSkillAttackSingleMop 0x44d873)
-const SELF_EFFECT = { 3: 1, 4: 0, 5: 2 };
+//   n=10 (0x447b36): 효과 7 (+0x1a |= 0x80) — 걸려 있던 나쁜 효과(5, 12, 14, 16, 18)를 지운다
+//   n=11 (0x447bdb): 효과 8 (+0x1b |= 1) — 받는 피해 × v ÷ 100, v = 100 − min(50, 25 + ⌊장비 정신력 ÷ 100⌋)
+//                    (CMapServerClient::GetAttack 0x4102a3: 방어 뺀 뒤 곱한다, 최소 1. 끝나면 v = 100, OnSkillEffectExpired 0x42cce6)
+const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 10: 7, 11: 8 };
+const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.eqSpi || 0) / 100));
 const duration = (p, s) => Math.floor(p.spi / 20) + s.p;
 // 효과 2가 붙는 무기 (분류, 번호) (CMopServer::GetAttack 0x47acff~0x47ad93)
 function isGun(e) {
@@ -152,4 +156,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

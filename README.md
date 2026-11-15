@@ -220,6 +220,7 @@ data/              서버만 쓰는 자료: 몬스터 표, 맵별 배치·이벤
 | 간격 | 0.5초에 한 번 | ProcessUseSkill |
 | 명중 | 기술 번호마다 민첩성(21, 26, 27, 29, 30, 32, 36, 37, 39, 44, 50, 61, 66, 68, 69, 88, 89, 331, 334, 365, 383, 385) 또는 정신력으로 몬스터와 비교 | UseSkillAttackSingleMop, NewCheckForSingleAttack |
 | 공격 값 | 기본: 마력 소모량 (+고유 장비 보너스). 21·32·61: (근력 공격 + 장비 공격 + 마력 소모량) ÷ 2. 26, 27, 29, 30, 36, 37, 39, 44, 50, 66, 68, 69, 76 은 기술마다 고유한 식 (`server/skills.js` 주석) | UseSkillAttackSingleMop 분기표, rm3944 NewSingleAttack |
+| 66번 추가 효과 | 맞은 몬스터가 살아 있으면 지속 시간 동안 공격 사거리가 1 (원거리 공격 불가) | CMopServer::DoSkillEffect 0x4798c2, FindNextAction 0x47cfdb |
 | 흡수 | 27: 준 피해의 3/10 만큼 체력, 68: 3/10 만큼 체력·마력·기력, 76: 1/2 만큼 체력 | 0x44dcb3, 0x44deee, 0x44dfa8 |
 | 피해 | ⌊공격 값 × 위력(o) ÷ 100⌋, 최소 1. 맞은 몬스터는 공격자 쪽으로 돈다 | DoSkillAttackMop, CMopServer::GetAttack |
 
@@ -232,6 +233,8 @@ data/              서버만 쓰는 자료: 몬스터 표, 맵별 배치·이벤
 | 3 | 31번 Disguise | 정신력이 (2 × 내 정신력) 이하인 몬스터가 나를 알아보지 못함. 공격하면 풀림 | UseSkillAlone 0x44796e, CMopServer::GetCanRecognize |
 | 4 | 41번 Will Power | 몬스터에게 주는 피해 + ⌊피해/5⌋ (일반 공격·기술 모두) | rm3944 NewAttackBuffsFix, CMopServer::GetAttack |
 | 5 | 51번 Sharpshoot | 총 종류 무기를 들었을 때 피해 + ⌊피해/5⌋ | CMopServer::GetAttack 0x47acf6 |
+| 10 | 22번 | 걸려 있던 나쁜 효과(5, 12, 14, 16, 18번)를 지움 | UseSkillAlone 0x447b36 |
+| 11 | 23·62번 | 받는 피해 × v ÷ 100 (v = 100 − min(50, 25 + ⌊장비 정신력 ÷ 100⌋)), 방어를 뺀 뒤 곱하고 최소 1 | UseSkillAlone 0x447bdb, CMapServerClient::GetAttack 0x4102ce |
 | 7 | 81번 Enticement | 정신력 명중 판정 후 몬스터에 표시. 표시된 몬스터를 공격하면 명중률 +25 | UseSkillAttackSingleMop 0x44f98b, GetAttackSuccessful |
 
 지속 시간(초)은 모두 ⌊(기본+장비 정신력) ÷ 20⌋ + 기술 정보 p.
