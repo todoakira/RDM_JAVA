@@ -309,14 +309,15 @@ class World {
   // 줍기: 아이템이 놓인 자리까지 걸어가서 줍는다
   pickupCmd(p, id, run) {
     const g = this.ground.get(id); if (p.dead || !g) return;
+    if (this.fxOn(p, 9)) { p.path = []; p.target = 0; p.cast = null; p.pick = id; p.talk = 0; return; }   // 효과 9: 걸어가지 않고 줍는다
     const pa = this.findPath(p, g, 1500); if (!pa) return;
     p.path = pa; p.run = !!run; p.target = 0; p.cast = null; p.pick = id; p.talk = 0;
   }
   tryPickup(p) {
     const g = this.ground.get(p.pick);
     if (!g) { p.pick = 0; return; }
-    if (!G.same(g, p)) return;
-    p.pick = 0;
+    if (!G.same(g, p) && !this.fxOn(p, 9)) return;              // 효과 9: 떨어진 곳의 아이템도 줍는다 (ProcessGetItem 0x42edda)
+    p.pick = 0; p.path = [];
     const took = this.game.giveItem(p, g.k, g.i, g.n);
     if (took >= g.n) { this.ground.delete(g.id); this.broadcast({ t: 'gdel', id: g.id }); } else g.n -= took;
   }
@@ -502,6 +503,12 @@ class World {
     // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
     let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
     if (!d.mob && this.fxOn(d, 8, now)) dmg = Math.max(1, Math.floor(dmg * d.guard / 100));   // 효과 8 (CMapServerClient::GetAttack 0x4102ce)
+    if (a.mob && !d.mob && this.fxOn(d, 6, now)) {             // 효과 6: 체력 대신 마력 (CMopServer::Attack 0x47f58f)
+      d.mp = Math.max(0, d.mp - (2 * dmg + Math.floor(dmg / 4))); d.hitAt = now;
+      this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, k: kind, crit: crit ? 1 : 0 });
+      if (!d.mp) this.fxOff(d, 6);
+      this.game.sendStat(d); return;
+    }
     if (d.mob && !a.mob) dmg = this.mobDamage(a, dmg, now);
     this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0 });
   }

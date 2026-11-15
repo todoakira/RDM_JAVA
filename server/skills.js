@@ -124,7 +124,10 @@ const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 //   n=10 (0x447b36): 효과 7 (+0x1a |= 0x80) — 걸려 있던 나쁜 효과(5, 12, 14, 16, 18)를 지운다
 //   n=11 (0x447bdb): 효과 8 (+0x1b |= 1) — 받는 피해 × v ÷ 100, v = 100 − min(50, 25 + ⌊장비 정신력 ÷ 100⌋)
 //                    (CMapServerClient::GetAttack 0x4102a3: 방어 뺀 뒤 곱한다, 최소 1. 끝나면 v = 100, OnSkillEffectExpired 0x42cce6)
-const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 10: 7, 11: 8 };
+//   n=9  (0x447ae5): 효과 6 (+0x1a |= 0x40) — 몬스터에게 맞으면 체력 대신 마력이 2 × 피해 + ⌊피해/4⌋ 만큼 준다.
+//                    이때는 체력이 줄지 않으므로 DP 도 차지 않는다. 마력이 0 이 되면 효과가 끝난다 (CMopServer::Attack 0x47f581~0x47f5bf)
+//   n=12 (0x447c49): 효과 9 (+0x1b |= 2) — 내 자리가 아닌 곳의 아이템도 그 자리가 들어갈 수 있는 곳이면 줍는다 (ProcessGetItem 0x42edda, CrsMap::CheckEnter)
+const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 9: 6, 10: 7, 11: 8, 12: 9 };
 const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.eqSpi || 0) / 100));
 const duration = (p, s) => Math.floor(p.spi / 20) + s.p;
 // 효과 2가 붙는 무기 (분류, 번호) (CMopServer::GetAttack 0x47acff~0x47ad93)
