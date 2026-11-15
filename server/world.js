@@ -23,8 +23,8 @@ const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 �
 const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패', '장갑', '무기', '벨트', '반지', '반지', '반지', '', ''];
 // NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~86 이 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420b9b)
 const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85, 86];
-const EVENT_NAMES = { 2: '게시판', 4: '메일', 6: '은행', 8: '의사', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 20: '거래소', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동', 80: '시그너스 은행', 81: '시그너스 병원' };
-const TALK_DIST = 25;
+const EVENT_NAMES = { 2: '게시판', 4: '메일', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 20: '거래소', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동' };
+const TALK_DIST = 25, BANK_SLOTS = 20;
 const EV_WARP = 1, EV_SAFE = 5;      // 이벤트 종류 (EventNNNNN.rse)
 const GROUND_ITEM_MS = 600000;       // 바닥 아이템이 사라지는 시간: 10분 (CItemServer::RemoveOldItems 0x408b48)
 const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 초과분만큼의 % 회복 (CMapServerClient::UseItem 0x432f8d)
@@ -137,7 +137,7 @@ class World {
   enter(p, x, y) {
     const want = x === undefined ? { x: this.spawn[0], y: this.spawn[1], z: 1 } : { x, y, z: 1 };
     const t = this.nearUser(want, 10, true) || this.nearUser(want, 10) || this.nearUser({ x: this.spawn[0], y: this.spawn[1], z: 1 }, 40) || want;
-    p.world = this; p.shop = null; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.nextAt = 0;
+    p.world = this; p.shop = null; p.bankNpc = 0; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.nextAt = 0;
     this.players.set(p.id, p); this.take(p);
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
       players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
@@ -172,6 +172,8 @@ class World {
     // NPC의 이벤트 번호는 맵의 이벤트가 아니라 공용 표(EventInfo.rse)를 가리킨다 (CMapServerClient::ProcessEvent 0x41ee70)
     const e = this.game.gEvents[n.event], kind = e ? e[0] : 0;
     if (SHOP_KINDS.includes(kind) && this.game.shops[e[1]]) { this.game.openShop(p, e[1], n); return; }
+    if (kind === 8 || kind === 81) { this.game.cure(p, n); return; }
+    if (kind === 6 || kind === 80) { this.game.openBank(p, n); return; }
     const what = EVENT_NAMES[kind];
     p.send({ t: 'chat', id: 0, name: n.name, text: what ? `(${what}: 아직 구현되지 않았습니다)` : '...' });
   }
@@ -509,13 +511,72 @@ class Game {
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
   sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr }); }
+  // ---------- 저장 ----------
+  // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
+  saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
+  save(p) {
+    const d = { chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
+      hp: p.hp, mp: p.mp, sp: p.sp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y };
+    try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
+  }
+  isOnline(name) { for (const w of this.worlds.values()) for (const q of w.players.values()) if (q.name === name) return true; return false; }
   join(name, send) {
     const p = { id: this.nextId++, name, chr: 1, dir: 2, path: [], run: false, nextAt: 0, atkAt: 0, repathAt: 0, hitAt: 0, regenAt: 0, target: 0, pick: 0, talk: 0, sp: F.SP_MAX, steps: 0, spSent: 0, dead: false, exp: 0, inv: [], money: 0, send,
-      level: CFG.startLevel, bonus: F.bonusTotal(CFG.startLevel), hp: 0, fame: 0, equip: new Array(EQUIP_SLOTS).fill(null),
+      level: CFG.startLevel, bonus: F.bonusTotal(CFG.startLevel), hp: 0, fame: 0, equip: new Array(EQUIP_SLOTS).fill(null), bank: { money: 0, items: [] },
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
+    let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
+    if (d) {
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame']) if (d[k] !== undefined) p[k] = d[k];
+      if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
+      if (d.bank) p.bank = d.bank;
+    }
     this.recalc(p, true);
-    const t = this.startPoint(); t.world.enter(p, t.x, t.y);
+    if (d && !d.dead) { p.hp = Math.max(1, Math.min(p.maxHp, d.hp ?? p.maxHp)); p.mp = Math.min(p.maxMp, d.mp ?? p.maxMp); p.sp = Math.min(F.SP_MAX, d.sp ?? F.SP_MAX); }
+    const w = d && !d.dead && this.world(d.map);
+    if (w) w.enter(p, d.x, d.y); else { const t = this.startPoint(); t.world.enter(p, t.x, t.y); }
     return p;
+  }
+  // ---------- 의사 ----------
+  // 체력·마력을 가득, 기력을 2000으로 채운다. 값은 받지 않는다 (CMapServerClient::ProcessCure 0x41b810)
+  cure(p, npc) {
+    if (p.dead) return;
+    p.hp = p.maxHp; p.mp = p.maxMp; p.sp = F.SP_MAX;
+    this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp, maxHp: p.maxHp });
+    p.send({ t: 'chat', id: 0, name: npc.name, text: '치료해 드렸습니다.' });
+  }
+  // ---------- 은행 ----------
+  // 돈은 40억까지, 물건은 스무 칸. 같은 물건은 한 칸에 쌓인다. 수수료는 없다
+  // (ProcessAddBankMoney 0x41dc10, ProcessGetBankMoney 0x41e3d0, ProcessAddBankItem 0x41ddc0, ProcessGetBankItem 0x41e590)
+  openBank(p, npc) { p.bankNpc = npc.id; this.sendBank(p, npc.name); }
+  sendBank(p, name) {
+    const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0 }; };
+    p.send({ t: 'bank', name, money: p.bank.money, items: p.bank.items.map(view) });
+  }
+  bankOk(p) {
+    if (!p.bankNpc || p.dead) return false;
+    const n = p.world.npcs.find(q => q.id === p.bankNpc);
+    if (!n || G.dist(p, n) >= 25) { p.bankNpc = 0; p.send({ t: 'bankclose' }); return false; }
+    return true;
+  }
+  bankMoney(p, n, put) {
+    n = Math.floor(Number(n)); if (!this.bankOk(p) || !(n >= 1)) return;
+    if (put) { n = Math.min(n, F.MONEY_MAX - p.bank.money); if (n < 1 || n > p.money) return; p.money -= n; p.bank.money += n; }
+    else { if (n > p.bank.money) return; n = Math.min(n, F.MONEY_MAX - p.money); if (n < 1) return; p.bank.money -= n; p.money += n; }
+    this.sendInv(p); this.sendBank(p); this.save(p);
+  }
+  bankPut(p, slot, n) {
+    const it = p.inv[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !it || !(n >= 1)) return;
+    n = Math.min(n, it.n);
+    let b = p.bank.items.find(q => q.k === it.k && q.i === it.i);
+    if (!b) { if (p.bank.items.length >= BANK_SLOTS) { p.send({ t: 'chat', id: 0, name: '안내', text: '은행에 빈 칸이 없습니다.' }); return; } b = { k: it.k, i: it.i, n: 0 }; p.bank.items.push(b); }
+    b.n += n; it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
+    this.sendInv(p); this.sendStat(p); this.sendBank(p); this.save(p);
+  }
+  bankGet(p, slot, n) {
+    const b = p.bank.items[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !b || !(n >= 1)) return;
+    const took = this.giveItem(p, b.k, b.i, Math.min(n, b.n)); if (!took) return;
+    b.n -= took; if (b.n <= 0) p.bank.items.splice(slot, 1);
+    this.sendBank(p); this.save(p);
   }
   // 공격 간격: 공격 동작(동작 번호 2) 한 번이 끝나는 시간. 동작표 한 칸이 화면 한 장(50ms)이다 (Main.dll 0x10039480, Staff.dll CtPump::Get)
   attackMs(p) {

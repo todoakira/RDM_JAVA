@@ -337,6 +337,8 @@ const handlers = {
   },
   shop(m) { UI.shop(m); },
   shopclose() { UI.closeShop(); },
+  bank(m) { UI.bank(m); },
+  bankclose() { UI.closeBank(); },
   exp(m) { log(`경험치 +${m.gain.toLocaleString()}`, 'sys'); },
   lvl(m) {
     const e = ents.get(m.id); if (!e) return;
@@ -355,7 +357,7 @@ function connect(name) {
   let ready = null;
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
-    if (m.t === 'welcome') {
+    if (m.t === 'welcome') { if (typeof UI !== 'undefined') { UI.closeShop(); UI.closeBank(); }
       // 처음 접속할 때와 다른 맵으로 넘어갈 때 모두 온다
       const first = !myId; myId = 0;
       ready = loadAssets(m.map); await ready;

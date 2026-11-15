@@ -43,7 +43,7 @@
 <body>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
-<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자</div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자</div>
 <div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
 <div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i></div>
 <div id="menubar"></div>
@@ -56,6 +56,9 @@
   <div id="cstats" style="position:absolute;left:21px;top:193px;width:208px;height:17px;line-height:17px;display:flex;color:#fff"></div>
   <div class="val" id="cbonus" style="top:213px"></div><div class="val" id="cfame" style="top:238px"></div><div class="val" id="cweight" style="top:263px"></div><div class="val" id="cmoney" style="top:292px"></div>
 </div>
+<div id="winBank" class="win" style="left:280px;top:60px;width:264px;height:261px;background:url(assets/int/193.png)"><div class="x" data-close="winBank"></div>
+  <div id="bankput" title="돈 맡기기" style="position:absolute;left:30px;top:32px;width:46px;height:24px;cursor:pointer"></div>
+  <div id="bankmoney" title="돈 찾기" style="position:absolute;left:80px;top:37px;width:170px;height:17px;line-height:17px;text-align:right;color:#fff;cursor:pointer"></div><div id="bankcells"></div></div>
 <div id="winShop" class="win" style="left:280px;top:60px;width:300px;height:400px;background:url(assets/int/159.png)"><div class="x" data-close="winShop"></div><div id="shoptitle" class="txt" style="left:24px;top:16px;width:230px;height:18px;color:#ffd27a"></div><div id="shopcells"></div>
   <div id="shoptxt" class="txt" style="left:20px;top:202px;width:262px;height:156px"></div>
   <div class="sb" id="sbBuy" style="left:98px;top:367px;background-image:url(assets/int/158.png)"></div><div class="sb" id="sbSell" style="left:160px;top:367px;background-image:url(assets/int/157.png)"></div><div class="sb" id="sbCancel" style="left:224px;top:367px;background-image:url(assets/int/155.png)"></div>

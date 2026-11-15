@@ -8,7 +8,7 @@ const UI = (() => {
   // 장비 창의 칸 자리 (그림에서 잰 값). 어느 칸이 어느 부위인지는 임시 배정
   const EQ_POS = [[105, 11], [105, 65], [105, 114], [105, 178], [105, 262], [150, 167], [15, 116], [55, 165], [35, 76], [15, 165], [15, 212], [34, 252], [57, 36], [190, 167]];
   const el = id => document.getElementById(id);
-  let invTop = 0, invSel = -1, shop = null, shopMode = 'buy', shopTop = 0, shopSel = -1;
+  let invTop = 0, invSel = -1, bank = null, shop = null, shopMode = 'buy', shopTop = 0, shopSel = -1;
 
   for (const [img, x, w, act] of MENU) {
     const b = document.createElement('div'); b.className = 'mb'; b.dataset.act = act;
@@ -24,7 +24,7 @@ const UI = (() => {
   function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block'); } }
   function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
-  document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') closeShop(true); else { el(c).style.display = 'none'; marks(); } } });
+  document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') closeShop(true); else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
 
   // 아이템 그림 한 칸
   function cell(it, x, y, sel) {
@@ -45,7 +45,7 @@ const UI = (() => {
     const rows = Math.max(3, Math.ceil(inv.items.length / 4)); invTop = Math.max(0, Math.min(invTop, rows - 3));
     for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
       const slot = (invTop + r) * 4 + c, it = inv.items[slot], e = cell(it, 18 + c * 40, 18 + r * 40, slot === invSel);
-      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = () => { if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); }; }
+      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); }; }
       box.appendChild(e);
     }
     arrow(box, 175, 12, () => { invTop--; drawInvWin(); }); arrow(box, 175, 118, () => { invTop++; drawInvWin(); });
@@ -104,5 +104,17 @@ const UI = (() => {
   function openShop(m) { shop = m; shopMode = 'buy'; shopSel = -1; shopTop = 0; el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawShop(); }
   function closeShop(tell) { if (shop && tell) send({ t: 'shopclose' }); shop = null; el('winShop').style.display = 'none'; }
 
-  return { toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); }, stat: drawChr, shop: openShop, closeShop };
+  // 은행 창: 다섯 칸 × 네 줄(스무 칸)과 맡긴 돈
+  function drawBank() {
+    if (!bank) return;
+    const box = el('bankcells'); box.innerHTML = ''; el('bankmoney').textContent = bank.money.toLocaleString();
+    bank.items.forEach((it, slot) => { const e = cell(it, 34 + (slot % 5) * 40, 69 + Math.floor(slot / 5) * 40); e.title = it.name + (it.desc ? '\n' + it.desc : ''); e.ondblclick = ev => send({ t: 'bankget', slot, n: ev.shiftKey ? it.n : 1 }); box.appendChild(e); });
+  }
+  const ask = (msg, max) => { const v = Math.floor(Number(prompt(msg, String(max)))); return v >= 1 ? v : 0; };
+  el('bankput').onclick = () => { const n = bank && inv && inv.money ? ask('맡길 금액', inv.money) : 0; if (n) send({ t: 'bankmoney', n, put: 1 }); };
+  el('bankmoney').onclick = () => { const n = bank && bank.money ? ask('찾을 금액', bank.money) : 0; if (n) send({ t: 'bankmoney', n, put: 0 }); };
+  function openBank(m) { bank = { ...m, name: m.name || (bank && bank.name) }; el('winBank').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawBank(); }
+  function closeBank(tell) { if (bank && tell) send({ t: 'bankclose' }); bank = null; el('winBank').style.display = 'none'; }
+
+  return { bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); }, stat: drawChr, shop: openShop, closeShop };
 })();

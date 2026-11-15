@@ -40,6 +40,7 @@ wss.on('connection', ws => {
       if (m.t !== 'join') return;
       const name = String(m.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, CFG.maxName);
       if (!name) { send({ t: 'error', text: '이름을 입력해 주세요.' }); return; }
+      if (game.isOnline(name)) { send({ t: 'error', text: '같은 이름으로 이미 접속 중입니다.' }); return; }
       player = game.join(name, send);
       console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
       return;
@@ -56,6 +57,10 @@ wss.on('connection', ws => {
     else if (m.t === 'buy') game.buy(player, m.idx | 0, m.n);
     else if (m.t === 'sell') game.sell(player, m.slot | 0, m.n);
     else if (m.t === 'shopclose') player.shop = null;
+    else if (m.t === 'bankmoney') game.bankMoney(player, m.n, !!m.put);
+    else if (m.t === 'bankput') game.bankPut(player, m.slot | 0, m.n);
+    else if (m.t === 'bankget') game.bankGet(player, m.slot | 0, m.n);
+    else if (m.t === 'bankclose') player.bankNpc = 0;
     else if (m.t === 'chat') {
       // 시험용 명령: "/맵 3" 으로 해당 맵에 바로 이동
       const g = /^\/(?:맵|map)\s+(\d+)$/.exec(String(m.text || '').trim());
@@ -69,9 +74,11 @@ wss.on('connection', ws => {
       else world.chat(player, m.text);
     }
   });
-  ws.on('close', () => { if (player) { player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });
+  ws.on('close', () => { if (player) { game.save(player); player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });
   ws.on('error', () => {});
 });
 
 setInterval(() => game.tick(Date.now()), 50);
+// 접속 중인 캐릭터를 1분마다 저장한다
+setInterval(() => { for (const w of game.worlds.values()) for (const p of w.players.values()) game.save(p); }, 60000);
 server.listen(PORT, () => console.log(`레드문 JS 서버 시작: http://localhost:${PORT}  (맵 ${game.mapIndex.size}장, 캐릭터 그림 ${Object.keys(game.chrIndex).length}종)`));
