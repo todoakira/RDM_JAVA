@@ -1,0 +1,13 @@
+{
+  "name": "redmoon-js",
+  "version": "0.1.0",
+  "description": "레드문 JavaScript 온라인 버전 (1단계: 맵 + 다중 접속 이동)",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "convert": "node tools/convert.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

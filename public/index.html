@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>레드문 JS</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #eee; }
+  canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
+  #hud { position: fixed; top: 8px; left: 10px; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; line-height: 1.5; }
+  #hud b { color: #ffd27a; }
+  #help { position: fixed; top: 8px; right: 10px; font-size: 12px; text-align: right; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; opacity: .85; line-height: 1.5; }
+  #chat { position: fixed; left: 92px; bottom: 42px; width: min(420px, calc(100vw - 20px)); }
+  #log { max-height: 150px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+  #log .sys { color: #9fd0ff; }
+  #log .who { color: #ffd27a; }
+  #say { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 6px 8px; background: rgba(0,0,0,.55); border: 1px solid #555; color: #fff; font: inherit; font-size: 13px; outline: none; }
+  #say:focus { border-color: #c33; }
+  #login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(#2a0808, #000); }
+  #login form { text-align: center; }
+  #login h1 { font-size: 34px; letter-spacing: 6px; color: #d22; margin: 0 0 6px; }
+  #login p { margin: 0 0 20px; color: #999; font-size: 13px; }
+  #login input { padding: 10px 12px; font: inherit; font-size: 15px; width: 200px; background: #111; color: #fff; border: 1px solid #733; outline: none; }
+  #login button { padding: 10px 18px; font: inherit; font-size: 15px; background: #a11; color: #fff; border: 0; cursor: pointer; margin-left: 6px; }
+  /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
+  #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
+  .mb { position: absolute; top: 9px; height: 20px; cursor: pointer; background-position: 0 0; }
+  .mb:hover { background-position: 0 -20px; } .mb.on { background-position: 0 -40px; }
+  #gauge { display: none; position: fixed; left: 8px; bottom: 42px; width: 74px; height: 145px; background: url(assets/int/112.png); }
+  #gauge i { position: absolute; bottom: 4px; width: 9px; background-position: left bottom; background-repeat: no-repeat; }
+  .win { display: none; position: fixed; font-size: 12px; color: #e8e2b8; user-select: none; }
+  .win .x { position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; cursor: pointer; }
+  .cell { position: absolute; width: 35px; height: 35px; cursor: pointer; image-rendering: pixelated; }
+  .cell.sel { outline: 1px solid #ffd27a; }
+  .val { position: absolute; left: 107px; width: 118px; height: 17px; line-height: 17px; text-align: right; color: #fff; white-space: nowrap; }
+  .txt { position: absolute; overflow: hidden; line-height: 1.35; white-space: pre-wrap; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+  .sb { position: absolute; width: 58px; height: 18px; cursor: pointer; background-position: 0 0; } .sb:hover, .sb.on { background-position: 0 -18px; }
+  .stb { position: absolute; top: 141px; width: 52px; height: 51px; background-position: 0 0; } .stb.can { cursor: pointer; background-position: 0 -51px; }
+  #msg { margin-top: 14px; color: #f88; font-size: 13px; min-height: 18px; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud"></div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자</div>
+<div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
+<div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i></div>
+<div id="menubar"></div>
+<div id="winInv" class="win" style="right:10px;bottom:46px;width:350px;height:150px;background:url(assets/int/66.png)"><div class="x" data-close="winInv"></div><div id="invcells"></div><div id="invtxt" class="txt" style="left:200px;top:16px;width:136px;height:120px"></div></div>
+<div id="winEq" class="win" style="right:10px;bottom:206px;width:234px;height:317px;background:url(assets/int/56.png)"><div class="x" data-close="winEq"></div><div id="eqcells"></div></div>
+<div id="winChr" class="win" style="left:10px;top:60px;width:250px;height:353px;background:url(assets/int/50.png)"><div class="x" data-close="winChr"></div>
+  <div id="cface" style="position:absolute;left:19px;top:19px;width:70px;height:70px"></div><div id="cname" class="txt" style="left:96px;top:26px;width:140px;height:60px;color:#fff"></div>
+  <div class="val" id="cexp" style="top:96px"></div><div class="val" id="cnext" style="top:119px"></div>
+  <div class="stb" data-s="str" style="left:20px;background-image:url(assets/int/75.png)"></div><div class="stb" data-s="spi" style="left:73px;background-image:url(assets/int/65.png)"></div><div class="stb" data-s="dex" style="left:126px;background-image:url(assets/int/54.png)"></div><div class="stb" data-s="pow" style="left:179px;background-image:url(assets/int/48.png)"></div>
+  <div id="cstats" style="position:absolute;left:21px;top:193px;width:208px;height:17px;line-height:17px;display:flex;color:#fff"></div>
+  <div class="val" id="cbonus" style="top:213px"></div><div class="val" id="cfame" style="top:238px"></div><div class="val" id="cweight" style="top:263px"></div><div class="val" id="cmoney" style="top:292px"></div>
+</div>
+<div id="winShop" class="win" style="left:280px;top:60px;width:300px;height:400px;background:url(assets/int/159.png)"><div class="x" data-close="winShop"></div><div id="shoptitle" class="txt" style="left:24px;top:16px;width:230px;height:18px;color:#ffd27a"></div><div id="shopcells"></div>
+  <div id="shoptxt" class="txt" style="left:20px;top:202px;width:262px;height:156px"></div>
+  <div class="sb" id="sbBuy" style="left:98px;top:367px;background-image:url(assets/int/158.png)"></div><div class="sb" id="sbSell" style="left:160px;top:367px;background-image:url(assets/int/157.png)"></div><div class="sb" id="sbCancel" style="left:224px;top:367px;background-image:url(assets/int/155.png)"></div>
+</div>
+<div id="dead" style="display:none;position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);border:1px solid #733;padding:18px 26px;text-align:center">쓰러졌습니다<br><button id="restart" style="margin-top:10px;padding:8px 16px;background:#a11;color:#fff;border:0;cursor:pointer;font:inherit">다시 시작</button></div>
+<div id="login"><form id="lf">
+  <h1>RED MOON</h1><p>JavaScript 온라인 버전 · 시험판</p>
+  <input id="nm" maxlength="12" placeholder="캐릭터 이름" autocomplete="off" autofocus><button>접속</button>
+  <div id="msg"></div>
+</form></div>
+<script src="client.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
