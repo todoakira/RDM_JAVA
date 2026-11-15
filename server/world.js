@@ -29,6 +29,7 @@ const EV_WARP = 1, EV_SAFE = 5;      // 이벤트 종류 (EventNNNNN.rse)
 const GROUND_ITEM_MS = 600000;       // 바닥 아이템이 사라지는 시간: 10분 (CItemServer::RemoveOldItems 0x408b48)
 const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 초과분만큼의 % 회복 (CMapServerClient::UseItem 0x432f8d)
 
+const crypto = require('crypto');
 const G = require('./grid');         // 원작의 위치·방향·거리 계산
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
@@ -515,13 +516,26 @@ class Game {
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
   save(p) {
-    const d = { chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
+    const d = { auth: p.auth, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y };
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
+  // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
+  // 원작은 로그인 서버와 DB로 계정을 관리한다. 여기서는 저장 파일에 소금값과 scrypt 해시만 둔다.
+  auth(name, pw) {
+    pw = String(pw || ''); if (pw.length < 4 || pw.length > 64) return { error: '비밀번호는 4자 이상이어야 합니다.' };
+    let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { return { error: '저장 파일을 읽을 수 없습니다.' }; }
+    if (d && d.auth) {
+      const h = crypto.scryptSync(pw, Buffer.from(d.auth.salt, 'hex'), 32);
+      if (!crypto.timingSafeEqual(h, Buffer.from(d.auth.hash, 'hex'))) return { error: '비밀번호가 맞지 않습니다.' };
+      return { auth: d.auth };
+    }
+    const salt = crypto.randomBytes(16);
+    return { auth: { salt: salt.toString('hex'), hash: crypto.scryptSync(pw, salt, 32).toString('hex') }, created: !d };
+  }
   isOnline(name) { for (const w of this.worlds.values()) for (const q of w.players.values()) if (q.name === name) return true; return false; }
-  join(name, send) {
-    const p = { id: this.nextId++, name, chr: 1, dir: 2, path: [], run: false, nextAt: 0, atkAt: 0, repathAt: 0, hitAt: 0, regenAt: 0, target: 0, pick: 0, talk: 0, sp: F.SP_MAX, steps: 0, spSent: 0, dead: false, exp: 0, inv: [], money: 0, send,
+  join(name, send, auth) {
+    const p = { id: this.nextId++, name, auth, chr: 1, dir: 2, path: [], run: false, nextAt: 0, atkAt: 0, repathAt: 0, hitAt: 0, regenAt: 0, target: 0, pick: 0, talk: 0, sp: F.SP_MAX, steps: 0, spSent: 0, dead: false, exp: 0, inv: [], money: 0, send,
       level: CFG.startLevel, bonus: F.bonusTotal(CFG.startLevel), hp: 0, fame: 0, equip: new Array(EQUIP_SLOTS).fill(null), bank: { money: 0, items: [] },
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }

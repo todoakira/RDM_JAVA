@@ -41,7 +41,9 @@ wss.on('connection', ws => {
       const name = String(m.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, CFG.maxName);
       if (!name) { send({ t: 'error', text: '이름을 입력해 주세요.' }); return; }
       if (game.isOnline(name)) { send({ t: 'error', text: '같은 이름으로 이미 접속 중입니다.' }); return; }
-      player = game.join(name, send);
+      const a = game.auth(name, m.pw);
+      if (a.error) { send({ t: 'error', text: a.error }); return; }
+      player = game.join(name, send, a.auth); game.save(player);
       console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
       return;
     }

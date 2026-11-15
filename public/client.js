@@ -263,7 +263,7 @@ cv.addEventListener('pointermove', e => { mouse = { x: e.clientX, y: e.clientY }
 addEventListener('pointerup', () => { clearInterval(holdTimer); lastPtr = null; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('keydown', e => {
-  const typing = document.activeElement === $('say') || document.activeElement === $('nm');
+  const typing = document.activeElement === $('say') || document.activeElement === $('nm') || document.activeElement === $('pw');
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
@@ -351,9 +351,9 @@ const handlers = {
     log(`<span class="who">${esc(m.name)}</span>: ${esc(m.text)}`);
   },
 };
-function connect(name) {
+function connect(name, pw) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => send({ t: 'join', name });
+  ws.onopen = () => send({ t: 'join', name, pw });
   let ready = null;
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
@@ -371,7 +371,7 @@ function connect(name) {
       log(first ? `${esc(map.name)}에 접속했습니다.` : `${esc(map.name)}(으)로 이동했습니다.`, 'sys');
       return;
     }
-    if (m.t === 'error') { $('msg').textContent = m.text; return; }
+    if (m.t === 'error') { $('msg').textContent = m.text; ws.onclose = null; ws.close(); return; }
     if (ready) await ready;
     if (handlers[m.t] && (myId || m.t === 'stat' || m.t === 'inv')) handlers[m.t](m);
   };
@@ -384,6 +384,6 @@ $('restart').addEventListener('click', () => send({ t: 'restart' }));
 $('lf').addEventListener('submit', e => {
   e.preventDefault();
   const name = $('nm').value.trim(); if (!name) return;
-  $('msg').textContent = '접속 중...'; connect(name);
+  $('msg').textContent = '접속 중...'; connect(name, $('pw').value);
 });
 requestAnimationFrame(frame);
