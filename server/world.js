@@ -263,7 +263,15 @@ class World {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
     }
     const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
+    const before = m.hp;
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
+    const dr = SK.DRAIN[sid], dealt = before - Math.max(0, m.hp);
+    if (dr && dealt > 0 && !p.dead) {                            // 흡수: 몬스터 체력이 줄어든 만큼의 비율 (0x44dcb3, 0x44deee, 0x44dfa8)
+      if (dr.hp) p.hp = Math.min(p.maxHp, p.hp + Math.floor(dealt * dr.hp[0] / dr.hp[1]));
+      if (dr.mp) p.mp = Math.min(p.maxMp, p.mp + Math.floor(dealt * dr.mp[0] / dr.mp[1]));
+      if (dr.sp) p.sp = Math.min(F.SP_MAX, p.sp + Math.floor(dealt * dr.sp[0] / dr.sp[1]));
+      this.game.sendStat(p);
+    }
   }
   // NPC에게 말 걸기: 옆까지 걸어가면 그 NPC에 연결된 이벤트가 실행된다
   talkCmd(p, id, run) {
@@ -638,7 +646,7 @@ class Game {
       wAtk += Math.max(0, f.atk || 0); armor += Math.max(0, f.def || 0); (f.v || []).forEach((v, q) => { add[q] += v; });
       if (slot === 7 && f.range) range = f.range;
     });
-    STATS.forEach((k, q) => { p[k] = p.base[k] + add[q]; });
+    STATS.forEach((k, q) => { p[k] = p.base[k] + add[q]; }); p.eqDex = add[STATS.indexOf('dex')];   // 장비 민첩성 합 (T+0x98)
     // 공격력 = 근력에서 나온 값 + 무기 공격 합 (DoAttackMop 0x46f8a3)
     p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str); p.wAtk = wAtk; p.atk = p.strAtk + wAtk; p.minPct = F.minPct(p.str, p.dex);
     p.armor = armor; p.range = range;

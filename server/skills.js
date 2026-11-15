@@ -77,17 +77,36 @@ function mpCost(s, maxMp) {
 const DEX_HIT = new Set([21, 26, 27, 29, 30, 32, 36, 37, 39, 44, 50, 61, 66, 68, 69, 88, 89, 331, 334, 365, 383, 385]);
 const hitStat = id => DEX_HIT.has(id) ? 'dex' : 'spi';
 
-// 공격 값 (UseSkillAttackSingleMop 0x44dc24 이후의 분기표, rm3944 NewCheckForSingleAttack2 0x10003054).
-//   기본(0x44f02b): 고유 장비 보너스(T+0x34) + 마력 소모량
-//     → 1~20, 22~25, 28, 31, 33~35, 38, 40~43, 45~49, 62~65, 67, 70~75, 77~87
-//   21·32·61(0x44ddbd): (T+0x34 + T+0x30 + 장비 공격 합 + 근력 공격 + 마력 소모량) ÷ 2
-// 고유·세트 장비 보너스(T+0x30, T+0x34, T+0x38)는 아직 구현하지 않아 0이다.
-// 나머지 번호(26, 27, 29, 30, 36, 37, 39, 44, 50, 66, 68, 69, 76, 88 이상)는 고유한 식이 있어 아직 옮기지 않았다.
+// 공격 값 (UseSkillAttackSingleMop 0x44dc24 이후의 분기표 0x45139c, 0x4513e4, rm3944 NewCheckForSingleAttack2 0x10003054).
+// X = 근력 공격(T+0x18) + 장비 공격 합(T+0x2c). 고유·세트 장비 보너스(T+0x30, T+0x34, T+0x38)는 아직 구현하지 않아 0.
+//   기본(0x44f02b): T+0x34 + 마력 소모량
+//   21·32·61 (0x44ddbd): ⌊(X + 마력 소모량 + T+0x30 + T+0x34) ÷ 2⌋
+//   26 (0x44dc4e): X + ⌊X/5⌋ + T+0x30
+//   27 (0x44dc74): X + ⌊X/2⌋ + T+0x30, 그리고 준 피해의 ⌊3/10⌋ 만큼 체력 회복
+//   29·44 (0x44dce2, 0x44dd55): 2X + T+0x30
+//   30 (0x44dcfb): 2X + ⌊X/2⌋ + T+0x30
+//   36·37 (0x44dd1a): Y = X + 10 × 장비 민첩성(T+0x98) 일 때 2Y + ⌊Y/2⌋ + T+0x30
+//   39 (0x44dd31): 3Y + T+0x30
+//   50 (0x44dd92): 28 × ⌊X/10⌋ + T+0x30
+//   66 (0x44de0b): 2X + ⌊2X/4⌋ + T+0x30, 살아 있으면 몬스터 효과 13 (아직 옮기지 않음)
+//   68 (0x44de9d): 3X + ⌊X/8⌋ + T+0x30, 준 피해의 ⌊3/10⌋ 만큼 체력·마력·기력 회복
+//   69 (0x44df2e, rm3944 NewSingleAttack 0x1000318d): 3X + ⌊X/2⌋ + T+0x30
+//   76 (0x44df73): 마력 소모량 + 2 × T+0x34, 준 피해의 ⌊1/2⌋ 만큼 체력 회복
+// 88 이상은 아직 옮기지 않았다.
 const HALF = new Set([21, 32, 61]);
-const OWN = new Set([26, 27, 29, 30, 36, 37, 39, 44, 50, 66, 68, 69, 76]);
-const formulaKnown = id => id < 88 && !OWN.has(id);
+const FORMULA = {
+  26: X => X + Math.floor(X / 5), 27: X => X + Math.floor(X / 2), 29: X => 2 * X, 44: X => 2 * X, 30: X => 2 * X + Math.floor(X / 2),
+  36: (X, Y) => 2 * Y + Math.floor(Y / 2), 37: (X, Y) => 2 * Y + Math.floor(Y / 2), 39: (X, Y) => 3 * Y,
+  50: X => 28 * Math.floor(X / 10), 66: X => 2 * X + Math.floor(2 * X / 4), 68: X => 3 * X + Math.floor(X / 8), 69: X => 3 * X + Math.floor(X / 2),
+};
+// 준 피해(몬스터 체력이 실제로 준 만큼)에 따른 회복: [체력, 마력, 기력] 비율 분자/분모
+const DRAIN = { 27: { hp: [3, 10] }, 68: { hp: [3, 10], mp: [3, 10], sp: [3, 10] }, 76: { hp: [1, 2] } };
+const formulaKnown = id => id < 88;
 function attackValue(id, p, cost) {
-  if (HALF.has(id)) return Math.floor((p.strAtk + p.wAtk + cost) / 2);
+  const X = p.strAtk + p.wAtk;
+  if (HALF.has(id)) return Math.floor((X + cost) / 2);
+  if (FORMULA[id]) return FORMULA[id](X, X + 10 * (p.eqDex || 0));
+  if (id === 76) return cost;
   return cost;
 }
 // 피해 = ⌊공격 값 × 위력 ÷ 100⌋ + T+0x38 (DoSkillAttackMop 0x45f935~0x45f972). 천만이 넘으면 ⌊공격 값 ÷ 100⌋ × 위력
@@ -133,4 +152,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
