@@ -132,7 +132,11 @@ const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 //   n=28 (0x447e11): 효과 20 (+0x1c |= 0x10) — 공포. 4칸 안의, 정신력이 (2 × 주인공 정신력) 이하인 몬스터가 달아난다
 //   n=29 (0x447e62): 효과 21 (+0x1c |= 0x20) — 유인. 8칸 안의 몬스터가 다가온다
 //   (공포·유인: CMopServer::FindNextAction 0x47d06e~0x47d31b, DoNextAction 0x47c13f. 몬스터 그림 종류 0x62 는 걸리지 않는다)
-const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 9: 6, 10: 7, 11: 8, 12: 9, 27: 19, 28: 20, 29: 21 };
+//   n=6  (0x447a65): 효과 3 (+0x1a |= 8) — Hasten. 서버에서는 예약된 공격의 지연을 반으로 줄이는 데만 쓴다 (IsNormalAttackSpeed 0x4400c0, ProcessCSAttack 0x45fe3a).
+//                    이동 속도는 클라이언트가 바꾸는데 그 값은 아직 찾지 못해, 지금은 효과 표시만 된다
+//   n=13 (0x447c9a): 효과 10 (+0x1b |= 4) — Faster Reload. 총이 아니면 풀린다 (InitializeEquipmentEffect 0x437b40). 실제 장전 속도 변화는 클라이언트 쪽이며 아직 찾지 못했다
+//   n=14 (0x447ceb): 효과 11 (+0x1b |= 8) — Eye of the Hawk. 무기 사거리 + 2 (Main.dll 0x1001125b), 총이 아니면 풀린다 (0x437bd9)
+const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 6: 3, 9: 6, 10: 7, 11: 8, 12: 9, 13: 10, 14: 11, 27: 19, 28: 20, 29: 21 };
 const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.eqSpi || 0) / 100));
 const duration = (p, s) => Math.floor(p.spi / (s.n === 27 ? 5 : 20)) + s.p;
 // 효과 2가 붙는 무기 (분류, 번호) (CMopServer::GetAttack 0x47acff~0x47ad93)

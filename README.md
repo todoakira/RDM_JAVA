@@ -235,6 +235,9 @@ data/              서버만 쓰는 자료: 몬스터 표, 맵별 배치·이벤
 | 5 | 51번 Sharpshoot | 총 종류 무기를 들었을 때 피해 + ⌊피해/5⌋ | CMopServer::GetAttack 0x47acf6 |
 | 9 | 13번 Absolute Defense | 몬스터에게 맞으면 체력 대신 마력이 2 × 피해 + ⌊피해/4⌋ 줄어듦(체력이 줄지 않아 DP 도 안 참). 마력이 0 이 되면 끝남 | UseSkillAlone 0x447ae5, CMopServer::Attack 0x47f581 |
 | 12 | 33번 Psycho Kinesis | 걸어가지 않고 떨어진 곳의 아이템을 바로 주움 (원작 서버는 그 자리가 들어갈 수 있는 곳인지만 확인, 거리 제한은 클라이언트 쪽) | ProcessGetItem 0x42edda |
+| 6 | 72번 Hasten | 효과 표시만. 원작 서버는 예약된 공격 지연을 반으로 줄이는 데만 쓰고, 이동 속도는 클라이언트가 바꾸는데 그 값을 아직 찾지 못함 | UseSkillAlone 0x447a65, ProcessCSAttack 0x45fe3a |
+| 13 | 52번 Faster Reload | 효과 표시만. 총이 아니면 풀림. 장전 속도 변화는 클라이언트 쪽이며 아직 찾지 못함 | 0x447c9a, InitializeEquipmentEffect 0x437b40 |
+| 14 | 53번 Eye of the Hawk | 총을 들었을 때 무기 사거리 + 2. 총이 아니면 풀림 | 0x447ceb, Main.dll 0x1001125b |
 | 27 | 34번 Hide | 숨기(다시 쓰면 풀림, 공격하면 풀림). 지속 ⌊정신력 ÷ 5⌋ + p 초. 원작은 주인공끼리의 공격에서만 따지므로 몬스터에게는 영향 없음 | UseSkillAlone 0x447d8c |
 | 28 | 35번 Horror | 4칸 안의 몬스터 중 정신력이 (2 × 내 정신력) 이하인 것이 달아남 | FindNextAction 0x47d09e, DoNextAction 0x47c13f |
 | 29 | 43번 Roar | 8칸 안의 몬스터가 다가옴 | FindNextAction 0x47d07a·0x47d2a0 |

@@ -551,7 +551,7 @@ class World {
       if (p.target) {
         const m = this.mobs.get(p.target);
         if (!m) p.target = 0;
-        else if (G.dist(p, m) <= p.range) {
+        else if (G.dist(p, m) <= p.range + (this.fxOn(p, 11, now) && SK.isGun(p.equip[7]) ? 2 : 0)) {   // 효과 11: 총을 들었을 때 사거리 + 2
           p.path = [];
           if (now >= p.atkAt && now >= p.nextAt) { const d = G.direction(p, m); if (d !== 5) p.dir = d; p.atkAt = now + this.game.attackMs(p); this.hit(p, m, now); }
         } else if (now >= p.repathAt) {
@@ -668,6 +668,7 @@ class Game {
     // 공격력 = 근력에서 나온 값 + 무기 공격 합 (DoAttackMop 0x46f8a3)
     p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str); p.wAtk = wAtk; p.atk = p.strAtk + wAtk; p.minPct = F.minPct(p.str, p.dex);
     p.armor = armor; p.range = range;
+    if (p.fx && !SK.isGun(p.equip[7])) { let ch = false; for (const e of [10, 11]) if (p.fx[e]) { delete p.fx[e]; ch = true; } if (ch && p.world) p.world.sendFx(p); }   // 총이 아니면 효과 10·11 해제 (0x437b40)
     p.maxDp = F.dpMax(p.pow); p.dp = Math.min(p.dp || 0, p.maxDp);
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
