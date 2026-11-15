@@ -252,6 +252,9 @@ cv.addEventListener('pointerdown', e => {
   if (!map) return;
   $('say').blur(); shift = e.shiftKey; clearInterval(holdTimer);
   const m = mobAt(e.clientX / zoom + camX, e.clientY / zoom + camY);
+  // 오른쪽 단추: 고른 기술을 그 몬스터에게 쓴다. 왼쪽 단추: 일반 공격
+  if (m && e.button === 2) { if (skillSel) { targetId = m.id; send({ t: 'skill', sk: skillSel, id: m.id, run: runToggle !== shift }); } return; }
+  if (e.button === 2) return;
   if (m) { targetId = m.id; send({ t: 'attack', id: m.id, run: runToggle !== shift }); return; }
   const nc = mobAt(e.clientX / zoom + camX, e.clientY / zoom + camY, true);
   if (nc) { targetId = 0; send({ t: 'talk', id: nc.id, run: runToggle !== shift }); return; }
@@ -276,10 +279,22 @@ addEventListener('keydown', e => {
     else if (e.key === 'i' || e.key === 'I' || e.key === 'ㅑ') UI.toggle('winInv');
     else if (e.key === 'e' || e.key === 'E' || e.key === 'ㄷ') UI.toggle('winEq');
     else if (e.key === 'c' || e.key === 'C' || e.key === 'ㅊ') UI.toggle('winChr');
+    else if (/^[1-9]$/.test(e.key) && stat && stat.skills && stat.skills[e.key - 1]) { skillSel = stat.skills[e.key - 1]; drawSkills(); }
     else if (e.key === '+' || e.key === '=') zoom = Math.min(3, zoom + 1);
     else if (e.key === '-') zoom = Math.max(1, zoom - 1);
   }
 });
+// ---------- 기술 줄 ----------
+// 서버가 보내는 쓸 수 있는 기술 목록(레벨·정신력·명성으로 정해짐)을 보여 준다. 숫자 키나 누르기로 고르고, 몬스터를 오른쪽 단추로 누르면 쓴다.
+// 원작의 기술 이름·아이콘·효과 그림은 아직 클라이언트(Main.dll)에서 찾지 못해 번호로 표시한다.
+let skillSel = 0;
+function drawSkills() {
+  const bar = $('skills'); if (!bar || !stat) return;
+  const list = stat.skills || [];
+  if (!list.includes(skillSel)) skillSel = list[0] || 0;
+  bar.innerHTML = list.map((id, i) => `<button data-sk="${id}" class="${id === skillSel ? 'on' : ''}">${i + 1}. 기술 ${id}</button>`).join('');
+}
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#skills button'); if (b) { skillSel = Number(b.dataset.sk); drawSkills(); } });
 function log(html, cls) {
   const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html;
   $('log').appendChild(d); while ($('log').children.length > 8) $('log').firstChild.remove();
@@ -334,7 +349,9 @@ const handlers = {
   stat(m) {
     stat = m; const me = myId && ents.get(myId); if (me) { me.hp = m.hp; me.maxHp = m.maxHp; me.level = m.level; }
     if (typeof UI !== 'undefined') UI.stat();
+    drawSkills();
   },
+  note(m) { log(esc(m.text), 'sys'); },
   shop(m) { UI.shop(m); },
   shopclose() { UI.closeShop(); },
   exch(m) { UI.exch(m); },

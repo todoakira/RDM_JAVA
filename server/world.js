@@ -33,7 +33,8 @@ const GROUND_ITEM_MS = 600000;       // 바닥 아이템이 사라지는 시간:
 const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 초과분만큼의 % 회복 (CMapServerClient::UseItem 0x432f8d)
 
 const crypto = require('crypto');
-const G = require('./grid');         // 원작의 위치·방향·거리 계산
+const G = require('./grid');
+const SK = require('./skills');   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
 const EV_NO_ATTACK = 18, EV_MOB_OK = [0, 19, 22], EV_LURE = 22;
@@ -141,7 +142,7 @@ class World {
   enter(p, x, y) {
     const want = x === undefined ? { x: this.spawn[0], y: this.spawn[1], z: 1 } : { x, y, z: 1 };
     const t = this.nearUser(want, 10, true) || this.nearUser(want, 10) || this.nearUser({ x: this.spawn[0], y: this.spawn[1], z: 1 }, 40) || want;
-    p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.nextAt = 0;
+    p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.cast = null; p.nextAt = 0;
     this.players.set(p.id, p); this.take(p);
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
       players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
@@ -154,19 +155,41 @@ class World {
     if (p.dead || !Number.isInteger(x) || !Number.isInteger(y)) return;
     const t = this.nearUser({ x, y, z: z ? 1 : 0 }); if (!t) return;
     const pa = this.findPath(p, t); if (!pa) return;
-    p.path = pa; p.run = !!run; p.target = 0; p.pick = 0; p.talk = 0;
+    p.path = pa; p.run = !!run; p.target = 0; p.cast = null; p.pick = 0; p.talk = 0;
   }
   attackCmd(p, id, run) {
     const m = this.mobs.get(id);
     if (p.dead || !m) return;
-    p.target = id; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0;
+    p.target = id; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0; p.cast = null;
+  }
+  // 기술 쓰기: 지금은 몬스터 한 마리를 노리는 공격 기술(효과 종류 0)만 된다.
+  // 사거리 밖이면 걸어가서 쓴다. 원작은 이 걸음을 클라이언트가 하고 서버는 사거리만 확인한다 (UseSkill 0x45ed73)
+  skillCmd(p, sid, id, run) {
+    const m = this.mobs.get(id), s = SK.get(sid);
+    if (p.dead || !m || !s) return;
+    if (!SK.list(p).includes(sid)) return;
+    if (s.a !== 0 || s.n !== 0 || !(s.l > 0 && s.l < 10000) || !SK.formulaKnown(sid)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    p.cast = { sid, id }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0;
+  }
+  // 기술 한 번 (UseSkill 0x45e3xx → UseSkillAttackSingleMop 0x44d6xx → DoSkillAttackMop 0x45f890)
+  castSkill(p, m, s, sid, now) {
+    const cost = SK.mpCost(s, p.maxMp);
+    if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return; }
+    p.mp -= cost; this.game.sendStat(p);                         // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
+    const d = G.direction(p, m); if (d !== 5) p.dir = d;
+    const dex = SK.hitStat(sid) === 'dex';
+    if (F.rand100() > F.hitPct(dex ? p.dex : p.spi, dex ? m.dex : m.spi)) {
+      this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
+    }
+    const dmg = Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o));   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
+    this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
   }
   // NPC에게 말 걸기: 옆까지 걸어가면 그 NPC에 연결된 이벤트가 실행된다
   talkCmd(p, id, run) {
     const n = this.npcs.find(q => q.id === id); if (p.dead || !n) return;
     // 서버는 NPC와의 거리가 25 미만이면 이벤트를 받아 준다 (CExtraServer::IsExistExtraEvent 0x406815). 그보다 멀면 걸어간다
     if (G.dist(p, n) >= TALK_DIST) { const pa = this.findPath(p, n, 1500); if (!pa) return; pa.pop(); p.path = pa; }
-    p.run = !!run; p.target = 0; p.pick = 0; p.talk = id;
+    p.run = !!run; p.target = 0; p.cast = null; p.pick = 0; p.talk = id;
   }
   tryTalk(p) {
     const n = this.npcs.find(q => q.id === p.talk);
@@ -194,7 +217,7 @@ class World {
   pickupCmd(p, id, run) {
     const g = this.ground.get(id); if (p.dead || !g) return;
     const pa = this.findPath(p, g, 1500); if (!pa) return;
-    p.path = pa; p.run = !!run; p.target = 0; p.pick = id; p.talk = 0;
+    p.path = pa; p.run = !!run; p.target = 0; p.cast = null; p.pick = id; p.talk = 0;
   }
   tryPickup(p) {
     const g = this.ground.get(p.pick);
@@ -216,7 +239,7 @@ class World {
     const t = this.findFirstEmptyPlace(s.rect, q => this.canMop(q)); if (!t) return null;
     const st = F.mobStats(info, s.pattern);
     const m = { id: this.game.nextId++, mob: 1, s, info, pattern: s.pattern, home: t, name: s.name, chr: spriteOf(info.img), x: t.x, y: t.y, z: t.z, dir: G.DIRS[rnd(8)],
-      str: st.str, dex: st.dex, pow: st.pow, atk: st.atk, minPct: st.minPct, maxHp: st.maxHp, hp: st.maxHp, exp: st.exp,
+      str: st.str, spi: st.spi, dex: st.dex, pow: st.pow, atk: st.atk, minPct: st.minPct, maxHp: st.maxHp, hp: st.maxHp, exp: st.exp,
       // 사거리는 두 공격 범위 중 큰 값 (CMopInfo::LoadMopInfo 0x475f63)
       maxRange: Math.max(info.range, info.range2 || 0),
       // 배치표의 아이템 칸 다섯 중 하나를 무작위로 지닌다. 빈 칸이면 아무것도 없다 (InitializeMopInstance 0x4795a3)
@@ -381,8 +404,12 @@ class World {
     if (!crit && F.rand100() > F.hitPct(a.dex, defDex)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp }); return; }
     // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
     const dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
+    this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0 });
+  }
+  applyDamage(a, d, dmg, now, extra) {
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
-    this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, dmg, crit: crit ? 1 : 0, hp: d.hp });
+    if (d.mob && !a.mob) { const dd = G.direction(d, a); if (dd !== 5) d.dir = dd; }   // 맞은 몬스터는 공격자를 본다 (DoSkillAttackMop 0x45f8d3)
+    this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, ...extra });
     if (d.hp > 0) return;
     this.broadcast({ t: 'die', id: d.id });
     if (d.mob) {
@@ -391,7 +418,7 @@ class World {
       this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
       if (!a.mob) this.game.gainExp(a, d.exp);
     } else {
-      d.dead = true; d.target = 0; d.path = []; d.pick = 0; d.talk = 0;
+      d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
       this.game.deathPenalty(d);
     }
   }
@@ -419,6 +446,18 @@ class World {
           p.repathAt = now + 400;
           const pa = this.findPath(p, m, 1500);
           if (pa) { pa.pop(); p.path = pa; } else p.target = 0;
+        }
+      }
+      if (p.cast) {
+        const m = this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
+        if (!m || !s) p.cast = null;
+        else if (G.dist(p, m) <= s.l && this.noObstacle(p, m)) {
+          p.path = [];
+          if (now >= (p.skillAt || 0) && now >= p.nextAt) { const sid = p.cast.sid; p.cast = null; p.skillAt = now + SK.USE_MS; this.castSkill(p, m, s, sid, now); }
+        } else if (now >= p.repathAt) {
+          p.repathAt = now + 400;
+          const pa = this.findPath(p, m, 1500);
+          if (pa) { pa.pop(); p.path = pa; } else p.cast = null;
         }
       }
       if (p.pick && now >= p.nextAt) this.tryPickup(p);
@@ -511,11 +550,11 @@ class Game {
     });
     STATS.forEach((k, q) => { p[k] = p.base[k] + add[q]; });
     // 공격력 = 근력에서 나온 값 + 무기 공격 합 (DoAttackMop 0x46f8a3)
-    p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.atk = F.attack(p.str) + wAtk; p.minPct = F.minPct(p.str, p.dex);
+    p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str); p.wAtk = wAtk; p.atk = p.strAtk + wAtk; p.minPct = F.minPct(p.str, p.dex);
     p.armor = armor; p.range = range;
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
-  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr }); }
+  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p) }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }

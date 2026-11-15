@@ -42,9 +42,13 @@
   .sb { position: absolute; width: 58px; height: 18px; cursor: pointer; background-position: 0 0; } .sb:hover, .sb.on { background-position: 0 -18px; }
   .stb { position: absolute; top: 141px; width: 52px; height: 51px; background-position: 0 0; } .stb.can { cursor: pointer; background-position: 0 -51px; }
   #msg { margin-top: 14px; color: #f88; font-size: 13px; min-height: 18px; }
+  #skills { position: fixed; left: 50%; transform: translateX(-50%); bottom: 64px; display: flex; gap: 4px; z-index: 5; }
+  #skills button { font: inherit; font-size: 12px; background: rgba(0,0,0,.65); color: #ddd; border: 1px solid #555; padding: 3px 7px; cursor: pointer; }
+  #skills button.on { border-color: #e33; color: #fff; }
 </style>
 </head>
 <body>
+<div id="skills"></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
 <div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자</div>

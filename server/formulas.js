@@ -21,10 +21,13 @@ function minPct(str, dex) {
   const t = str + dex; if (!t) return 75;
   return Math.min(100, dex >= str ? 75 + fl(75 * (dex - str) / t) : 75 - fl(75 * (str - dex) / t));
 }
-// 명중률(%): 공격자와 방어자의 민첩성 비교. CMapServerServer::GetAttackSuccessful (0x45fab0)
+// 명중률(%). 원래 식(GetAttackSuccessful 0x45fab0: 50 ± 50·|a−d|/(a+d))은 3.944 서버에서
+// rm3944.dll 의 NewAccuracyFix(0x1000374a)가 덮어써서 a ÷ d × 150 (FPU 반올림, 최대 100)이 된다. 일반 공격·기술·몬스터 공격 모두 이 함수를 쓴다.
+// 성공 여부: rand() % 100 이 이 값 이하면 명중 (NewMasterEffect 0x100024d9 뒤의 비교 0x45fc7c)
+const roundEven = v => { const f = Math.floor(v), r = v - f; return r > 0.5 || (r === 0.5 && f % 2) ? f + 1 : f; };
 function hitPct(a, d) {
-  const t = a + d; if (!t) return 50;
-  return Math.min(100, a > d ? 50 + fl(50 * (a - d) / t) : 50 - fl(50 * (d - a) / t));
+  if (!d) return 100;                                    // 0으로 나누면 FPU 정수 변환이 0x80000000 이 되어 부호 없는 비교에서 100으로 잘린다
+  return Math.min(100, roundEven(a / d * 150));
 }
 // 치명타 확률(%): 피해 2배, 반드시 명중. DoAttackMop (0x46f649), CMopServer::Attack (0x47f02c)
 function critPct(a, d) {
