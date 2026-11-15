@@ -351,9 +351,9 @@ const handlers = {
     log(`<span class="who">${esc(m.name)}</span>: ${esc(m.text)}`);
   },
 };
-function connect(name, pw) {
+function connect(name, pw, chr) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => send({ t: 'join', name, pw });
+  ws.onopen = () => send({ t: 'join', name, pw, chr });
   let ready = null;
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
@@ -380,10 +380,12 @@ function connect(name, pw) {
     else $('msg').textContent = '서버에 연결할 수 없습니다.';
   };
 }
+// 직업 고르기: 얼굴 그림은 원작 캐릭터 창의 것 (assets/int 113~121)
+$('classes').innerHTML = CLASS_KR.map((n, i) => `<label><input type="radio" name="chr" value="${i}"${i === 1 ? ' checked' : ''}><img src="assets/int/${[113, 114, 115, 116, 118, 117, 121, 119, 120][i]}.png"><span>${n}</span></label>`).join('');
 $('restart').addEventListener('click', () => send({ t: 'restart' }));
 $('lf').addEventListener('submit', e => {
   e.preventDefault();
   const name = $('nm').value.trim(); if (!name) return;
-  $('msg').textContent = '접속 중...'; connect(name, $('pw').value);
+  $('msg').textContent = '접속 중...'; connect(name, $('pw').value, Number(new FormData($('lf')).get('chr')));
 });
 requestAnimationFrame(frame);

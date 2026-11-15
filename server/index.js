@@ -43,7 +43,7 @@ wss.on('connection', ws => {
       if (game.isOnline(name)) { send({ t: 'error', text: '같은 이름으로 이미 접속 중입니다.' }); return; }
       const a = game.auth(name, m.pw);
       if (a.error) { send({ t: 'error', text: a.error }); return; }
-      player = game.join(name, send, a.auth); game.save(player);
+      player = game.join(name, send, a.auth, a.created && Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1); game.save(player);
       console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
       return;
     }

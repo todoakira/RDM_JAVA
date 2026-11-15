@@ -22,6 +22,9 @@
   #login h1 { font-size: 34px; letter-spacing: 6px; color: #d22; margin: 0 0 6px; }
   #login p { margin: 0 0 20px; color: #999; font-size: 13px; }
   #login input { padding: 10px 12px; font: inherit; font-size: 15px; width: 200px; background: #111; color: #fff; border: 1px solid #733; outline: none; }
+  #classes { display: flex; gap: 6px; justify-content: center; margin-top: 16px; }
+  #classes label { cursor: pointer; font-size: 12px; color: #aaa; } #classes img { display: block; width: 70px; height: 70px; border: 2px solid #333; }
+  #classes input { display: none; } #classes input:checked + img { border-color: #d22; } #classes input:checked ~ span { color: #fff; }
   #login button { padding: 10px 18px; font: inherit; font-size: 15px; background: #a11; color: #fff; border: 0; cursor: pointer; margin-left: 6px; }
   /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
   #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
@@ -67,6 +70,7 @@
 <div id="login"><form id="lf">
   <h1>RED MOON</h1><p>JavaScript 온라인 버전 · 시험판</p>
   <input id="nm" maxlength="12" placeholder="캐릭터 이름" autocomplete="off" autofocus><input id="pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상, 처음이면 새로 정함)" autocomplete="off"><button>접속</button>
+  <div id="classes"></div><div style="color:#888;font-size:12px;margin-top:6px">새 캐릭터를 만들 때만 직업을 고릅니다. 이미 있는 이름이면 저장된 직업 그대로 들어갑니다.</div>
   <div id="msg"></div>
 </form></div>
 <script src="client.js"></script>
