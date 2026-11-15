@@ -12,7 +12,7 @@ const FRAME_MS = 50;
 const CFG = {
   stepFrames: { walk: [6, 8], run: [3, 4] },   // [대각선, 가로·세로] 한 걸음에 드는 장 수
   maxPath: 4000,          // 길찾기 탐색 한도(칸)
-  maxName: 12,
+  maxName: 14,
   maxChat: 120,
   viewX: 26, viewY: 36,   // 이 거리(칸) 안의 일만 알려 준다
   startLevel: Math.max(1, Math.min(F.MAX_LEVEL, Number(process.env.START_LEVEL) || 1)),   // 시험용: START_LEVEL=100 npm start
@@ -25,6 +25,9 @@ const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패
 const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85, 86];
 const EVENT_NAMES = { 2: '게시판', 4: '메일', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동' };
 const TALK_DIST = 25, BANK_SLOTS = 20;
+const NEW_CHAR = { money: 300, hp: 50, mp: 50, sp: 0, items: [[4, 1, 5], [5, 93, 1], [5, 94, 1], [5, 95, 1]],
+  skills: [[1, 91], [11, 101], [21, 111], [31, 121], [41, 131], [51, 141], [71, 161], [61, 151], [81, 171]],   // 직업 번호 → [기술, 특수 기술]
+  start: { map: 22, x: 8, y: 14 }, startBeginner: { map: 68, x: 6, y: 45 } };
 const EV_WARP = 1, EV_SAFE = 5;      // 이벤트 종류 (EventNNNNN.rse)
 const GROUND_ITEM_MS = 600000;       // 바닥 아이템이 사라지는 시간: 10분 (CItemServer::RemoveOldItems 0x408b48)
 const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 초과분만큼의 % 회복 (CMapServerClient::UseItem 0x432f8d)
@@ -517,7 +520,7 @@ class Game {
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
   save(p) {
-    const d = { auth: p.auth, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
+    const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y };
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
@@ -535,7 +538,10 @@ class Game {
     return { auth: { salt: salt.toString('hex'), hash: crypto.scryptSync(pw, salt, 32).toString('hex') }, created: !d };
   }
   isOnline(name) { for (const w of this.worlds.values()) for (const q of w.players.values()) if (q.name === name) return true; return false; }
-  join(name, send, auth, chr = 1) {
+  // 새 캐릭터의 처음 상태. 원작 로그인 서버가 DB에 넣는 값 그대로다 (svIP.exe CIPClient::ProcessNewCharacterID 0x404a10, 4.5판도 같음):
+  //   레벨 1, 네 능력치 10, 보너스 2, 체력 50, 마력 50, 기력 0, 돈 300, 붕어빵 5개와 주택가 1·2·3 지도, 직업별 기술 둘.
+  //   시작 위치는 접속할 때 고른다: 초보존(맵 68의 6, 45) 또는 주택가2 병원(맵 22의 8, 14) (CIPClient::ProcessPacket 0x4016b6)
+  join(name, send, auth, chr = 1, beginner = false) {
     const p = { id: this.nextId++, name, auth, chr, dir: 2, path: [], run: false, nextAt: 0, atkAt: 0, repathAt: 0, hitAt: 0, regenAt: 0, target: 0, pick: 0, talk: 0, sp: F.SP_MAX, steps: 0, spSent: 0, dead: false, exp: 0, inv: [], money: 0, send,
       level: CFG.startLevel, bonus: F.bonusTotal(CFG.startLevel), hp: 0, fame: 0, equip: new Array(EQUIP_SLOTS).fill(null), bank: { money: 0, items: [] },
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
@@ -545,7 +551,10 @@ class Game {
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
       if (d.bank) p.bank = d.bank;
     }
+    if (!d) { p.money = NEW_CHAR.money; p.inv = NEW_CHAR.items.map(([k, i, n]) => ({ k, i, n })); p.skills = NEW_CHAR.skills[chr]; }
+    else if (d.skills) p.skills = d.skills;
     this.recalc(p, true);
+    if (!d) { p.hp = NEW_CHAR.hp; p.mp = NEW_CHAR.mp; p.sp = NEW_CHAR.sp; const s0 = beginner ? NEW_CHAR.startBeginner : NEW_CHAR.start; const w0 = this.world(s0.map); if (w0) { w0.enter(p, s0.x, s0.y); return p; } }
     if (d && !d.dead) { p.hp = Math.max(1, Math.min(p.maxHp, d.hp ?? p.maxHp)); p.mp = Math.min(p.maxMp, d.mp ?? p.maxMp); p.sp = Math.min(F.SP_MAX, d.sp ?? F.SP_MAX); }
     const w = d && !d.dead && this.world(d.map);
     if (w) w.enter(p, d.x, d.y); else { const t = this.startPoint(); t.world.enter(p, t.x, t.y); }

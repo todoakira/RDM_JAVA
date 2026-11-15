@@ -25,6 +25,7 @@
   #classes { display: flex; gap: 6px; justify-content: center; margin-top: 16px; }
   #classes label { cursor: pointer; font-size: 12px; color: #aaa; } #classes img { display: block; width: 70px; height: 70px; border: 2px solid #333; }
   #classes input { display: none; } #classes input:checked + img { border-color: #d22; } #classes input:checked ~ span { color: #fff; }
+  #login input[type=radio] { width: auto; padding: 0; }
   #login button { padding: 10px 18px; font: inherit; font-size: 15px; background: #a11; color: #fff; border: 0; cursor: pointer; margin-left: 6px; }
   /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
   #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
@@ -69,8 +70,8 @@
 <div id="dead" style="display:none;position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);border:1px solid #733;padding:18px 26px;text-align:center">쓰러졌습니다<br><button id="restart" style="margin-top:10px;padding:8px 16px;background:#a11;color:#fff;border:0;cursor:pointer;font:inherit">다시 시작</button></div>
 <div id="login"><form id="lf">
   <p>JavaScript 온라인 버전 · 시험판</p>
-  <input id="nm" maxlength="12" placeholder="캐릭터 이름" autocomplete="off" autofocus><input id="pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상, 처음이면 새로 정함)" autocomplete="off"><button>접속</button>
-  <div id="classes"></div><div style="color:#888;font-size:12px;margin-top:6px">새 캐릭터를 만들 때만 직업을 고릅니다. 이미 있는 이름이면 저장된 직업 그대로 들어갑니다.</div>
+  <input id="nm" maxlength="14" placeholder="캐릭터 이름" autocomplete="off" autofocus><input id="pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상, 처음이면 새로 정함)" autocomplete="off"><button>접속</button>
+  <div id="classes"></div><div style="color:#aaa;font-size:13px;margin-top:8px">시작 위치: <label><input type="radio" name="beginner" value="1" checked> 초보존</label> <label><input type="radio" name="beginner" value="0"> 주택가2 병원</label></div><div style="color:#888;font-size:12px;margin-top:6px">직업과 시작 위치는 새 캐릭터를 만들 때만 적용됩니다. 이미 있는 이름이면 저장된 그대로 들어갑니다.</div>
   <div id="msg"></div>
 </form></div>
 <script src="client.js"></script>

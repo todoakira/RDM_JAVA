@@ -353,9 +353,9 @@ const handlers = {
     log(`<span class="who">${esc(m.name)}</span>: ${esc(m.text)}`);
   },
 };
-function connect(name, pw, chr) {
+function connect(name, pw, chr, beginner) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => send({ t: 'join', name, pw, chr });
+  ws.onopen = () => send({ t: 'join', name, pw, chr, beginner });
   let ready = null;
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
@@ -388,6 +388,6 @@ $('restart').addEventListener('click', () => send({ t: 'restart' }));
 $('lf').addEventListener('submit', e => {
   e.preventDefault();
   const name = $('nm').value.trim(); if (!name) return;
-  $('msg').textContent = '접속 중...'; connect(name, $('pw').value, Number(new FormData($('lf')).get('chr')));
+  $('msg').textContent = '접속 중...'; const fd = new FormData($('lf')); connect(name, $('pw').value, Number(fd.get('chr')), fd.get('beginner') === '1');
 });
 requestAnimationFrame(frame);
