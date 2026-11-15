@@ -197,15 +197,25 @@ const UI = (() => {
   });
   // 원작 도움말: 기술 창에서 두 번 누르거나 오른쪽 단추로 누르면 그 기술이 빠른 메뉴에 올라간다 (Message.ctf 1/1/126~143)
   const pickSk = e => { const c = e.target.closest('.skc'); if (!c || c.dataset.sp) return false; selectSkill(Number(c.dataset.sk)); return true; };
-  el('winSk').addEventListener('dblclick', pickSk);
+  // 두 번 클릭: 대상이 필요 없는 기술은 바로 쓰고, 필요한 기술은 골라 둔다
+  el('winSk').addEventListener('dblclick', e => { if (!pickSk(e)) return; if (isSelfSkill(skillSel)) useSelfSkill(skillSel); });
   el('winSk').addEventListener('contextmenu', e => { e.preventDefault(); pickSk(e); });
   el('winSk').addEventListener('mouseover', e => { const c = e.target.closest('.skc'); const v = c ? Number(c.dataset.sk) : 0; if (v !== skHover) { skHover = v; drawSk(); } });
   el('winSk').addEventListener('mouseleave', () => { skHover = 0; drawSk(); });
+  setInterval(() => { if (fxList.length) drawFx(); }, 1000);
+  const isSelfSkill = id => !!(skInfo && skInfo[id] && skInfo[id].l === 0);
+  // 걸려 있는 효과: [효과 번호, 남은 초, 건 기술]. 서버는 끝날 때만 다시 알려 주므로 초는 여기서 센다.
+  let fxList = [], fxAt = 0;
+  function drawFx(list) {
+    if (list) { fxList = list; fxAt = performance.now(); }
+    const gone = (performance.now() - fxAt) / 1000;
+    el('fxlist').innerHTML = fxList.map(([e, sec, id]) => `<div>${esc(id ? skText(id).name : '효과 ' + e)} ${Math.max(0, Math.ceil(sec - gone))}초</div>`).join('');
+  }
   function drawQuickSkill() {
     const id = typeof skillSel !== 'undefined' ? skillSel : 0;
     el('skquick').style.cssText = id ? skIcon(id, 0) : 'display:none';
     el('skquick').title = id ? skText(id).name : '';
   }
 
-  return { menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

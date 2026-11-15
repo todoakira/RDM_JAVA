@@ -95,4 +95,24 @@ const damage = (atk, power) => atk > 10000000 ? Math.floor(atk / 100) * power : 
 
 const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 
-module.exports = { get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+// ---------- 지속 효과 ----------
+// 자기에게 거는 기술 (UseSkillAlone 0x4478d0, 분기는 rm3944 NewUseSkillAlone 0x100012e8: 효과 종류 n − 1 로 표를 찾는다).
+//   n=1 (0x4478f4): 모자란 체력의 절반과 지금 마력 중 작은 만큼 마력을 쓰고 그 두 배를 체력으로 채운다. 24번만은 마력 소모량을 쓰고 체력을 가득 채운다.
+//   n=3 (0x44796e): 효과 1 (몸 표시 +0x1a |= 2) — 위장. 정신력이 (2 × 주인공 정신력) 이하인 몬스터가 알아보지 못한다 (CMopServer::GetCanRecognize 0x47d749)
+//   n=4 (0x4479bf): 효과 0 (+0x1a |= 1) — 몬스터에게 주는 피해 + ⌊피해/5⌋ (rm3944 NewAttackBuffsFix 0x10003cb4)
+//   n=5 (0x447a12): 효과 2 (+0x1a |= 4) — 총 종류 무기를 들었을 때 피해 + ⌊피해/5⌋ (CMopServer::GetAttack 0x47acf6)
+// 지속 시간(초) = ⌊(기본+장비 정신력) ÷ 20⌋ + p. 효과 1은 공격하면 바로 풀린다 (ProcessUserAttack 0x43a931, UseSkillAttackSingleMop 0x44d873)
+const SELF_EFFECT = { 3: 1, 4: 0, 5: 2 };
+const duration = (p, s) => Math.floor(p.spi / 20) + s.p;
+// 효과 2가 붙는 무기 (분류, 번호) (CMopServer::GetAttack 0x47acff~0x47ad93)
+function isGun(e) {
+  if (!e) return false;
+  const k = e.k, i = e.i;
+  if (k === 1 && ((i >= 52 && i <= 63) || i === 137 || i === 138 || i === 240 || i === 241 || (i >= 190 && i <= 194) || (i >= 68 && i <= 72) || i === 145 || i === 146)) return true;
+  return k === 6 && [84, 114, 134, 154, 174, 194].includes(i);
+}
+// 몬스터에게 거는 약화(n=7, 81번): 명중하면(정신력 대 몬스터 정신력, GetAttackSuccessful) 몬스터 효과 4 (+0x1a |= 0x10),
+// 지속 ⌊정신력/20⌋ + p 초 (UseSkillAttackSingleMop 0x44f98b, CMopServer::DoSkillEffect 0x479771).
+// 이 표시가 붙은 몬스터를 공격하면 명중률 +25 (GetAttackSuccessful 0x45fc3a, 최대 100)
+
+module.exports = { SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

@@ -168,20 +168,58 @@ class World {
     const m = this.mobs.get(id), s = SK.get(sid);
     if (p.dead || !m || !s) return;
     if (!SK.list(p).includes(sid)) return;
-    if (s.a !== 0 || s.n !== 0 || !(s.l > 0 && s.l < 10000) || !SK.formulaKnown(sid)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    if (s.a !== 0 || !(s.n === 0 && SK.formulaKnown(sid) || s.n === 7) || !(s.l > 0 && s.l < 10000)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
     p.cast = { sid, id }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0;
   }
+  // 자기에게 쓰는 기술 (사거리 0)
+  selfSkillCmd(p, sid) {
+    const s = SK.get(sid), now = Date.now();
+    if (p.dead || !s || !SK.list(p).includes(sid)) return;
+    if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    if (now < (p.skillAt || 0)) return;
+    const cost = SK.mpCost(s, p.maxMp);
+    if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return; }
+    p.skillAt = now + SK.USE_MS;
+    if (s.n === 1) {
+      if (sid === 24) { p.mp -= cost; p.hp = p.maxHp; }
+      else { const use = Math.min(Math.floor((p.maxHp - Math.min(p.hp, p.maxHp)) / 2), p.mp); p.mp -= use; p.hp = Math.min(p.maxHp, p.hp + use * 2); }
+    } else {
+      p.mp -= cost;
+      (p.fx ||= {})[SK.SELF_EFFECT[s.n]] = now + SK.duration(p, s) * 1000; (p.fxSk ||= {})[SK.SELF_EFFECT[s.n]] = sid;
+      this.sendFx(p);
+    }
+    this.near(p, { t: 'cast', id: p.id, sk: sid });
+    this.game.sendStat(p);
+  }
+  fxOn(o, e, now = Date.now()) { return !!(o.fx && o.fx[e] > now); }
+  fxOff(p, e) { if (p.fx && p.fx[e]) { delete p.fx[e]; this.sendFx(p); } }
+  sendFx(p) { const now = Date.now(); p.send({ t: 'fx', fx: Object.entries(p.fx || {}).filter(([, t]) => t > now).map(([e, t]) => [Number(e), Math.ceil((t - now) / 1000), (p.fxSk || {})[e] || 0]) }); }
+  // 몬스터가 받는 피해에 공격자 효과를 곱한다 (CMopServer::GetAttack 0x47acb0, rm3944 NewAttackBuffsFix)
+  mobDamage(a, dmg, now) {
+    if (this.fxOn(a, 0, now)) dmg += Math.floor(dmg / 5);
+    if (this.fxOn(a, 2, now) && SK.isGun(a.equip && a.equip[7])) dmg += Math.floor(dmg / 5);
+    return Math.max(1, dmg);
+  }
+  // 명중률에 몬스터 약화(+25)를 더한다 (GetAttackSuccessful 0x45fc3a)
+  hitChance(a, d, base, now) { return Math.min(100, base + (d.mob && this.fxOn(d, 4, now) ? 25 : 0)); }
   // 기술 한 번 (UseSkill 0x45e3xx → UseSkillAttackSingleMop 0x44d6xx → DoSkillAttackMop 0x45f890)
   castSkill(p, m, s, sid, now) {
     const cost = SK.mpCost(s, p.maxMp);
     if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return; }
     p.mp -= cost; this.game.sendStat(p);                         // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
+    this.fxOff(p, 1);                                            // 공격 기술을 쓰면 위장이 풀린다 (0x44d873)
     const d = G.direction(p, m); if (d !== 5) p.dir = d;
+    if (s.n === 7) {                                             // 81번 약화 (0x44f98b)
+      if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, m.spi), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return; }
+      (m.fx ||= {})[4] = now + SK.duration(p, s) * 1000;
+      this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
+      return;
+    }
     const dex = SK.hitStat(sid) === 'dex';
-    if (F.rand100() > F.hitPct(dex ? p.dex : p.spi, dex ? m.dex : m.spi)) {
+    if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? p.dex : p.spi, dex ? m.dex : m.spi), now)) {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
     }
-    const dmg = Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o));   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
+    const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
   }
   // NPC에게 말 걸기: 옆까지 걸어가면 그 NPC에 연결된 이벤트가 실행된다
@@ -275,6 +313,8 @@ class World {
     // 명성 값이 양수인 몬스터는 명성이 양수인 주인공을, 음수인 몬스터는 음수인 주인공을 건드리지 않는다
     const f = m.info.fame || 0; if ((f > 0 && u.fame > 0) || (f < 0 && u.fame < 0)) return false;
     if (m.info.img === 87) return false;
+    // 위장(효과 1): 몬스터 정신력이 2 × 주인공 정신력 이하면 알아보지 못한다. 원작 값은 DB 정신력(+0x4364)과 효과 값(+0x432c, 이 기술은 0)
+    if (this.fxOn(u, 1) && m.spi <= 2 * u.base.spi) return false;
     return true;
   }
   // 몬스터 주변의 관리 영역: 가로 ±10칸, 세로 ±13칸 (CMapServerServer::SetManagementRect 0x468220)
@@ -401,9 +441,11 @@ class World {
     // 치명타면 반드시 맞고 피해 2배, 아니면 명중 판정
     const crit = F.rand100() < F.critPct(a.dex, d.dex);
     const defDex = d.mob ? d.dex : Math.floor(d.dex * F.PLAYER_DEX_DEFENCE);
-    if (!crit && F.rand100() > F.hitPct(a.dex, defDex)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp }); return; }
+    if (!a.mob) this.fxOff(a, 1);                                // 공격하면 위장이 풀린다 (ProcessUserAttack 0x43a931)
+    if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(a.dex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp }); return; }
     // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
-    const dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
+    let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
+    if (d.mob && !a.mob) dmg = this.mobDamage(a, dmg, now);
     this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0 });
   }
   applyDamage(a, d, dmg, now, extra) {
@@ -448,6 +490,7 @@ class World {
           if (pa) { pa.pop(); p.path = pa; } else p.target = 0;
         }
       }
+      if (p.fx) { let ch = false; for (const e in p.fx) if (p.fx[e] <= now) { delete p.fx[e]; ch = true; } if (ch) this.sendFx(p); }   // 효과 시간 끝 (OnSkillEffectExpired)
       if (p.cast) {
         const m = this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
         if (!m || !s) p.cast = null;

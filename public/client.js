@@ -253,8 +253,11 @@ cv.addEventListener('pointerdown', e => {
   $('say').blur(); shift = e.shiftKey; clearInterval(holdTimer);
   const m = mobAt(e.clientX / zoom + camX, e.clientY / zoom + camY);
   // 오른쪽 단추: 고른 기술을 그 몬스터에게 쓴다. 왼쪽 단추: 일반 공격
-  if (m && e.button === 2) { if (skillSel) { targetId = m.id; send({ t: 'skill', sk: skillSel, id: m.id, run: runToggle !== shift }); } return; }
-  if (e.button === 2) return;
+  if (e.button === 2) {
+    if (skillSel && UI.isSelfSkill(skillSel)) useSelfSkill(skillSel);
+    else if (m && skillSel) { targetId = m.id; send({ t: 'skill', sk: skillSel, id: m.id, run: runToggle !== shift }); }
+    return;
+  }
   if (m) { targetId = m.id; send({ t: 'attack', id: m.id, run: runToggle !== shift }); return; }
   const nc = mobAt(e.clientX / zoom + camX, e.clientY / zoom + camY, true);
   if (nc) { targetId = 0; send({ t: 'talk', id: nc.id, run: runToggle !== shift }); return; }
@@ -297,6 +300,7 @@ addEventListener('keydown', e => {
 const SKILL_KEYS = ['q', 'w', 'e', 'r', 't', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v'];
 let skillSel = 0;
 function selectSkill(id) { skillSel = id; drawSkills(); }
+function useSelfSkill(id) { send({ t: 'skill', sk: id }); }
 function drawSkills() {
   const list = (stat && stat.skills) || [];
   if (skillSel && !list.includes(skillSel)) skillSel = 0;
@@ -359,6 +363,8 @@ const handlers = {
     drawSkills();
   },
   note(m) { log(esc(m.text), 'sys'); },
+  cast(m) { const a = ents.get(m.id); if (a) { a.act = 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; } },
+  fx(m) { UI.fx(m.fx); },
   shop(m) { UI.shop(m); },
   shopclose() { UI.closeShop(); },
   exch(m) { UI.exch(m); },
