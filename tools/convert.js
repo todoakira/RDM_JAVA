@@ -5,7 +5,7 @@
 // 일부만:     node tools/convert.js <클라이언트 폴더> --map 1,2 --chr 1,21 [--server ...]
 const fs = require('fs');
 const path = require('path');
-const { findFile, parseLst, parseRmd, RleFile, parseRmm, encodePng } = require('./formats');
+const { Reader, findFile, parseLst, parseRmd, RleFile, parseRmm, encodePng } = require('./formats');
 const { spriteOf } = require('../server/sprites');
 
 const args = process.argv.slice(2);
@@ -296,6 +296,19 @@ function convertServer(mapInfo) {
   }
   fs.writeFileSync(path.join(DATA, 'shops.json'), JSON.stringify(shops));
   console.log(`NPC 이벤트 ${Object.keys(gev).length}개, 상점 ${Object.keys(shops).length}곳`);
+  // skill00.rmi: 기술 정보. 머리말, 개수, 그리고 기술마다 아래 순서의 값 (CrSkillInfo::Serialize 0x485750 의 읽는 순서와 크기 그대로).
+  // 값 하나하나의 뜻은 기술을 쓰는 함수들(UseSkill*, DoSkillEffect)을 읽어야 정해진다. 지금은 읽은 순서대로 a~p 로만 내보낸다.
+  //   a 바이트(0 기술, 1 특수 기술), b 문자열, c 문자열(직업 번호), d 정수, e 바이트, f 바이트, g·h·i 정수, j 바이트, k 정수, l 2바이트, m 정수, n 바이트, o·p 정수
+  const sk = sub('Skill', 'skill00.rmi');
+  if (sk) {
+    const r = new Reader(fs.readFileSync(sk)); r.str(); const n = r.i32(), skills = {};
+    for (let i = 0; i < n; i++) {
+      const v = { a: r.u8(), b: r.str(), c: r.str(), d: r.i32(), e: r.u8(), f: r.u8(), g: r.i32(), h: r.i32(), i: r.i32(), j: r.u8(), k: r.i32(), l: r.i16() & 0xffff, m: r.i32(), n: r.u8(), o: r.i32(), p: r.i32() };
+      if (v.b !== '' || v.d) skills[i] = v;
+    }
+    fs.writeFileSync(path.join(DATA, 'skills.json'), JSON.stringify(skills));
+    console.log(`기술 ${Object.keys(skills).length}개`);
+  }
   let nSpawn = 0, nWarp = 0, nNpc = 0;
   for (const mi of mapInfo) {
     const no = mi.id, out = { map: no, spawns: [], events: {}, npcs: [], ev: '' };

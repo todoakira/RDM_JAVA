@@ -87,6 +87,7 @@ data/              서버만 쓰는 자료: 몬스터 표, 맵별 배치·이벤
   - `MapNNNNN.smm`: 칸마다 64비트(상위 4바이트 먼저). 비트 30~37 이벤트 번호, 비트 48·56 주인공 이동 가능(자리 0·1), 비트 49·57 몬스터 이동 가능(자리 0·1),
     비트 40~47 그 자리에 누가 서 있는지 (`CrsMap::Serialize`, `GetEvent`, `GetCanExistUser`, `GetCanExistMop`, `Move` 에서 확인).
   - `EventNNNNN.rse`: 이벤트 번호별 종류. 1 = 맵 이동(맵, x, y), 5 = 안전지대.
+  - `skill00.rmi`: 기술 191개. 파일 구조(값의 순서와 크기)는 `CrSkillInfo::Serialize` 대로 풀어 `data/skills.json` 에 넣었지만, 값 하나하나의 뜻은 아직 읽지 못했습니다.
   - `EventInfo.rse`: NPC용 공용 이벤트 표. 번호 → 종류(6 은행, 8 의사, 20 거래소, 31~37 상점 …)와 정보.
   - `ShopNNNNN.rss`: 분류, 번호, 수량(4000000001 = 무제한), 가격 비율(%), 표시(1 = 상점이 판다, 2 = 상점이 사 준다).
   - `ExtraNNNNN.rme`: NPC 이름, 모습, 이벤트, 서 있는 영역.
