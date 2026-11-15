@@ -63,6 +63,11 @@ wss.on('connection', ws => {
     else if (m.t === 'bankput') game.bankPut(player, m.slot | 0, m.n);
     else if (m.t === 'bankget') game.bankGet(player, m.slot | 0, m.n);
     else if (m.t === 'bankclose') player.bankNpc = 0;
+    else if (m.t === 'exchsell') game.exchSell(player, m.slot | 0, m.n, m.price, m.memo);
+    else if (m.t === 'exchbuy') game.exchBuy(player, m.id | 0, m.n);
+    else if (m.t === 'exchrepay') game.exchRepay(player);
+    else if (m.t === 'exchcancel') game.exchCancel(player);
+    else if (m.t === 'exchclose') player.exchAt = null;
     else if (m.t === 'chat') {
       // 시험용 명령: "/맵 3" 으로 해당 맵에 바로 이동
       const g = /^\/(?:맵|map)\s+(\d+)$/.exec(String(m.text || '').trim());

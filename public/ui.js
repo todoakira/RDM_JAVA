@@ -25,7 +25,7 @@ const UI = (() => {
   function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block'); } }
   function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
-  document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') closeShop(true); else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
+  document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') { if (exch) closeExch(true); else closeShop(true); } else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
 
   // 아이템 그림 한 칸
   function cell(it, x, y, sel) {
@@ -99,9 +99,46 @@ const UI = (() => {
       : `${shopMode === 'buy' ? '살 물건을 고르세요.' : list.length ? '팔 물건을 고르세요.' : '이 상점이 사 주는 물건이 없습니다.'}\n가진 돈 ${inv.money.toLocaleString()} 시그`;
   }
   const deal = (key, n) => send(shopMode === 'buy' ? { t: 'buy', idx: key, n } : { t: 'sell', slot: key, n });
-  el('sbBuy').onclick = () => { if (shopMode === 'buy' && shopSel >= 0) deal(shopSel, 1); else { shopMode = 'buy'; shopSel = -1; shopTop = 0; drawShop(); } };
-  el('sbSell').onclick = () => { if (shopMode === 'sell' && shopSel >= 0) deal(shopSel, 1); else { shopMode = 'sell'; shopSel = -1; shopTop = 0; drawShop(); } };
-  el('sbCancel').onclick = () => closeShop(true);
+  el('sbBuy').onclick = () => { if (exch) return exchTab('buy'); if (shopMode === 'buy' && shopSel >= 0) deal(shopSel, 1); else { shopMode = 'buy'; shopSel = -1; shopTop = 0; drawShop(); } };
+  el('sbSell').onclick = () => { if (exch) return exchTab('sell'); if (shopMode === 'sell' && shopSel >= 0) deal(shopSel, 1); else { shopMode = 'sell'; shopSel = -1; shopTop = 0; drawShop(); } };
+  el('sbCancel').onclick = () => { if (exch) closeExch(true); else closeShop(true); };
+
+  // 거래소: 상점과 같은 창(여섯 칸 × 네 줄 = 한 쪽 스물네 건)을 쓴다. Buy = 올라온 물건, Sell = 내 소지품에서 골라 올리기
+  let exch = null, exMode = 'buy', exTop = 0, exSel = -1;
+  function exchTab(m) { exMode = m; exSel = -1; exTop = 0; drawExch(); }
+  function drawExch() {
+    if (!exch) return;
+    const box = el('shopcells'); box.innerHTML = '';
+    const list = exMode === 'buy' ? exch.items.map(q => ({ ...q, key: q.id })) : inv.items.map((it, slot) => ({ ...it, key: slot }));
+    const rows = Math.max(4, Math.ceil(list.length / 6)); exTop = Math.max(0, Math.min(exTop, rows - 4));
+    el('shoptitle').textContent = `${exch.name} · ${exMode === 'buy' ? '사기' : '올리기'}`;
+    el('sbBuy').classList.toggle('on', exMode === 'buy'); el('sbSell').classList.toggle('on', exMode === 'sell');
+    let cur = null;
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+      const it = list[(exTop + r) * 6 + c]; if (!it) continue;
+      const e = cell(it, 23 + c * 40, 40 + r * 40, it.key === exSel); if (it.key === exSel) cur = it;
+      e.onclick = () => { exSel = it.key; drawExch(); };
+      e.ondblclick = ev => {
+        if (exMode === 'buy') { send({ t: 'exchbuy', id: it.id, n: ev.shiftKey ? it.n : 1 }); return; }
+        const n = it.n > 1 ? ask('올릴 수량', it.n) : 1; if (!n) return;
+        const price = ask('개당 값 (시그)', 100); if (!price) return;
+        send({ t: 'exchsell', slot: it.key, n, price, memo: (prompt('남길 말 (16자까지, 비워도 됨)', '') || '') });
+      };
+      box.appendChild(e);
+    }
+    arrow(box, 270, 38, () => { exTop--; drawExch(); }); arrow(box, 270, 176, () => { exTop++; drawExch(); });
+    const t = el('shoptxt'); t.textContent = '';
+    const line = s => { const d = document.createElement('div'); d.textContent = s; t.appendChild(d); return d; };
+    if (cur && exMode === 'buy') { line(`${cur.name} × ${cur.n}`); line(`개당 ${cur.price.toLocaleString()} 시그 · 파는 사람 ${cur.seller}`); if (cur.memo) line(`"${cur.memo}"`); if (cur.desc) line(cur.desc); line('두 번 클릭: 1개 · Shift+두 번 클릭: 전부'); }
+    else if (cur) { line(cur.name + (cur.n > 1 ? ' × ' + cur.n : '')); line('두 번 클릭하면 수량과 값을 정해 올립니다.'); }
+    else line(exMode === 'buy' ? (exch.items.length ? '살 물건을 고르세요.' : '올라온 물건이 없습니다.') : '올릴 물건을 고르세요. (다섯 건까지)');
+    line(`가진 돈 ${inv.money.toLocaleString()} 시그 · 내가 올린 물건 ${exch.mine}건`);
+    const link = (txt, fn) => { const d = line(txt); d.style.cssText = 'color:#ffd27a;cursor:pointer;text-decoration:underline'; d.onclick = fn; };
+    if (exch.owed) link(`판 돈 ${exch.owed.toLocaleString()} 시그 찾기`, () => send({ t: 'exchrepay' }));
+    if (exch.mine) link('올린 물건 모두 거두기', () => send({ t: 'exchcancel' }));
+  }
+  function openExch(m) { closeShop(true); exch = m; if (el('winShop').style.display !== 'block') { exMode = 'buy'; exSel = -1; exTop = 0; } el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawExch(); }
+  function closeExch(tell) { if (exch && tell) send({ t: 'exchclose' }); exch = null; el('winShop').style.display = 'none'; }
   function openShop(m) { shop = m; shopMode = 'buy'; shopSel = -1; shopTop = 0; el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawShop(); }
   function closeShop(tell) { if (shop && tell) send({ t: 'shopclose' }); shop = null; el('winShop').style.display = 'none'; }
 
@@ -117,5 +154,5 @@ const UI = (() => {
   function openBank(m) { bank = { ...m, name: m.name || (bank && bank.name) }; el('winBank').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawBank(); }
   function closeBank(tell) { if (bank && tell) send({ t: 'bankclose' }); bank = null; el('winBank').style.display = 'none'; }
 
-  return { bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); }, stat: drawChr, shop: openShop, closeShop };
+  return { exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat: drawChr, shop: openShop, closeShop };
 })();

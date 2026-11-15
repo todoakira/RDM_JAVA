@@ -23,7 +23,7 @@ const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 �
 const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패', '장갑', '무기', '벨트', '반지', '반지', '반지', '', ''];
 // NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~86 이 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420b9b)
 const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85, 86];
-const EVENT_NAMES = { 2: '게시판', 4: '메일', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 20: '거래소', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동' };
+const EVENT_NAMES = { 2: '게시판', 4: '메일', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동' };
 const TALK_DIST = 25, BANK_SLOTS = 20;
 const EV_WARP = 1, EV_SAFE = 5;      // 이벤트 종류 (EventNNNNN.rse)
 const GROUND_ITEM_MS = 600000;       // 바닥 아이템이 사라지는 시간: 10분 (CItemServer::RemoveOldItems 0x408b48)
@@ -138,7 +138,7 @@ class World {
   enter(p, x, y) {
     const want = x === undefined ? { x: this.spawn[0], y: this.spawn[1], z: 1 } : { x, y, z: 1 };
     const t = this.nearUser(want, 10, true) || this.nearUser(want, 10) || this.nearUser({ x: this.spawn[0], y: this.spawn[1], z: 1 }, 40) || want;
-    p.world = this; p.shop = null; p.bankNpc = 0; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.nextAt = 0;
+    p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.nextAt = 0;
     this.players.set(p.id, p); this.take(p);
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
       players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
@@ -175,6 +175,7 @@ class World {
     if (SHOP_KINDS.includes(kind) && this.game.shops[e[1]]) { this.game.openShop(p, e[1], n); return; }
     if (kind === 8 || kind === 81) { this.game.cure(p, n); return; }
     if (kind === 6 || kind === 80) { this.game.openBank(p, n); return; }
+    if (kind === 20) { this.game.openExchange(p, e[1] || 0, n); return; }
     const what = EVENT_NAMES[kind];
     p.send({ t: 'chat', id: 0, name: n.name, text: what ? `(${what}: 아직 구현되지 않았습니다)` : '...' });
   }
@@ -557,6 +558,68 @@ class Game {
     p.hp = p.maxHp; p.mp = p.maxMp; p.sp = F.SP_MAX;
     this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp, maxHp: p.maxHp });
     p.send({ t: 'chat', id: 0, name: npc.name, text: '치료해 드렸습니다.' });
+  }
+  // ---------- 거래소 ----------
+  // 물건을 값(개당)을 매겨 맡겨 두면 다른 사람이 사 간다. 한 사람이 다섯 건까지 올릴 수 있고, 목록은 한 쪽에 스물네 건이다.
+  // 수수료는 없다. 판 돈은 거래소에 쌓였다가 찾아갈 때 받는다. 올린 물건을 거둘 때는 전부를 한꺼번에 거두며, 그 무게를 들 수 있어야 한다.
+  // (ProcessExchangeSellItem 0x40f320, ProcessExchangeBuyItem 0x40f6a0, ProcessExchangeRepay 0x40fb20, ProcessExchangeCancel 0x40fd30)
+  exchData(id) {
+    if (!this.exch) { try { this.exch = JSON.parse(fs.readFileSync(path.join(ROOT, 'save', 'exchange.json'), 'utf8')); } catch (e) { this.exch = {}; } }
+    return this.exch[id] ||= { seq: 1, list: [], owed: {} };
+  }
+  exchSave() { try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(path.join(ROOT, 'save', 'exchange.json'), JSON.stringify(this.exch)); } catch (e) { console.log('거래소 저장 실패', e.message); } }
+  openExchange(p, id, npc) { p.exchAt = { id, npc: npc.id, name: npc.name }; this.sendExch(p); }
+  exchOk(p) {
+    if (!p.exchAt || p.dead) return null;
+    const n = p.world.npcs.find(q => q.id === p.exchAt.npc);
+    if (!n || G.dist(p, n) >= 25) { p.exchAt = null; p.send({ t: 'exchclose' }); return null; }
+    return this.exchData(p.exchAt.id);
+  }
+  sendExch(p) {
+    const d = this.exchData(p.exchAt.id), owed = (d.owed[p.name] || []).reduce((a, r) => Math.min(F.MONEY_MAX, a + r.n * r.price), 0);
+    const items = d.list.map(e => { const f = this.itemInfo(e.k, e.i); return { id: e.id, k: e.k, i: e.i, n: e.n, price: e.price, seller: e.seller, memo: e.memo, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0, weight: f ? f.weight || 0 : 0 }; });
+    p.send({ t: 'exch', name: p.exchAt.name, items, owed, mine: d.list.filter(e => e.seller === p.name).length });
+  }
+  exchTell(p, text) { p.send({ t: 'chat', id: 0, name: '거래소', text }); }
+  exchSell(p, slot, n, price, memo) {
+    const d = this.exchOk(p), it = p.inv[slot]; n = Math.floor(Number(n)); price = Math.floor(Number(price));
+    if (!d || !it || !(n >= 1) || n > it.n) return;
+    if (!(price >= 1) || price > Math.floor(F.MONEY_MAX / n)) { this.exchTell(p, '값이 올바르지 않습니다.'); return; }
+    if (d.list.filter(e => e.seller === p.name).length >= 5) { this.exchTell(p, '다섯 건까지만 올릴 수 있습니다.'); return; }
+    it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
+    d.list.push({ id: d.seq++, seller: p.name, k: it.k, i: it.i, n, price, memo: String(memo || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 16) });
+    this.exchSave(); this.save(p); this.sendInv(p); this.sendStat(p); this.sendExch(p);
+  }
+  exchBuy(p, id, n) {
+    const d = this.exchOk(p); n = Math.floor(Number(n)); if (!d || !(n >= 1)) return;
+    const e = d.list.find(q => q.id === id); if (!e) { this.exchTell(p, '이미 팔린 물건입니다.'); this.sendExch(p); return; }
+    if (e.seller.toLowerCase() === p.name.toLowerCase()) { this.exchTell(p, '자기가 올린 물건은 살 수 없습니다.'); return; }
+    n = Math.min(n, e.n);
+    if (n > Math.floor(p.money / e.price)) { this.exchTell(p, '돈이 모자랍니다.'); return; }
+    const took = this.giveItem(p, e.k, e.i, n); if (!took) return;
+    p.money -= e.price * took; e.n -= took; if (e.n <= 0) d.list.splice(d.list.indexOf(e), 1);
+    (d.owed[e.seller] ||= []).push({ k: e.k, i: e.i, n: took, price: e.price });
+    this.exchSave(); this.save(p); this.sendInv(p); this.sendExch(p);
+  }
+  // 판 돈 찾기: 한 번에 다섯 건까지
+  exchRepay(p) {
+    const d = this.exchOk(p); if (!d) return;
+    const recs = d.owed[p.name] || []; if (!recs.length) { this.exchTell(p, '찾을 돈이 없습니다.'); return; }
+    let sum = 0; for (const r of recs.splice(0, 5)) sum = Math.min(F.MONEY_MAX, sum + r.n * r.price);
+    if (!recs.length) delete d.owed[p.name];
+    p.money = Math.min(F.MONEY_MAX, p.money + sum);
+    this.exchTell(p, `${sum.toLocaleString()} 시그를 받았습니다.`);
+    this.exchSave(); this.save(p); this.sendInv(p); this.sendExch(p);
+  }
+  // 올린 물건 거두기: 전부 한꺼번에
+  exchCancel(p) {
+    const d = this.exchOk(p); if (!d) return;
+    const mine = d.list.filter(e => e.seller === p.name); if (!mine.length) return;
+    const w = mine.reduce((a, e) => { const f = this.itemInfo(e.k, e.i); return a + (f ? (f.weight || 0) * e.n : 0); }, 0);
+    if (w > F.weightMax(p.str) - this.weightOf(p)) { this.exchTell(p, '무거워서 거둘 수 없습니다.'); return; }
+    for (const e of mine) { const took = this.giveItem(p, e.k, e.i, e.n); e.n -= took; }
+    d.list = d.list.filter(e => e.n > 0);
+    this.exchSave(); this.save(p); this.sendInv(p); this.sendExch(p);
   }
   // ---------- 은행 ----------
   // 돈은 40억까지, 물건은 스무 칸. 같은 물건은 한 칸에 쌓인다. 수수료는 없다
