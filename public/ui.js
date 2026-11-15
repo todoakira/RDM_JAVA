@@ -19,11 +19,12 @@ const UI = (() => {
   function menu(act) {
     if (act.startsWith('win')) toggle(act);
     else if (act === 'gauge') { el('gauge').style.display = el('gauge').style.display === 'none' ? 'block' : 'none'; marks(); }
+    else if (act === 'skill') { toggle('winSk'); }
     else if (act === 'quit') location.reload();
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
-  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block'); } }
-  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); }
+  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block'); } }
+  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
   document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') { if (exch) closeExch(true); else closeShop(true); } else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
 
@@ -154,5 +155,57 @@ const UI = (() => {
   function openBank(m) { bank = { ...m, name: m.name || (bank && bank.name) }; el('winBank').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawBank(); }
   function closeBank(tell) { if (bank && tell) send({ t: 'bankclose' }); bank = null; el('winBank').style.display = 'none'; }
 
-  return { exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat: drawChr, shop: openShop, closeShop };
+  // ---------- 기술 창 (F5) ----------
+  // 그림 iw-sk-ba(80). 위 줄 일반 기술, 아래 줄 특수 기술, 한 줄에 3칸, 양 끝 화살표로 넘긴다. 아래쪽은 설명 칸.
+  // 칸 자리는 창 그림에서 잰 값이다 (원작 코드의 좌표는 아직 찾지 못함).
+  // 기술 그림은 기술 정보의 d 번 인터페이스 그림(sk-xx-nn, 50×105)으로, 35줄씩 위에서부터 보통·강조·사용 불가 세 모양이다.
+  // 이름·설명은 Message.ctf 의 묶음 2, 분류 = 기술 정보 c, 번호 = b ("이름@설명").
+  const SK_CELL_X = [38, 90, 142], SK_ROW_Y = [28, 81];
+  let skTop = 0, skInfo = null, msgs = null, skHover = 0;
+  fetch('data/skills.json').then(r => r.json()).then(j => { skInfo = j; drawSk(); }).catch(() => {});
+  fetch('assets/messages.json').then(r => r.json()).then(j => { msgs = j; drawSk(); }).catch(() => {});
+  function skText(id) {
+    const s = skInfo && skInfo[id], t = s && msgs && msgs[2] && msgs[2][s.c] && msgs[2][s.c][s.b];
+    if (!t) return { name: '기술 ' + id, desc: '' };
+    const [name, desc = ''] = t.split('@'); return { name, desc };
+  }
+  function skIcon(id, state) {
+    const s = skInfo && skInfo[id]; if (!s) return '';
+    return `background:url(assets/int/${s.d}.png) 0 -${state * 35}px`;
+  }
+  function drawSk() {
+    if (el('winSk').style.display !== 'block' || !stat) return;
+    const list = stat.skills || [], sel = typeof skillSel !== 'undefined' ? skillSel : 0;
+    if (skTop > Math.max(0, list.length - 3)) skTop = Math.max(0, list.length - 3);
+    let h = '';
+    for (let i = 0; i < 3; i++) {
+      const id = list[skTop + i]; if (!id) continue;
+      h += `<div class="skc" data-sk="${id}" style="left:${SK_CELL_X[i]}px;top:${SK_ROW_Y[0]}px;${skIcon(id, id === sel ? 1 : 0)}"></div>`;
+    }
+    if (stat.special) h += `<div class="skc" data-sk="${stat.special}" data-sp="1" style="left:${SK_CELL_X[0]}px;top:${SK_ROW_Y[1]}px;${skIcon(stat.special, 2)}"></div>`;
+    h += `<div class="ska" data-d="-1" style="left:12px;top:${SK_ROW_Y[0]}px"></div><div class="ska" data-d="1" style="left:196px;top:${SK_ROW_Y[0]}px"></div>`;
+    el('skcells').innerHTML = h;
+    const show = skHover || sel;
+    if (show) {
+      const t = skText(show), s = skInfo && skInfo[show];
+      const cost = s ? (s.k >= 1e9 ? `최대 MP의 ${s.k - 1e9}%` : s.a ? '' : `MP ${s.k}`) : '';
+      el('sktxt').innerHTML = `<b style="color:#ffd27a">${esc(t.name)}</b>${cost ? ' <span style="color:#9fd0ff">' + cost + '</span>' : ''}<br>${esc(t.desc).replace(/\\n|\n/g, '<br>')}`;
+    } else el('sktxt').innerHTML = '';
+  }
+  el('winSk').addEventListener('click', e => {
+    const a = e.target.closest('.ska'); if (a) { skTop = Math.max(0, skTop + Number(a.dataset.d)); drawSk(); return; }
+  });
+  // 원작 도움말: 기술 창에서 두 번 누르거나 오른쪽 단추로 누르면 그 기술이 빠른 메뉴에 올라간다 (Message.ctf 1/1/126~143)
+  const pickSk = e => { const c = e.target.closest('.skc'); if (!c || c.dataset.sp) return false; selectSkill(Number(c.dataset.sk)); return true; };
+  el('winSk').addEventListener('dblclick', pickSk);
+  el('winSk').addEventListener('contextmenu', e => { e.preventDefault(); pickSk(e); });
+  el('winSk').addEventListener('mouseover', e => { const c = e.target.closest('.skc'); const v = c ? Number(c.dataset.sk) : 0; if (v !== skHover) { skHover = v; drawSk(); } });
+  el('winSk').addEventListener('mouseleave', () => { skHover = 0; drawSk(); });
+  function drawQuickSkill() {
+    const id = typeof skillSel !== 'undefined' ? skillSel : 0;
+    el('skquick').style.cssText = id ? skIcon(id, 0) : 'display:none';
+    el('skquick').title = id ? skText(id).name : '';
+  }
+
+  return { menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

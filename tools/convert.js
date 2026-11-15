@@ -359,12 +359,35 @@ function convertServer(mapInfo) {
   console.log(`서버 자료: 몬스터 종류 ${Object.keys(mops).length}, 배치 몬스터 ${nSpawn}마리, 맵 이동 지점 ${nWarp}개, NPC ${nNpc}명`);
 }
 
+// ---------- 글자 자료 (DATAs/Info/Message.ctf) ----------
+// Message.dll 이 읽는 파일 (MESSAGEGetString(묶음, 번호)). 머리 문자열 "J.C.TypeConvTool Ver 1.1.2", 개수(u32),
+// 그 뒤로 [열쇠 문자열 "묶음\t분류\t번호", u32 묶음, u32 분류, u32 번호, 글자] 가 개수만큼. 문자열은 MFC CString 저장 형식.
+// 묶음 2 = 기술 ("이름@설명", 분류 = 기술 정보의 c, 번호 = b), 1/1 = 도움말, 0/x = 시스템 메시지, 4~9 = 아이템 이름·설명.
+function convertMessages() {
+  const f = D('Info', 'Message.ctf'); if (!fs.existsSync(f)) return;
+  const b = fs.readFileSync(f); let p = 0;
+  const len = () => { let n = b[p++]; if (n === 0xff) { n = b.readUInt16LE(p); p += 2; if (n === 0xffff) { n = b.readUInt32LE(p); p += 4; } } return n; };
+  const cs = () => { const n = len(); const v = b.subarray(p, p + n); p += n; return v; };
+  const dec = new TextDecoder('euc-kr');
+  cs(); const cnt = b.readUInt32LE(p); p += 4;
+  const out = {};
+  for (let i = 0; i < cnt; i++) {
+    cs(); const g = b.readUInt32LE(p), c = b.readUInt32LE(p + 4), n = b.readUInt32LE(p + 8); p += 12;
+    const t = dec.decode(cs());
+    ((out[g] ||= {})[c] ||= {})[n] = t;
+  }
+  fs.writeFileSync(path.join(OUT, 'messages.json'), JSON.stringify(out));
+  console.log(`글자 자료 ${cnt}개`);
+}
+
 // ---------- 실행 ----------
 if (has('server-only')) {      // 그림은 그대로 두고 서버 자료만 다시 만든다
+  convertMessages();
   convertServer(JSON.parse(fs.readFileSync(path.join(OUT, 'maps', 'index.json'), 'utf8')));
   process.exit(0);
 }
 const t0 = Date.now();
+convertMessages();
 const lists = { Tle: parseLst(fs.readFileSync(RL('tle.lst'))), Obj: parseLst(fs.readFileSync(RL('obj.lst'))) };
 const mapInfo = [];
 for (const n of maps) { const r = convertMap(n, lists); if (r) mapInfo.push(r); if (mapInfo.length % 25 === 0) console.log(`맵 ${mapInfo.length}/${maps.length}...`); }

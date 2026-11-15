@@ -13,7 +13,7 @@ const MIME = { '.wav': 'audio/wav', '.mid': 'audio/midi', '.html': 'text/html; c
 const server = http.createServer((req, res) => {
   let u = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   if (u === '/') u = '/index.html';
-  const base = u.startsWith('/assets/') ? ROOT : path.join(ROOT, 'public');
+  const base = u.startsWith('/assets/') || u === '/data/skills.json' ? ROOT : path.join(ROOT, 'public');   // 기술 정보는 클라이언트도 쓴다 (원작 클라이언트도 skill00.rmi 를 읽는다)
   const file = path.normalize(path.join(base, u));
   if (!file.startsWith(base + path.sep)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, data) => {

@@ -554,7 +554,7 @@ class Game {
     p.armor = armor; p.range = range;
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
-  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p) }); }
+  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }

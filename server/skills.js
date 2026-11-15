@@ -61,7 +61,7 @@ function list(p) {
   return out;
 }
 // 직업별 특수 기술 (InitializeSpecialSkill 0x434f50)
-const SPECIAL = [91, 101, 111, 121, 131, 141, 161, 171, 151];
+const SPECIAL = [91, 101, 111, 121, 131, 141, 161, 151, 171, 151];   // 직업 번호 순서 (0x434fe8 의 표). 6번 → 161, 7번 → 151, 9번 → 151
 
 // 마력 소모량 (UseSkill 0x45e4e4~0x45e532)
 function mpCost(s, maxMp) {

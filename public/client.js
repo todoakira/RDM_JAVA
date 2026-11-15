@@ -274,27 +274,34 @@ addEventListener('keydown', e => {
       $('say').value = ''; $('say').blur();
     } else $('say').focus();
     e.preventDefault();
+  } else if (!typing && myId && /^F[1-5]$/.test(e.key)) {
+    // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
+    e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill'][Number(e.key.slice(1)) - 1]);
+  } else if (!typing && myId && e.ctrlKey && /^Key[A-Z]$/.test(e.code) && SKILL_KEYS.includes(e.code[3].toLowerCase())) {
+    // 브라우저가 가로채는 조합(CTRL+W, CTRL+T 등)은 막을 수 없다
+    e.preventDefault();
+    const id = stat && stat.skills && stat.skills[SKILL_KEYS.indexOf(e.code[3].toLowerCase())];
+    if (id) selectSkill(id);
   } else if (!typing) {
     if (e.key === 'r' || e.key === 'R' || e.key === 'ㄱ') runToggle = !runToggle;
     else if (e.key === 'i' || e.key === 'I' || e.key === 'ㅑ') UI.toggle('winInv');
     else if (e.key === 'e' || e.key === 'E' || e.key === 'ㄷ') UI.toggle('winEq');
     else if (e.key === 'c' || e.key === 'C' || e.key === 'ㅊ') UI.toggle('winChr');
-    else if (/^[1-9]$/.test(e.key) && stat && stat.skills && stat.skills[e.key - 1]) { skillSel = stat.skills[e.key - 1]; drawSkills(); }
     else if (e.key === '+' || e.key === '=') zoom = Math.min(3, zoom + 1);
     else if (e.key === '-') zoom = Math.max(1, zoom - 1);
   }
 });
-// ---------- 기술 줄 ----------
-// 서버가 보내는 쓸 수 있는 기술 목록(레벨·정신력·명성으로 정해짐)을 보여 준다. 숫자 키나 누르기로 고르고, 몬스터를 오른쪽 단추로 누르면 쓴다.
-// 원작의 기술 이름·아이콘·효과 그림은 아직 클라이언트(Main.dll)에서 찾지 못해 번호로 표시한다.
+// ---------- 기술 고르기 ----------
+// 원작 도움말(Message.ctf 1/1/126~143): [CTRL]+Q, W, E, R, T, A, S, D, F, Z, X, C, V 가 기술 창의 순서대로 기술을 고르고,
+// 고른 기술은 빠른 메뉴에 놓이며 몬스터를 오른쪽 단추로 누르면 쓴다.
+const SKILL_KEYS = ['q', 'w', 'e', 'r', 't', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v'];
 let skillSel = 0;
+function selectSkill(id) { skillSel = id; drawSkills(); }
 function drawSkills() {
-  const bar = $('skills'); if (!bar || !stat) return;
-  const list = stat.skills || [];
-  if (!list.includes(skillSel)) skillSel = list[0] || 0;
-  bar.innerHTML = list.map((id, i) => `<button data-sk="${id}" class="${id === skillSel ? 'on' : ''}">${i + 1}. 기술 ${id}</button>`).join('');
+  const list = (stat && stat.skills) || [];
+  if (skillSel && !list.includes(skillSel)) skillSel = 0;
+  if (typeof UI !== 'undefined') UI.skills();
 }
-document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#skills button'); if (b) { skillSel = Number(b.dataset.sk); drawSkills(); } });
 function log(html, cls) {
   const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html;
   $('log').appendChild(d); while ($('log').children.length > 8) $('log').firstChild.remove();

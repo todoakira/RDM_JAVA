@@ -42,16 +42,16 @@
   .sb { position: absolute; width: 58px; height: 18px; cursor: pointer; background-position: 0 0; } .sb:hover, .sb.on { background-position: 0 -18px; }
   .stb { position: absolute; top: 141px; width: 52px; height: 51px; background-position: 0 0; } .stb.can { cursor: pointer; background-position: 0 -51px; }
   #msg { margin-top: 14px; color: #f88; font-size: 13px; min-height: 18px; }
-  #skills { position: fixed; left: 50%; transform: translateX(-50%); bottom: 64px; display: flex; gap: 4px; z-index: 5; }
-  #skills button { font: inherit; font-size: 12px; background: rgba(0,0,0,.65); color: #ddd; border: 1px solid #555; padding: 3px 7px; cursor: pointer; }
-  #skills button.on { border-color: #e33; color: #fff; }
+  .skc { position: absolute; width: 50px; height: 35px; cursor: pointer; }
+  .ska { position: absolute; width: 22px; height: 35px; cursor: pointer; }
+  #skquick { position: fixed; left: 50%; margin-left: 260px; bottom: 44px; width: 50px; height: 35px; outline: 1px solid #6a6; z-index: 5; }
 </style>
 </head>
 <body>
-<div id="skills"></div>
+<div id="skquick" style="display:none"></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
-<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자</div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자</div>
 <div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
 <div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i></div>
 <div id="menubar"></div>
@@ -64,6 +64,7 @@
   <div id="cstats" style="position:absolute;left:21px;top:193px;width:208px;height:17px;line-height:17px;display:flex;color:#fff"></div>
   <div class="val" id="cbonus" style="top:213px"></div><div class="val" id="cfame" style="top:238px"></div><div class="val" id="cweight" style="top:263px"></div><div class="val" id="cmoney" style="top:292px"></div>
 </div>
+<div id="winSk" class="win" style="left:280px;top:60px;width:232px;height:200px;background:url(assets/int/80.png)"><div class="x" data-close="winSk"></div><div id="skcells"></div><div id="sktxt" class="txt" style="left:14px;top:128px;width:204px;height:64px"></div></div>
 <div id="winBank" class="win" style="left:280px;top:60px;width:264px;height:261px;background:url(assets/int/193.png)"><div class="x" data-close="winBank"></div>
   <div id="bankput" title="돈 맡기기" style="position:absolute;left:30px;top:32px;width:46px;height:24px;cursor:pointer"></div>
   <div id="bankmoney" title="돈 찾기" style="position:absolute;left:80px;top:37px;width:170px;height:17px;line-height:17px;text-align:right;color:#fff;cursor:pointer"></div><div id="bankcells"></div></div>
