@@ -95,8 +95,8 @@ const UI = (() => {
       box.appendChild(e);
     }
     arrow(box, 270, 38, () => { shopTop--; drawShop(); }); arrow(box, 270, 176, () => { shopTop++; drawShop(); });
-    el('shoptxt').textContent = cur ? `${cur.name}\n${shopMode === 'buy' ? '값' : '파는 값'} ${cur.price.toLocaleString()} 시그${cur.weight ? ' · 무게 ' + cur.weight : ''}${shopMode === 'buy' && cur.stock >= 0 ? ' · 남은 수량 ' + cur.stock : ''}\n${cur.desc || ''}\n\n두 번 클릭: 1개 · Shift+두 번 클릭: 10개\n가진 돈 ${inv.money.toLocaleString()} 시그`
-      : `${shopMode === 'buy' ? '살 물건을 고르세요.' : list.length ? '팔 물건을 고르세요.' : '이 상점이 사 주는 물건이 없습니다.'}\n가진 돈 ${inv.money.toLocaleString()} 시그`;
+    el('shoptxt').textContent = cur ? `${cur.name}\n${shopMode === 'buy' ? '값' : '파는 값'} ${cur.price.toLocaleString()}${cur.weight ? ' · 무게 ' + cur.weight : ''}${shopMode === 'buy' && cur.stock >= 0 ? ' · 남은 수량 ' + cur.stock : ''}\n${cur.desc || ''}\n\n두 번 클릭: 1개 · Shift+두 번 클릭: 10개\n가진 돈 ${inv.money.toLocaleString()} `
+      : `${shopMode === 'buy' ? '살 물건을 고르세요.' : list.length ? '팔 물건을 고르세요.' : '이 상점이 사 주는 물건이 없습니다.'}\n가진 돈 ${inv.money.toLocaleString()} `;
   }
   const deal = (key, n) => send(shopMode === 'buy' ? { t: 'buy', idx: key, n } : { t: 'sell', slot: key, n });
   el('sbBuy').onclick = () => { if (exch) return exchTab('buy'); if (shopMode === 'buy' && shopSel >= 0) deal(shopSel, 1); else { shopMode = 'buy'; shopSel = -1; shopTop = 0; drawShop(); } };
@@ -121,7 +121,7 @@ const UI = (() => {
       e.ondblclick = ev => {
         if (exMode === 'buy') { send({ t: 'exchbuy', id: it.id, n: ev.shiftKey ? it.n : 1 }); return; }
         const n = it.n > 1 ? ask('올릴 수량', it.n) : 1; if (!n) return;
-        const price = ask('개당 값 (시그)', 100); if (!price) return;
+        const price = ask('개당 값', 100); if (!price) return;
         send({ t: 'exchsell', slot: it.key, n, price, memo: (prompt('남길 말 (16자까지, 비워도 됨)', '') || '') });
       };
       box.appendChild(e);
@@ -129,12 +129,12 @@ const UI = (() => {
     arrow(box, 270, 38, () => { exTop--; drawExch(); }); arrow(box, 270, 176, () => { exTop++; drawExch(); });
     const t = el('shoptxt'); t.textContent = '';
     const line = s => { const d = document.createElement('div'); d.textContent = s; t.appendChild(d); return d; };
-    if (cur && exMode === 'buy') { line(`${cur.name} × ${cur.n}`); line(`개당 ${cur.price.toLocaleString()} 시그 · 파는 사람 ${cur.seller}`); if (cur.memo) line(`"${cur.memo}"`); if (cur.desc) line(cur.desc); line('두 번 클릭: 1개 · Shift+두 번 클릭: 전부'); }
+    if (cur && exMode === 'buy') { line(`${cur.name} × ${cur.n}`); line(`개당 ${cur.price.toLocaleString()} · 파는 사람 ${cur.seller}`); if (cur.memo) line(`"${cur.memo}"`); if (cur.desc) line(cur.desc); line('두 번 클릭: 1개 · Shift+두 번 클릭: 전부'); }
     else if (cur) { line(cur.name + (cur.n > 1 ? ' × ' + cur.n : '')); line('두 번 클릭하면 수량과 값을 정해 올립니다.'); }
     else line(exMode === 'buy' ? (exch.items.length ? '살 물건을 고르세요.' : '올라온 물건이 없습니다.') : '올릴 물건을 고르세요. (다섯 건까지)');
-    line(`가진 돈 ${inv.money.toLocaleString()} 시그 · 내가 올린 물건 ${exch.mine}건`);
+    line(`가진 돈 ${inv.money.toLocaleString()} · 내가 올린 물건 ${exch.mine}건`);
     const link = (txt, fn) => { const d = line(txt); d.style.cssText = 'color:#ffd27a;cursor:pointer;text-decoration:underline'; d.onclick = fn; };
-    if (exch.owed) link(`판 돈 ${exch.owed.toLocaleString()} 시그 찾기`, () => send({ t: 'exchrepay' }));
+    if (exch.owed) link(`판 돈 ${exch.owed.toLocaleString()} 찾기`, () => send({ t: 'exchrepay' }));
     if (exch.mine) link('올린 물건 모두 거두기', () => send({ t: 'exchcancel' }));
   }
   function openExch(m) { closeShop(true); exch = m; if (el('winShop').style.display !== 'block') { exMode = 'buy'; exSel = -1; exTop = 0; } el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawExch(); }

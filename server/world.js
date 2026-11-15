@@ -617,7 +617,7 @@ class Game {
     let sum = 0; for (const r of recs.splice(0, 5)) sum = Math.min(F.MONEY_MAX, sum + r.n * r.price);
     if (!recs.length) delete d.owed[p.name];
     p.money = Math.min(F.MONEY_MAX, p.money + sum);
-    this.exchTell(p, `${sum.toLocaleString()} 시그를 받았습니다.`);
+    this.exchTell(p, `판 돈 ${sum.toLocaleString()}을(를) 받았습니다.`);
     this.exchSave(); this.save(p); this.sendInv(p); this.sendExch(p);
   }
   // 올린 물건 거두기: 전부 한꺼번에
@@ -732,8 +732,8 @@ class Game {
     p.money += gain; this.sendInv(p); this.sendStat(p);
   }
   // ---------- 아이템 ----------
-  // 분류 5의 0번은 돈(시그)이다
-  itemInfo(k, i) { return k === 5 && i === 0 ? { name: '시그', icon: 0, money: true } : (this.items[k] && this.items[k][i]) || null; }
+  // 분류 5의 0번은 돈이다. 원작에 화폐 단위 이름은 없고 그냥 '돈'이다 (DB 칸 Money). 시그너스에서 쓰는 돈은 따로 있다 (DB 칸 SigMoney, 아직 없음)
+  itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : (this.items[k] && this.items[k][i]) || null; }
   sendInv(p) {
     const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, name: f.name, desc: f.desc || '', icon: f.icon, hp: f.hp || 0, mp: f.mp || 0, atk: f.atk || 0, def: f.def || 0, v: f.v || [], req: f.req || 0, reqStat: f.reqStat || [], cls: f.cls || 0, weight: f.weight || 0, wear: f.type !== undefined && f.type !== 14 ? 1 : 0 }; };
     p.send({ t: 'inv', money: p.money, items: p.inv.map(view), equip: p.equip.map((e, s) => e ? { ...view(e), slot: SLOT_NAMES[s] } : null) });
