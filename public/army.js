@@ -115,14 +115,19 @@ const ArmyUI = (() => {
     el('arCrName').value = m.name || ''; el('arCrName').readOnly = !!m.name; el('arCrPw').value = el('arCrPw2').value = '';
     drawGrid(); show(d);
   }
-  // 문장 그림을 원작이 어디서 그리는지(0x100012f0) 아직 다 읽지 못해 칸에 번호를 쓴다
+  // 문장 (Main.dll 0x100012f0): 모양 = (번호-1)/10 → is-i0~19-bu (진영 2 는 10~19), 색 = 나머지 10 가지 → 색 표 0x100c777c 로 물들인다.
+  // 그 색 표는 실행 중에 채워져 아직 값을 읽지 못해 모양 그림만 원래 색(회색)으로 그린다. 이미 쓰는 문장은 원작처럼 그리지 않는다. 고른 것에는 is-f2-bu 틀
+  const SHAPE = [294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544];
+  const crestImg = mk => SHAPE[Math.floor((mk - 1) / 10)];
   function drawGrid() {
     const g = el('arCrGrid'); g.innerHTML = '';
     for (let k = 0; k < 100; k++) {
-      const mk = (camp === 2 ? 101 : 1) + k, c = document.createElement('div');
-      const off = used.includes(mk);
-      c.style.cssText = `position:absolute;left:${(k % 10) * 16}px;top:${Math.floor(k / 10) * 16}px;width:15px;height:15px;font:9px/15px sans-serif;text-align:center;color:${off ? '#555' : '#fff'};cursor:${off ? 'default' : 'pointer'};${mk === crest ? 'outline:1px solid #ffd27a' : ''}`;
-      c.textContent = mk; if (!off) c.onclick = () => { crest = mk; drawGrid(); };
+      const mk = (camp === 2 ? 101 : 1) + k; if (used.includes(mk)) continue;
+      const c = document.createElement('div');
+      c.style.cssText = `position:absolute;left:${(k % 10) * 16}px;top:${Math.floor(k / 10) * 16}px;width:15px;height:15px;cursor:pointer;background:url(assets/int/${crestImg(mk)}.png)`;
+      c.title = mk;
+      if (mk === crest) { const f = document.createElement('div'); f.style.cssText = 'position:absolute;inset:0;background:url(assets/int/293.png)'; c.appendChild(f); }
+      c.onclick = () => { crest = mk; drawGrid(); };
       g.appendChild(c);
     }
   }
@@ -147,19 +152,106 @@ const ArmyUI = (() => {
     const l = el('arCoreList'); l.innerHTML = '';
     for (const n of core) { const r = document.createElement('div'); r.className = 'pxl'; r.textContent = n; r.onclick = () => { core.sel = n; el('arCoreName').value = n; }; l.appendChild(r); }
   }
-  // ---- 군단 정보 (F9, n-ia-ib-ba 309×388): 이름, 군단장, 공지. 아래 단추 일곱(ia-b1~b7-bu) 중 아직 쓰는 것은 탈퇴·멤버뿐
+  // ---- 군단 정보 (F9, n-ia-ib-ba 309×388, 0x1003e870): 글 칸 자리는 창 초기화 함수를 돌려 얻은 값
+  //   이름 (70,60), 군단장 0/0/0xdb (50,80), 부관 0/0/0xdc (50,94), 동맹 0/0/0xdd (50,108), 군단 공지 0/0/0xde (48,163)→(50,180), 부대 공지 0/0/0xdf (48,211)→(50,230), 상태 0/0/0xe0 (48,261)→(50,278)
+  //   아래 단추 일곱: 군단 탈퇴(0/0/0x148), 부대 탈퇴(0x149), 정규병·용병·부대원 모집, 홀로 돌아가기(0x1a5), 멤버에게 가기(0x1a4). 닫기 (279,9)
   function info(m) {
     const d = win('arInfo', 556, 309, 388);
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
-      text(d, 50, 108, 100, 14).id = 'arInName'; text(d, 48, 163, 192, 13).id = 'arInCmd'; text(d, 48, 211, 192, 13).id = 'arInAll';
-      const n = text(d, 48, 261, 192, 50); n.id = 'arInNotice';
-      btn(d, 470, 76, 348, 24, 23, () => A({ a: 'members' }));
-      btn(d, 471, 99, 348, 22, 23, () => UI.msgBox(M0(0x66), ['yes', 'no'], y => { if (y) A({ a: 'withdraw' }); }));
+      text(d, 70, 60, 180, 14).id = 'arInName'; text(d, 50, 80, 200, 14).id = 'arInCmd'; text(d, 50, 94, 200, 14).id = 'arInLt';
+      text(d, 50, 108, 100, 14, M0(0xdd)); text(d, 48, 163, 192, 13, M0(0xde)); text(d, 48, 211, 192, 13, M0(0xdf)); text(d, 48, 261, 192, 13, M0(0xe0));
+      text(d, 50, 122, 200, 36).id = 'arInAll'; text(d, 50, 180, 210, 25).id = 'arInNotice'; text(d, 50, 230, 210, 25).id = 'arInUnit'; text(d, 50, 278, 210, 26).id = 'arInStat';
+      const no = () => UI.sysLine('아직 없는 기능입니다.');
+      btn(d, 470, 76, 348, 24, 23, () => UI.msgBox(M0(0x148).trim(), ['yes', 'no'], y => { if (y) A({ a: 'withdraw' }); }));
+      btn(d, 471, 99, 348, 22, 23, () => UI.msgBox(M0(0x149), ['yes', 'no'], y => { if (y) no(); }));
+      btn(d, 472, 121, 348, 24, 23, () => employ(1));
+      btn(d, 473, 145, 348, 23, 23, no);
+      btn(d, 474, 169, 348, 22, 23, no);
+      btn(d, 475, 191, 348, 24, 23, () => UI.msgBox(M0(0x1a5), ['yes', 'no'], y => { if (y) no(); }));
+      btn(d, 476, 214, 348, 24, 23, () => UI.msgBox(M0(0x1a4), ['ok', 'cancel'], (y, v) => { if (y && v) no(); }, true));
       btn(d, 477, 279, 9, 22, 22, () => hide(d));
     }
-    el('arInName').textContent = m.none ? '' : m.name; el('arInCmd').textContent = m.none ? '' : m.commander;
-    el('arInAll').textContent = ''; el('arInNotice').textContent = m.none ? '' : m.notice;
+    const f = (c, v) => fmt(M0(c), v || '');
+    el('arInName').textContent = m.none ? '' : m.name; el('arInCmd').textContent = m.none ? '' : f(0xdb, m.commander); el('arInLt').textContent = m.none ? '' : f(0xdc, '');
+    el('arInAll').textContent = ''; el('arInNotice').textContent = m.none ? '' : m.notice; el('arInUnit').textContent = ''; el('arInStat').textContent = '';
+    show(d);
+  }
+  // ---- 모집 (ia-z11-ba 235×114, 0x100415a0): 이름칸 (36,53)~(151,70), + 넣기 (166,53), − 빼기 (192,53), 닫기 (56,81). 문장 0/0/0x155
+  function employ(kind) {
+    const d = win('arEmp', 482, 235, 114);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 18, 24, 207, 22, M0(0x155));
+      const n = input(d, 36, 53, 115, 17, 14); n.id = 'arEmpName';
+      btn(d, 555, 166, 53, 23, 20, () => { if (n.value.trim()) A({ a: 'hire', name: n.value.trim() }); });
+      btn(d, 554, 192, 53, 23, 20, () => { if (n.value.trim()) A({ a: 'hire', name: n.value.trim(), fire: 1 }); });
+      btn(d, 553, 56, 81, 60, 20, () => hide(d));
+    }
+    el('arEmpName').value = ''; show(d);
+  }
+  // ---- 관리 (0x727 → ia-z20-ba 136×325, 0x100534f0): 단추 아홉 ia-z20-bu (19, 49+약 25.4k), 글 0/0/0xf3~0xfb, 닫기 (35,281)
+  //   부관 관리(0x72c)·동맹·전쟁(0x748)·공지·멤버(0x754)·군단장 관리·홀(0x75c)·본부(0x79c)·해산(0/0/0x65)
+  const Z20_TOP = [49, 75, 101, 127, 152, 176, 202, 227, 252];
+  function manage() {
+    const d = win('arMng', 492, 136, 325);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      const no = () => UI.sysLine('아직 없는 기능입니다.');
+      const act = [no, no, no, () => bulletin(), () => A({ a: 'members' }), () => cmdMenu(), no, no,
+        () => UI.msgBox(M0(0x65), ['yes', 'no'], y => { if (y) { A({ a: 'breakup' }); hide(d); } })];
+      act.forEach((fn, k) => btn(d, 493, 19, Z20_TOP[k], 97, 23, fn, M0(0xf3 + k).trim()));
+      btn(d, 553, 35, 281, 60, 20, () => hide(d));
+    }
+    show(d);
+  }
+  // 공지 고르기 (ia-z21-ba 190×108, 0x100579c0): 단추 둘 ia-z21-bu (22,19) (22,44), 닫기 (64,76)
+  function bulletin() {
+    const d = win('arBul', 494, 190, 108);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      btn(d, 495, 22, 19, 148, 23, () => { A({ a: 'notice' }); hide(d); }, M0(0x11e).trim());
+      btn(d, 495, 22, 44, 148, 23, () => UI.sysLine('아직 없는 기능입니다.'), M0(0x11f).trim());
+      btn(d, 553, 64, 76, 60, 20, () => hide(d));
+    }
+    show(d);
+  }
+  // 군단장 관리 (ia-z21-ba 둘째, 0x10057220): 비밀번호 바꾸기 0/0/0x128, 군단장 넘기기 0x129 — 아직 없음
+  function cmdMenu() {
+    const d = win('arCmd', 494, 190, 108);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      btn(d, 495, 22, 19, 148, 23, () => UI.sysLine('아직 없는 기능입니다.'), M0(0x128).trim());
+      btn(d, 495, 22, 44, 148, 23, () => UI.sysLine('아직 없는 기능입니다.'), M0(0x129).trim());
+      btn(d, 553, 64, 76, 60, 20, () => hide(d));
+    }
+    show(d);
+  }
+  // 공지 쓰기 (ia-z15-ba 255×166, 0x1005a1b0): 지금 공지 0/0/0x120 (30,15), 새 공지 0/0/0x121 (30,70), OK (107,130), CANCEL (159,130)
+  function noticeWin(cur) {
+    const d = win('arNot', 487, 255, 166);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 30, 15, 203, 13, M0(0x120)); text(d, 30, 70, 203, 15, M0(0x121));
+      text(d, 36, 34, 186, 29).id = 'arNotCur';
+      const t = input(d, 36, 88, 186, 36, 62, 'area'); t.id = 'arNotNew';
+      btn(d, 560, 107, 130, 47, 20, () => { A({ a: 'notice', text: t.value }); hide(d); });
+      btn(d, 457, 159, 130, 60, 20, () => hide(d));
+    }
+    el('arNotCur').textContent = cur; el('arNotNew').value = ''; show(d);
+  }
+  // 멤버 (ia-z4-ba 214×547, 0x100507b0): CMD (50,38) 이름 (90,38), LT (50,63), UNIT (50,174), REG (50,285), MERC (50,395), 목록은 그 아래 칸. 닫기 (77,512)
+  function members(m) {
+    const d = win('arMem', 514, 214, 547);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      [[0x122, 38], [0x123, 63], [0x124, 174], [0x125, 285], [0x126, 395]].forEach(([c, y]) => text(d, 50, y, 40, 14, M0(c)));
+      text(d, 90, 38, 90, 14).id = 'arMemCmd';
+      [['arMemLt', 88], ['arMemUnit', 200], ['arMemReg', 311], ['arMemMerc', 421]].forEach(([id, y]) => { const t = text(d, 50, y, 113, 78); t.id = id; t.style.overflowY = 'auto'; t.style.pointerEvents = 'auto'; });
+      btn(d, 553, 77, 512, 60, 20, () => hide(d));
+    }
+    el('arMemCmd').textContent = m.commander; el('arMemLt').textContent = ''; el('arMemUnit').textContent = ''; el('arMemReg').textContent = m.members.join('\n'); el('arMemMerc').textContent = '';
+    UI.sysLine(M0(0x1a9));
     show(d);
   }
   function handle(m) {
@@ -179,22 +271,13 @@ const ArmyUI = (() => {
       case 'askcore': UI.msgBox(fmt(M0(0x157), m.army, m.commander), ['yes', 'no'], y => A({ a: 'inviteans', commander: m.commander, ok: y ? 1 : 0 })); break;
       case 'askjoin': UI.msgBox(fmt(M0(0x158), m.army, m.commander), ['yes', 'no'], y => A({ a: 'hireans', commander: m.commander, ok: y ? 1 : 0 })); break;
       case 'info': info(m); break;
-      case 'members': UI.sysLine(`${M0(0xed)}: ${m.commander} / ${M0(0xee)}: ${m.members.join(', ')}`); break;
+      case 'members': members(m); break;
       case 'manage': manage(); break;
-      case 'notice': UI.msgBox(M0(0x152), ['ok', 'cancel'], (y, v) => { if (y) A({ a: 'notice', text: v }); }, true); break;
+      case 'notice': noticeWin(m.text); break;
       case 'noticed': UI.sysLine(M0(0x19e)); break;
       case 'badge': UI.armyName = m.name; break;
     }
   }
   const fmt = (t, ...a) => { let k = 0; return t.replace(/%[sud]/g, () => String(a[k++] ?? '')); };
-  // ---- 관리 (0x727 → ia-z20-ba): 원작 창은 다음 단계에서. 지금은 공지·모집·해고·해산만 차례로 묻는다
-  function manage() {
-    UI.ask([M0(0xf6).trim(), M0(0x127).trim(), M0(0x105).trim(), M0(0xfb).trim()], k => {
-      if (k === 1) A({ a: 'notice' });
-      else if (k === 2) UI.msgBox(M0(0x155), ['ok', 'cancel'], (y, v) => { if (y && v) A({ a: 'hire', name: v }); }, true);
-      else if (k === 3) UI.msgBox(M0(0x155), ['ok', 'cancel'], (y, v) => { if (y && v) A({ a: 'hire', name: v, fire: 1 }); }, true);
-      else if (k === 4) UI.msgBox(M0(0x151), ['yes', 'no'], y => { if (y) A({ a: 'breakup' }); });
-    });
-  }
   return { handle, open: () => A({ a: 'info' }) };
 })();
