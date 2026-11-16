@@ -54,12 +54,14 @@ class Events {
 
   // ---------- 사람 쪽 ----------
   // 지금 단계의 조건 첫 낱말이 name 이고 check(나머지 낱말)가 맞으면 진행한다
-  trigger(p, name, check = () => true, fromClient = false) {
+  trigger(p, name, check = () => true, fromClient = false, after = null, npc = null) {
     for (const i of this.personal()) {
       const k = this.stepOf(p, i), st = SCRIPT[i].steps[k]; if (!st) continue;
       if ((st.s === 1) === fromClient) continue;               // S 단계는 서버가, C 단계는 클라이언트가 알린다
       const c = words(st.cond); if (c[0] !== name || !check(c.slice(1))) continue;
+      if (npc) (p.evNpc ||= {})[i] = npc;
       this.run(p, i, k);
+      if (after) after();
     }
   }
   // 한 단계 실행: 클라이언트 행동과 서버 행동을 하고 다음 단계로
@@ -95,35 +97,61 @@ class Events {
   // 걸음을 마쳤을 때: AppearAt x1 y1 x2 y2 (그 네모 안)
   moved(p) { this.trigger(p, 'AppearAt', ([x1, y1, x2, y2]) => p.x >= +x1 && p.x <= +x2 && p.y >= +y1 && p.y <= +y2); }
   bought(p, k, i, n) { this.trigger(p, 'BuyItem', ([a, b]) => +a === k && +b === i); }
-  killed(p, mobName) { this.trigger(p, 'KillMonster', ([nm]) => nm === '+' + mobName); }
+  // 몬스터 이름표는 "+이름_n" (n 은 맵의 몬스터를 불러온 순서, CMopServer::LoadMop 0x4772f3).
+  // 에스퍼·첩보대장은 그 퀘스트 차례일 때만 진행되고, 진행한 뒤 이야기 퀘스트 시작 조건을 다시 본다 (CMopServer::Dead 0x479140~0x4792e1)
+  killed(p, sid) {
+    const S = this.w.game.story, R = require('./story').ready;
+    this.trigger(p, 'KillMonster', ([nm]) => {
+      if (nm !== sid) return false;
+      if (sid.includes('첩보대장')) return R.captain(p);
+      if (sid.includes('에스퍼')) return R.esper(p);
+      return true;
+    }, false, () => S.checkAndStart(p));
+  }
+  line(c) { return line(c); }
+  // 종류 41 NPC: 그 이벤트를 처음 단계로 되돌리고, 첫 조건이 EventTriggered 면 바로 진행 (ProcessEvent 0x421e60)
+  startAt(p, i, npc) {
+    if (!SCRIPT[i] || !(SCRIPT[i].map === this.w.mapId || SCRIPT[i].map === ANY_MAP)) return;
+    (p.ev ||= {})[i] = 0;
+    if (firstWord(this.cond(i, 0)) === 'EventTriggered') { (p.evNpc ||= {})[i] = npc; this.run(p, i, 0); }
+  }
+  // 이름 붙은 조건(GoGoQuest, KasamQuest1 …)을 지금 단계로 가진 이벤트를 모두 진행 (DoProperEvent 0x410410)
+  named(p, name, npc) { this.trigger(p, name, () => true, false, null, npc); }
   // 클라이언트가 알리는 C 조건 (Key 코드, Walk, Run, Turn, Chat)
   client(p, name, arg) { if (['Key', 'Walk', 'Run', 'Turn', 'Chat'].includes(name)) this.trigger(p, name, a => name !== 'Key' || +a[0] === +arg, true); }
 
   // 서버 행동. 돌려주는 값은 다음 단계까지 건너뛸 칸 수
   serverActions(p, i, text, npc) {
-    let jump = 1;
+    let jump = 0;
     for (const a of acts(text)) {
       const w = words(a), cmd = w[0];
-      if (cmd === 'Jmp') jump = Number(w[1]) || 1;
+      if (cmd === 'Jmp') { if (Number(w[1]) > 0) jump += Number(w[1]); }   // 여러 번이면 더한다, 0 이하면 1 (0x42639b, 0x4280cc)
       else if (cmd === 'ChatOneByCode' || cmd === 'ChatAllByCode') {
         const who = this.npcByRef(w[1], npc), text = line(w[2]); if (!text) continue;
-        const msg = { t: 'chat', id: who ? who.id : 0, name: who ? who.name : (w[1] || '').replace(/^\+/, ''), text, npc: 1 };
+        const msg = { t: 'chat', id: who ? who.id : 0, name: who ? who.name : (w[1] || '').replace(/^\+/, '').replace(/_\d+$/, ''), text, npc: 1 };
         if (cmd === 'ChatOneByCode' && p) p.send(msg); else if (who) this.w.near(who, msg); else if (p) p.send(msg);
       } else if (cmd === 'GetUserResponseByCode' && p) {
-        p.send({ t: 'ask', ev: i, options: w.slice(1).map(c => line(c)) });
+        let codes = w.slice(1, 6).map(Number);
+        // 보기 281·282·283 은 이야기 진행에 따라 줄어든다: 0x8 전이면 하나, 0x400 전이면 둘 (0x426300)
+        if (codes.length === 3 && codes[0] === 0x119 && codes[1] === 0x11a && codes[2] === 0x11b) {
+          if (!((p.story || 0) & 8)) codes = codes.slice(0, 1); else if (!((p.story || 0) & 0x400)) codes = codes.slice(0, 2);
+        }
+        p.send({ t: 'ask', ev: i, options: codes.map(c => line(c)) });
       } else if (cmd === 'Move' && p) {
         const dst = this.w.game.world(Number(w[1]));
         if (dst) { const from = p.world; from.leave(p); dst.enter(p, Number(w[2]), Number(w[3])); }
       }
-      // 그 밖의 서버 행동(퀘스트 아이템, 퀘스트 상태, 그룹, 보너스 초기화 등)은 아직 옮기지 않았다
+      else if (p && this.w.game.story.action(p, cmd, w)) { /* 퀘스트 행동 */ }
+      // 그룹 만들기·해산, 보너스 초기화(InitBonus, 그 조건 WantToInitBonus 는 이 서버판에서 어디서도 걸리지 않는다), 보조 퀘스트(BeginSubQuest*)는 아직
     }
-    return jump;
+    return jump > 0 ? jump : 1;
   }
   // "+이름" 은 그 맵의 그 이름 NPC, "%NPCID" 는 이벤트를 건 NPC
+  // "+첩자_0" 처럼 몬스터 이름표일 수도 있다 (대본 18: 첩자가 말한다)
   npcByRef(ref, npc) {
     if (ref === '%NPCID') return npc || null;
     const name = String(ref || '').replace(/^\+/, '');
-    return this.w.npcs.find(n => n.name === name) || null;
+    return this.w.npcs.find(n => n.name === name) || [...this.w.mobs.values()].find(m => m.sid === ref) || null;
   }
 }
 module.exports = { Events, SCRIPT };

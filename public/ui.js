@@ -24,7 +24,7 @@ const UI = (() => {
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
   function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block'); } }
-  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
+  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
   document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') { if (exch) closeExch(true); else closeShop(true); } else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
 
@@ -224,11 +224,35 @@ const UI = (() => {
   function closeWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display === 'block') toggle(id); }
   function openWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display !== 'block') toggle(id); }
   // 선택지 창: 메시지 창 그림 iw-me-ba(73) 위에 고를 줄을 늘어놓는다 (원작 창 안의 배치는 아직 확인하지 못함)
+  // 원작 시스템 메시지 (Message.ctf 0/2): %u %d %s 를 차례로 채운다
+  function sysText(code, args) {
+    const t = msgs && msgs[0] && msgs[0][2] && msgs[0][2][code]; if (!t) return '';
+    let k = 0; return t.replace(/\\n/g, '\n').replace(/%[uds]/g, () => String(args && args[k] !== undefined ? args[k++] : ''));
+  }
+  const m7 = c => (c && msgs && msgs[0] && msgs[0][7] && msgs[0][7][c] || '').replace(/\\n/g, '\n');
+  // 퀘스트 정보 창: 제목, 할 일, 퀘스트 아이템 다섯 칸 (SendSetQuestInfoWindow, 아이템 분류 0xe)
+  let quest = null;
+  function setQuest(q) { quest = q; drawQuest(); if (q.open) openWin('winQuest'); }
+  function drawQuest() {
+    const box = el('winQuest'); if (!box || !quest) return;
+    el('qtitle').textContent = m7(quest.lines[0]) || '진행 중인 퀘스트가 없습니다.';
+    el('qtext').textContent = m7(quest.lines[1]);
+    const cs = el('qcells'); cs.innerHTML = '';
+    (quest.items || []).forEach((it, k) => { const c = cell(it, 14 + k * 38, 0, false); if (it) c.title = it.name + (it.desc ? '\n' + it.desc : ''); cs.appendChild(c); });
+  }
+  // 우편: 원작은 우체통에서 읽는다. 여기서는 받은 우편을 바로 띄운다
+  let mails = [];
+  function showMail(list) {
+    mails = mails.concat(list); const m = mails[0]; if (!m) return;
+    el('mfrom').textContent = m.from; el('mtitle').textContent = m.title; el('mtext').textContent = m.text;
+    el('winMail').style.display = 'block';
+  }
+  function nextMail() { mails.shift(); if (mails.length) showMail([]); else { el('winMail').style.display = 'none'; return true; } }
   function askChoice(options, cb) {
     const box = el('winAsk');
     box.innerHTML = options.map((t, k) => `<div class="askopt" data-k="${k + 1}">${esc(t)}</div>`).join('');
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

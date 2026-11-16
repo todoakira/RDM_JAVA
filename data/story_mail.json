@@ -1,0 +1,20 @@
+{
+ "RMS_BEGINSPYQUEST": {
+  "bit": 1,
+  "from": "Kasham",
+  "title": "Find Aguilas Spy",
+  "text": "I am Kasham. Sorry for this urgent mail.\n\nBut, I have to hurry because this is really\nimportant.  You know, after the Great Disaster in\nSignus, Signus had fallen under the control of\nthe traitor Aguilas and he began to surpress all\nhis opponents.\n\nAccording to my secret agent, he started to\nreach his hands on Earth. He is eager to\nconquer the Earth for abundant resources unlike\nexhausted Signus.\n\nAlso, they have a plan to eliminate you because\nthey think you might be a genuine SUN, our\nsavior.\n\nHurry up to find their base station. According to\nmy agent, a spy of Aguilas leads you a chase.\nYou have to discover their secrets. If you get\nit, go to our agent and give it to him. He\ndisguises himself as a archaeologist.\n\nRegards.\n\nP.S.: According to my agent, the spy hides in the\nupper right side of Street 1."
+ },
+ "RMS_BEGINCAPTAINYQUEST": {
+  "bit": 128,
+  "from": "Kasham",
+  "title": "Locating Aguilas Base",
+  "text": "Hello. This is Kasham. I have to contact you for\nan urgent problem.\n\nI've heard stange reports about Sahara these days.\nMy agents witnessed, in near a shrine of Sahara,\nAguilas spies working suspiciously. Although, you\ndestroyed Aguila's post base, this seems not safe\nfor the rest of us.\n\nAccording to one of our spies, there are many Aguilas\nbases in the Earth and an Earth Commandor of Aguilas\nis controlling all those bases from that shrine.\n\nPeople will not be suspicious if their commandor hides\nin that shrine middle of Sahara and no one knows how\nto get inside.\n\nYou have to unmask a conspiracy that Aguilas tries to\nkill the Sun.\n\nI wish you accomplish this mission soon."
+ },
+ "RMS_KASAMSPACESHIPMAIL": {
+  "bit": 16384,
+  "from": "[Kasham]",
+  "title": "Leaving for Signus",
+  "text": "This is Kasham.\n\nHopefully you have succeeded with the test\nthat you faced in the Himalayas.\n\nTime is short! I have repaired the space ship\nas best I could and believe it will be able to\ntake you to Signus, but only if you leave soon.\n\nSo, please contact me as soon as possible\nso that you can make the journey to Signus\nand put an end to the evil Aguilas...\n\nThe fight goes on!"
+ }
+}

@@ -35,7 +35,8 @@ const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 �
 const crypto = require('crypto');
 const G = require('./grid');
 const SK = require('./skills');
-const { Events } = require('./events');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
+const { Events } = require('./events');
+const STORY = require('./story');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
 const EV_NO_ATTACK = 18, EV_MOB_OK = [0, 19, 22], EV_LURE = 22;
@@ -72,11 +73,13 @@ class World {
       const npc = { id: game.nextId++, npc: 1, name: n.name, chr: spriteOf(n.img), x: t.x, y: t.y, z: t.z, dir: 2, event: n.event };
       this.npcs.push(npc); this.occ.set(this.key(t), npc.id);
     }
-    let skipped = 0;
+    let skipped = 0, seq = 0;
     for (const s of sv.spawns) {
       const info = game.mopInfo[s.kind];
+      // 몬스터 이름표 "+이름_n": n 은 이 맵에서 불러온 순서 (CMopServer::LoadMop 0x4772f3, "+%s_%u"). 대본의 KillMonster 가 이것으로 고른다
+      const sids = []; for (let i = 0; i < s.count; i++) sids.push(`+${s.name}_${seq++}`);
       if (!info || !(spriteOf(info.img) in game.chrIndex)) { skipped += s.count; continue; }   // 그림이 없는 몬스터는 내보내지 않는다
-      for (let i = 0; i < s.count; i++) this.spawnMob(s);
+      for (const sid of sids) this.spawnMob(s, sid);
     }
     if (skipped) console.log(`  맵 ${mapId}: 그림이 없는 몬스터 ${skipped}마리 제외`);
   }
@@ -280,6 +283,44 @@ class World {
       this.game.sendStat(p);
     }
   }
+  // 이야기 퀘스트가 걸린 NPC (CMapServerClient::ProcessEvent 0x41ee70 의 종류 27·28·29·41·44). 처리했으면 true
+  storyNpc(p, n, kind, e) {
+    const R = STORY.ready, ev = this.script;
+    if (kind === 27 && R.gogo(p)) { ev.named(p, 'GoGoQuest', n); return true; }              // 고고학자: 차례가 아니면 상점 (0x420d0b)
+    if (kind === 28 && R.sahara(p)) { ev.named(p, 'SaharaMiniMapQuest', n); return true; }   // 지리학자
+    if (kind === 29) {                                                                         // 카삼 (0x4216b0)
+      const say = c => p.send({ t: 'chat', id: n.id, name: n.name, text: this.script.line(c), npc: 1 });
+      if (R.kasam1(p)) ev.named(p, 'KasamQuest1', n);
+      else if (R.esper(p) || (!R.kasam2(p) && !R.kasam3(p) && R.captain(p))) say(0x296);     // "일을 마치고 오게"
+      else if (R.kasam2(p)) ev.named(p, 'KasamQuest2', n);
+      else if (R.kasam3(p)) ev.named(p, 'KasamQuest3', n);
+      else if (R.kasam4(p)) ev.named(p, 'KasamQuest4', n);
+      else if (R.recollect(p)) ev.named(p, 'KasamRecollectQuest', n);
+      else if (R.spaceship(p)) ev.named(p, p.chr === 3 ? 'DestinoKasamSpaceShip' : 'KasamSpaceShip', n);
+      else say(0x297);                                                                         // 레벨 1000 보너스 퀘스트는 아직 없다
+      return true;
+    }
+    if (kind === 41 && e) {                                                                    // 이벤트 번호를 직접 가리킨다 (0x421e60)
+      if (e[1] >= 0x45 && e[1] <= 0x48 && [0x5d, 0x5e, 0x5f, 0x60].includes(this.mapId) && this.mobs.size) this.game.story.msg(p, 0xcf);
+      else ev.startAt(p, e[1], n);
+      return true;
+    }
+    if (kind === 44) {                                                                         // 회상 퀘스트: 직업마다 다른 이벤트 (0x421f9e)
+      if ((p.story || 0) & 0x2000) this.game.story.msg(p, 200);
+      else if ((p.story || 0) & 0x1000) { const c = ['Philar', 'Azlar', 'Sadad', 'Destino', 'Park', 'Canon', 'Han', 'Lunarena', 'Lavita'][p.chr]; ev.named(p, (c || '') + 'RecollectQuest', n); }
+      return true;
+    }
+    return false;
+  }
+  // 맵 79 → 83 이동 지점: 카삼 4 를 마쳐야 하고, 회상 이야기를 듣고, 카삼 회상까지 마쳐야 지나간다 (0x41f2f0)
+  storyGate(p, to) {
+    if (this.mapId !== 79 || to !== 83) return true;
+    const s = p.story || 0;
+    if (!(s & 0x400)) { this.game.story.msg(p, 0x75); return false; }
+    if (!(s & 0x800)) { this.script.named(p, 'SayKasamRecollect'); return false; }
+    if (!(s & 0x1000)) { this.game.story.msg(p, 0xb0); return false; }
+    return true;
+  }
   // NPC에게 말 걸기: 옆까지 걸어가면 그 NPC에 연결된 이벤트가 실행된다
   talkCmd(p, id, run) {
     const n = this.npcs.find(q => q.id === id); if (p.dead || !n) return;
@@ -294,7 +335,8 @@ class World {
     p.talk = 0; p.path = [];
     // NPC의 이벤트 번호는 맵의 이벤트가 아니라 공용 표(EventInfo.rse)를 가리킨다 (CMapServerClient::ProcessEvent 0x41ee70)
     const e = this.game.gEvents[n.event], kind = e ? e[0] : 0;
-    if (SHOP_KINDS.includes(kind) && this.game.shops[e[1]]) { this.game.openShop(p, e[1], n); return; }
+    if (this.storyNpc(p, n, kind, e)) return;
+    if ((SHOP_KINDS.includes(kind) || kind === 27 || kind === 28) && this.game.shops[e[1]]) { this.game.openShop(p, e[1], n); return; }
     if (kind === 8 || kind === 81) { this.game.cure(p, n); return; }
     if (kind === 6 || kind === 80) { this.game.openBank(p, n); return; }
     if (kind === 20) { this.game.openExchange(p, e[1] || 0, n); return; }
@@ -331,11 +373,11 @@ class World {
 
   // ---------- 몬스터 ----------
   // 배치표의 영역 좌표를 그대로 써서 자리를 고른다 (CMopServer::LoadMop 0x4773ac)
-  spawnMob(s) {
+  spawnMob(s, sid) {
     const info = this.game.mopInfo[s.kind];
     const t = this.findFirstEmptyPlace(s.rect, q => this.canMop(q)); if (!t) return null;
     const st = F.mobStats(info, s.pattern);
-    const m = { id: this.game.nextId++, mob: 1, s, info, pattern: s.pattern, home: t, name: s.name, chr: spriteOf(info.img), x: t.x, y: t.y, z: t.z, dir: G.DIRS[rnd(8)],
+    const m = { id: this.game.nextId++, mob: 1, sid, s, info, pattern: s.pattern, home: t, name: s.name, chr: spriteOf(info.img), x: t.x, y: t.y, z: t.z, dir: G.DIRS[rnd(8)],
       str: st.str, spi: st.spi, dex: st.dex, pow: st.pow, atk: st.atk, minPct: st.minPct, maxHp: st.maxHp, hp: st.maxHp, exp: st.exp,
       // 사거리는 두 공격 범위 중 큰 값 (CMopInfo::LoadMopInfo 0x475f63)
       maxRange: Math.max(info.range, info.range2 || 0),
@@ -398,7 +440,7 @@ class World {
     let best = 0, bu = null;
     for (const u of this.players.values()) {
       if (!this.inMgmt(m, u)) continue;
-      if (m.pattern === 3) continue;       // 패턴 3은 이벤트로 표시된 주인공만 노린다 (0x47cfaa). 그 이벤트는 아직 없다
+      if (m.pattern === 3 && !u.activated) continue;   // 패턴 3은 대본의 ActivateUser 로 표시된 주인공만 노린다 (0x47cfaa, +0x4340)
       if (info.img === IMG_WARPER) return [1, u];
       const d = G.dist(m, u), rec = this.canRecognize(m, u);
       const e = this.eventAt(u.x, u.y), lure = !!e && e[0] === EV_LURE;
@@ -537,8 +579,8 @@ class World {
     if (d.mob) {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);
-      this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
-      if (!a.mob) { this.game.gainExp(a, d.exp); this.script.killed(a, d.name); }
+      this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
+      if (!a.mob) { this.game.gainExp(a, d.exp); this.script.killed(a, d.sid); }
     } else {
       d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
       this.game.deathPenalty(d);
@@ -605,6 +647,7 @@ class World {
       // 맵 이동 지점을 밟으면 다른 맵으로 넘어간다
       const e = this.eventAt(n.x, n.y);
       if (e && e[0] === EV_WARP) {
+        if (!this.storyGate(p, e[1])) { p.path = []; continue; }
         const w = this.game.world(e[1]);
         if (w) { this.leave(p); w.enter(p, e[2], e[3]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
       }
@@ -627,6 +670,7 @@ const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y,
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
+    this.story = new STORY.Story(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -693,7 +737,7 @@ class Game {
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
-      hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y };
+      hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [] };
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -722,6 +766,7 @@ class Game {
       for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame']) if (d[k] !== undefined) p[k] = d[k];
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
       if (d.bank) p.bank = d.bank;
+      p.story = d.story >>> 0 || 0; p.qitems = Array.isArray(d.qitems) ? d.qitems : null; p.mails = Array.isArray(d.mails) ? d.mails : [];
     }
     if (!d) { p.money = NEW_CHAR.money; p.inv = NEW_CHAR.items.map(([k, i, n]) => ({ k, i, n })); p.skills = NEW_CHAR.skills[chr]; }
     else if (d.skills) p.skills = d.skills;
@@ -851,15 +896,20 @@ class Game {
     this.recalc(p, false); this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp, maxHp: p.maxHp });
   }
   // 한 마리로 얻는 경험치는 필요 경험치의 1/10까지. 레벨이 오르면 경험치는 0부터 다시 시작한다
+  // 경험치 얻기 (DoExperimentUp 0x438e70): 한 번에 필요 경험치의 1/10 까지, 남은 만큼까지. 실제로 얻은 양을 돌려준다
   gainExp(p, exp) {
-    if (p.level >= F.MAX_LEVEL) return;
-    const need = F.expTable[p.level], gain = Math.min(exp, Math.max(1, Math.floor(need / F.EXP_CAP_DIV)));
+    if (p.level >= F.MAX_LEVEL) return 0;
+    const need = F.expTable[p.level];
+    let gain = Math.min(exp, Math.max(1, Math.floor(need / F.EXP_CAP_DIV)));
+    if (p.exp < need) gain = Math.min(gain, need - p.exp);
     p.exp += gain; p.send({ t: 'exp', gain });
     if (p.exp >= need) {
       p.level++; p.exp = 0; p.bonus += F.bonusForLevelUp(p.level); this.recalc(p, true);
       p.world.broadcast({ t: 'lvl', id: p.id, level: p.level, hp: p.hp, maxHp: p.maxHp });
+      this.story.checkAndStart(p);
     }
     this.sendStat(p);
+    return gain;
   }
   // ---------- 상점 ----------
   // 상점 가격 = 아이템 가격 × 상점의 가격 비율(%) (CShopManager::Load 0x487190). 군단 세금은 군단이 없어 0
@@ -966,7 +1016,7 @@ class Game {
   // 시험용: /아이템 분류 번호 [수량]
   cheatItem(p, k, i, n) { if (!this.itemInfo(k, i) || !this.items[k] || !this.items[k][i]) return false; this.giveItem(p, k, i, n || 1); return true; }
   gotoMap(p, id) { const w = this.world(id); if (!w || p.dead) return false; p.world.leave(p); w.enter(p); return true; }
-  cheatLevel(p, lv) { lv = Math.max(1, Math.min(F.MAX_LEVEL, lv | 0)); p.bonus += F.bonusTotal(lv) - F.bonusTotal(p.level); p.level = lv; p.exp = 0; this.recalc(p, true); this.sendStat(p); }
+  cheatLevel(p, lv) { lv = Math.max(1, Math.min(F.MAX_LEVEL, lv | 0)); p.bonus += F.bonusTotal(lv) - F.bonusTotal(p.level); p.level = lv; p.exp = 0; this.recalc(p, true); this.sendStat(p); this.story.checkAndStart(p); }
   tick(now) { for (const w of this.worlds.values()) w.tick(now); }
   get online() { let n = 0; for (const w of this.worlds.values()) n += w.players.size; return n; }
 }

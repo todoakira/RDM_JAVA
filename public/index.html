@@ -54,9 +54,17 @@
 <div id="skquick" style="display:none"></div>
 <div id="fxlist"></div>
 <div id="winAsk"></div>
+<div id="winQuest" class="win" style="left:10px;top:120px;width:220px;height:150px;background:url(assets/int/73.png) 0 0 / 100% 100%"><div class="x" data-close="winQuest"></div>
+  <div id="qtitle" class="txt" style="left:14px;top:12px;width:192px;color:#ffd890;font-weight:bold"></div>
+  <div id="qtext" class="txt" style="left:14px;top:32px;width:192px;height:58px;white-space:pre-line"></div>
+  <div id="qcells" style="position:absolute;left:0;top:100px"></div></div>
+<div id="winMail" style="display:none;position:fixed;left:50%;top:12%;transform:translateX(-50%);width:380px;box-sizing:border-box;padding:16px 18px;background:url(assets/int/73.png) 0 0 / 100% 100%;z-index:21;font-size:12px;color:#f0e0b0">
+  <div style="color:#ffd890">보낸이: <span id="mfrom"></span></div><div id="mtitle" style="font-weight:bold;margin:4px 0 8px"></div>
+  <div id="mtext" style="white-space:pre-line;max-height:320px;overflow:auto;line-height:1.45"></div>
+  <div id="mok" class="askopt" style="text-align:center;margin-top:10px">확인</div></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
-<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp</div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보</div>
 <div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
 <div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i><i id="gd" style="left:54px;background-image:url(assets/int/55.png)"></i></div>
 <div id="menubar"></div>

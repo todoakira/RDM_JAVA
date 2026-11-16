@@ -354,6 +354,7 @@ addEventListener('keydown', e => {
     else if (e.key === 'm' || e.key === 'M' || e.key === 'ㅡ') log(Sound.toggle() ? '소리를 켭니다.' : '소리를 끕니다.', 'sys');
     else if (e.key === 'e' || e.key === 'E' || e.key === 'ㄷ') UI.toggle('winEq');
     else if (e.key === 'c' || e.key === 'C' || e.key === 'ㅊ') UI.toggle('winChr');
+    else if (e.key === 'q' || e.key === 'Q' || e.key === 'ㅂ') UI.toggle('winQuest');
     else if (e.key === '+' || e.key === '=') zoom = Math.min(3, zoom + 1);
     else if (e.key === '-') zoom = Math.max(1, zoom - 1);
   }
@@ -429,6 +430,9 @@ const handlers = {
     drawSkills();
   },
   note(m) { log(esc(m.text), 'sys'); },
+  sys(m) { const t = UI.sysText(m.code, m.args); if (t) log(esc(t), 'sys'); },
+  quest(m) { UI.quest(m); },
+  mail(m) { UI.mail(m.mails); $('mok').onclick = () => { if (UI.nextMail()) send({ t: 'mailread' }); }; },
   // 이벤트 대본의 클라이언트 행동: CloseWindow n / OpenWindow n. n 1~5 는 F1~F5 창, 100 은 상점 창
   evui(m) {
     const [cmd, n] = m.act.split(/\s+/), WIN = { 1: 'gauge', 2: 'winChr', 3: 'winInv', 4: 'winEq', 5: 'skill' };
