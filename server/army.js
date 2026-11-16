@@ -16,7 +16,7 @@ class Army {
   constructor(game) {
     this.game = game;
     try { this.db = JSON.parse(fs.readFileSync(path.join(ROOT, 'save', 'army.json'), 'utf8')); } catch (e) { this.db = {}; }
-    this.db.seq ||= 0; this.db.armies ||= {}; this.db.members ||= {}; this.db.sanction ||= {}; this.db.subs ||= {};
+    this.db.seq ||= 0; this.db.armies ||= {}; this.db.members ||= {}; this.db.sanction ||= {}; this.db.subs ||= {}; this.db.alliance ||= {};
   }
   save() { try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(path.join(ROOT, 'save', 'army.json'), JSON.stringify(this.db)); } catch (e) { console.log('군단 저장 실패', e.message); } }
   msg(p, code, ...a) { this.game.story.msg(p, code, ...a); }
@@ -101,7 +101,7 @@ class Army {
     const id = this.idOf(p.name), a = this.db.armies[id]; if (!a || a.state !== STATE.RESERVE || a.commander !== p.name) return;
     this.remove(id); this.msg(p, 0x2b, a.name); this.save();
   }
-  remove(id) { delete this.db.armies[id]; for (const n of this.members(id)) delete this.db.members[n]; for (const l of Object.keys(this.db.subs)) if (this.db.subs[l].army === id) delete this.db.subs[l]; }
+  remove(id) { this.leaveAlliance(id); delete this.db.armies[id]; for (const n of this.members(id)) delete this.db.members[n]; for (const l of Object.keys(this.db.subs)) if (this.db.subs[l].army === id) delete this.db.subs[l]; }
 
   // ---- 군단 만들기
   // 시도 (ProcessTryToCreateArmy 0x4128b0, GetArmyCreateInfo): 예비 군단이 있으면 그 이름. 진영의 이미 쓰는 문장 목록
@@ -195,7 +195,8 @@ class Army {
     if (!a) { p.send({ t: 'army', w: 'info', none: 1 }); return; }
     const m = this.db.members[p.name], lt = this.db.subs[p.name] ? p.name : m && m.sub, sub = lt && this.db.subs[lt];
     p.send({ t: 'army', w: 'info', name: a.name, commander: a.commander, notice: a.notice, mark: a.mark, camp: a.camp, me: a.commander === p.name ? 'cmd' : 'reg',
-      lt: sub ? lt : '', unit: sub ? sub.name : '', unitNotice: sub ? sub.notice : '' });
+      lt: sub ? lt : '', unit: sub ? sub.name : '', unitNotice: sub ? sub.notice : '',
+      allies: this.allyMembers(id).filter(k => k !== id).map(k => this.db.armies[k] && this.db.armies[k].name).filter(Boolean) });
   }
   // 멤버 (ProcessClickArmyMemberInfo 0x4171a0): 군단장, 병사
   memberList(p) {
@@ -436,6 +437,89 @@ class Army {
     const id = this.idOf(p.name, true); lt = String(lt || ''); const s = this.db.subs[lt];
     if (!id || !s || s.army !== id) { this.msg(p, 0xdb); return; }
     p.send({ t: 'army', w: 'unit', lt, members: this.unitMembers(lt) });
+  }
+
+  // ---- 동맹 (4단계, ProcessClickRequestArmyAlliance 0x414b60 ~ ProcessBreakArmyAlliance 0x415430, RMS_ARMY_DOARMYALLIANCE·BREAKARMYALLIANCE)
+  //   동맹 하나는 주인 군단(bHost) 하나와 군단 넷까지. 주인이 아닌 군단은 다른 군단을 끌어들일 수 없다 (0xe4)
+  allyOf(id) { return this.db.alliance[id]; }
+  allyMembers(id) { const a = this.db.alliance[id]; return a ? Object.keys(this.db.alliance).map(Number).filter(k => this.db.alliance[k].aid === a.aid) : []; }
+  allyCount(id) { return this.allyMembers(id).length; }                       // GetAllianceCount
+  allyAvailable(id) { const a = this.db.alliance[id]; return !a || a.host; }  // IsAllianceAvailable
+  allyHost(id) { return this.allyMembers(id).find(k => this.db.alliance[k].host) || 0; }
+  armyIdByName(name) { return this.byName(String(name || ''))[0]; }
+  allyClick(p) {
+    const [id] = this.cmdArmy(p); if (!id) return;
+    if (!this.allyAvailable(id)) { this.msg(p, 0xe4, this.db.armies[this.allyHost(id)].name); return; }
+    if (this.allyCount(id) > 4) { this.msg(p, 0xe5); return; }
+    p.send({ t: 'army', w: 'allyask' });
+  }
+  // 동맹 신청: 같은 진영, 상대가 동맹이 없어야 (0x4b), 내 동맹은 다섯 미만 (0xe5). 상대 군단장에게 금액과 함께 0/0/0x15b 질문
+  allyRequest(p, name, amount) {
+    const tid = this.armyIdByName(name), t = this.db.armies[tid]; amount = Math.max(0, Math.min(4000000000, Math.floor(Number(amount)) || 0));
+    const id = this.idOf(p.name, true); if (!id) { this.msg(p, 0xdb); return; }
+    if (!t || t.state < 1) { this.msg(p, 0x3a, String(name || '')); return; }
+    if (tid === id) return;
+    const a = this.db.armies[id];
+    if (a.camp !== t.camp) { this.msg(p, 0xee); return; }
+    if (a.commander !== p.name) { this.msg(p, 0x1e); return; }
+    if (!this.allyAvailable(id)) { this.msg(p, 0xe4, this.db.armies[this.allyHost(id)].name); return; }
+    if (this.allyCount(tid) > 0) { this.msg(p, 0x4b, t.name); return; }
+    if (this.allyCount(id) >= 5) { this.msg(p, 0xe5); return; }
+    const q = this.game.findOnline(t.commander); if (!q) { this.msg(p, 0xf7, t.commander); return; }
+    (q.armyAsk ||= {})[p.name] = 'ally'; q.armyAllyAmount = amount;
+    q.send({ t: 'army', w: 'askally', commander: p.name, army: a.name, amount });
+  }
+  // 대답 (ProcessAnswerArmyAlliance 0x415050, SendResultAskAlliance 0x465450): 받으면 동맹을 맺고, 신청한 쪽이 돈이 있으면 그 금액을 넘긴다 (0x102), 없으면 0x43
+  allyAnswer(p, commander, yes) {
+    commander = String(commander || ''); if (!p.armyAsk || p.armyAsk[commander] !== 'ally') return; delete p.armyAsk[commander];
+    const amount = p.armyAllyAmount || 0, c = this.game.findOnline(commander);
+    const id = this.idOf(commander, true), tid = this.idOf(p.name, true), a = this.db.armies[id], t = this.db.armies[tid];
+    if (!a || !t) { this.msg(p, 0xdb); return; }
+    if (!c) { this.msg(p, 0xf7, commander); return; }
+    if (!yes) { this.msg(c, 0x48, t.name, p.name); return; }
+    if (a.camp !== t.camp) { this.msg(p, 0xee); return; }
+    if (t.commander !== p.name) { this.msg(p, 0x1e); return; }
+    if (!this.allyAvailable(id) || this.allyCount(tid) > 0 || this.allyCount(id) >= 5) return;
+    const h = this.db.alliance[id];
+    if (h) this.db.alliance[tid] = { aid: h.aid, host: false };
+    else { const aid = (this.db.allySeq = (this.db.allySeq || 0) + 1); this.db.alliance[id] = { aid, host: true }; this.db.alliance[tid] = { aid, host: false }; }
+    this.save();
+    if (c.money >= amount) {
+      c.money -= amount; p.money = Math.min(4000000000, p.money + amount); this.game.sendInv(c); this.game.sendInv(p);
+      for (const w of this.game.worlds.values()) for (const q of w.players.values()) this.msg(q, 0x102, t.name, a.commander);   // BroadcastDoArmyAlliance
+    } else this.msg(p, 0x43, a.name, amount);
+  }
+  allyBreakClick(p) {
+    const [id] = this.cmdArmy(p); if (!id) return;
+    if (this.allyCount(id) < 1) { this.msg(p, 0xf8); return; }
+    p.send({ t: 'army', w: 'allybreak' });
+  }
+  // 동맹 깨기: 주인이면 그 군단을, 주인이 아니면 주인과의 동맹을 끊는다. 둘 다 주인이 아니면 0xfa. 동맹 군단장 모두에게 우편
+  allyBreak(p, name) {
+    const id = this.idOf(p.name, true), tid = this.armyIdByName(name);
+    if (!id) { this.msg(p, 0xdb); return; }
+    if (!tid) { this.msg(p, 0x3a, String(name || '')); return; }
+    if (this.db.armies[id].commander !== p.name) { this.msg(p, 0x1e); return; }
+    if (this.allyCount(id) < 1) { this.msg(p, 0xf8); return; }
+    const same = this.allyOf(id) && this.allyOf(tid) && this.allyOf(id).aid === this.allyOf(tid).aid;
+    if (!same) { this.msg(p, 0xf9, this.db.armies[tid].name); return; }
+    let host, other;
+    if (this.allyOf(id).host) { host = id; other = tid; } else if (this.allyOf(tid).host) { host = tid; other = id; }
+    else { this.msg(p, 0xfa, this.db.armies[this.allyHost(id)].name); return; }
+    this.breakAlly(host, other); this.save(); p.send({ t: 'army', w: 'allybroken' });
+  }
+  breakAlly(host, other) {
+    const H = this.db.armies[host], O = this.db.armies[other];
+    const text = `${H ? H.name : ''} Army/${O ? O.name : ''} Army\nAlliance has been dissolved.  Please contact\nthe commander for more information.`;
+    for (const k of this.allyMembers(host)) if (this.db.armies[k]) this.mail(this.db.armies[k].commander, 'Army Alliance Dissolution', text);
+    delete this.db.alliance[other];
+    if (this.allyCount(host) === 1) delete this.db.alliance[host];
+  }
+  // 군단이 없어질 때: 주인이면 동맹 전체, 아니면 자기만 빠진다
+  leaveAlliance(id) {
+    const a = this.db.alliance[id]; if (!a) return;
+    if (a.host) for (const k of this.allyMembers(id)) delete this.db.alliance[k];
+    else { const h = this.allyHost(id); delete this.db.alliance[id]; if (h && this.allyCount(h) === 1) delete this.db.alliance[h]; }
   }
 
   // 시간 지난 예비 군단 (RMS_ARMY_BREAKUPRESERVEARMY TimeOut=1): 모두에게 우편

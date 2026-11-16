@@ -90,6 +90,9 @@ wss.on('connection', ws => {
       else if (a === 'setperm') A.setPerm(player, m.name, m.perm); else if (a === 'ltpw') A.ltPassword(player, m.password);
       else if (a === 'unithire') A.unitHire(player, m.name, !!m.fire); else if (a === 'unitans') A.unitAnswer(player, !!m.ok);
       else if (a === 'unitquit') A.unitQuit(player); else if (a === 'unit') A.unitList(player, m.name);
+      else if (a === 'allyclick') A.allyClick(player); else if (a === 'ally') A.allyRequest(player, m.name, m.amount);
+      else if (a === 'allyans') A.allyAnswer(player, m.commander, !!m.ok); else if (a === 'allybreakclick') A.allyBreakClick(player);
+      else if (a === 'allybreak') A.allyBreak(player, m.name);
       else if (a === 'withdraw') A.withdraw(player); else if (a === 'breakup') A.breakUp(player); else if (a === 'chat') A.chat(player, m.text);
     }
     else if (m.t === 'inform') game.mail.inform(player, m.ev | 0);                      // 맵 클릭 영역의 이벤트 번호 (ProcessInformEvent)

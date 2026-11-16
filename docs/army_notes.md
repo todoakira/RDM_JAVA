@@ -53,3 +53,8 @@
 - 권한 비트 (RMS_ARMY_CHANGEPERMISSION): 1 RECRUIT, 2 HIREDSOLDIER, 4 ITEMMANAGEMENT, 8 MONEYMANAGEMENT, 16 ITEMBUYING, 32 AGITMANAGEMENT
 - RMS_ARMY_REMOVESUBARMYMEMBER: Kind 0 은 우편과 함께 빼기(서버는 부대원이 스스로 나갈 때 0 을 쓴다), 1 은 그냥 빼기(부관이 내보낼 때)
 - 창: ia-z12-ba 부관 관리 (0x10058190), ia-z13-ba 부대 정보 입력 (0x10045c10), ia-z16-ba 권한 (0x1005c750), ia-z23-ba 비밀번호 (0x1004b440)
+
+## 4단계 (동맹)
+- 신청 패킷 0x742: 이름 11 + 금액 4. 상대가 접속해 있지 않으면 0/2/0xf7 (SendAskAlliance 0x465300 → 0x743)
+- 결과 (SendResultAskAlliance 0x465450): 받으면 신청한 사람 돈이 금액 이상일 때 빼서 상대 군단장(USERDB +0x7b8)에 더하고(40억까지) 0x102, 아니면 0x43. 거절 0x48
+- 창: ia-z7-ba 동맹 (0x10055540), ia-z23-ba 신청 (0x10046c00), ia-z14-ba 깨기 (0x10049d60)

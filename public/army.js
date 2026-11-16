@@ -174,7 +174,7 @@ const ArmyUI = (() => {
     }
     const f = (c, v) => fmt(M0(c), v || '');
     el('arInName').textContent = m.none ? '' : m.name; el('arInCmd').textContent = m.none ? '' : f(0xdb, m.commander); el('arInLt').textContent = m.none ? '' : f(0xdc, m.lt ? `${m.lt} (${m.unit})` : '');
-    el('arInAll').textContent = ''; el('arInNotice').textContent = m.none ? '' : m.notice; el('arInUnit').textContent = m.none ? '' : m.unitNotice || ''; el('arInStat').textContent = '';
+    el('arInAll').textContent = m.none ? '' : (m.allies || []).join(', '); el('arInNotice').textContent = m.none ? '' : m.notice; el('arInUnit').textContent = m.none ? '' : m.unitNotice || ''; el('arInStat').textContent = '';
     show(d);
   }
   // ---- 모집 (ia-z11-ba 235×114, 0x100415a0): 이름칸 (36,53)~(151,70), + 넣기 (166,53), − 빼기 (192,53), 닫기 (56,81). 문장 0/0/0x155
@@ -203,7 +203,7 @@ const ArmyUI = (() => {
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
       const no = () => UI.sysLine('아직 없는 기능입니다.');
-      const act = [() => ltMenu(), no, no, () => bulletin(), () => A({ a: 'members' }), () => cmdMenu(), no, no,
+      const act = [() => ltMenu(), () => allyMenu(), no, () => bulletin(), () => A({ a: 'members' }), () => cmdMenu(), no, no,
         () => UI.msgBox(M0(0x65), ['yes', 'no'], y => { if (y) { A({ a: 'breakup' }); hide(d); } })];
       act.forEach((fn, k) => btn(d, 493, 19, Z20_TOP[k], 97, 23, fn, M0(0xf3 + k).trim()));
       btn(d, 553, 35, 281, 60, 20, () => hide(d));
@@ -331,6 +331,41 @@ const ArmyUI = (() => {
     for (const id of ['arLtUnit', 'arLtPw', 'arLtPw2']) el(id).value = '';
     UI.sysLine(fmt(M0(0x195), m.commander, m.army)); UI.sysLine(M0(0x197)); show(d);
   }
+  // ---- 동맹 (ia-z7-ba 129×105, 0x10055540): Form 0/0/0x10f (18,16) → 0x740, Dissolve 0x110 (18,42) → 0x78e, 닫기 (34,72)
+  function allyMenu() {
+    const d = win('arAlly', 522, 129, 105);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      btn(d, 523, 18, 16, 93, 23, () => A({ a: 'allyclick' }), M0(0x10f).trim());
+      btn(d, 523, 18, 42, 93, 23, () => A({ a: 'allybreakclick' }), M0(0x110).trim());
+      btn(d, 553, 34, 72, 60, 20, () => hide(d));
+    }
+    show(d);
+  }
+  // 동맹 신청 (0x741 → ia-z23-ba, 0x10046c00): Army Name: 0/0/0x111 (12,27), Amount: 0x112 (12,70), OK (61,105), CANCEL (109,105)
+  function allyAsk() {
+    const d = win('arAllyAsk', 497, 227, 141);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 12, 27, 98, 15, M0(0x111)); text(d, 12, 70, 98, 18, M0(0x112));
+      input(d, 122, 27, 73, 15, 10).id = 'arAaName'; input(d, 122, 70, 73, 18, 10).id = 'arAaAmt';
+      btn(d, 560, 61, 105, 47, 20, () => { const n = el('arAaName').value.trim(); if (n) { A({ a: 'ally', name: n, amount: parseInt(el('arAaAmt').value, 10) || 0 }); hide(d); } });
+      btn(d, 457, 109, 105, 60, 20, () => hide(d));
+    }
+    el('arAaName').value = ''; el('arAaAmt').value = '0'; show(d);
+  }
+  // 동맹 깨기 (0x78f → ia-z14-ba 230×108, 0x10049d60): Army Name 0/0/0x113, 이름칸 (74,47)~(170,64), OK (64,77), CANCEL (113,77)
+  function allyBreak() {
+    const d = win('arAllyBrk', 486, 230, 108);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 17, 30, 198, 14, M0(0x113));
+      input(d, 74, 47, 96, 17, 10).id = 'arAbName';
+      btn(d, 560, 64, 77, 47, 20, () => { const n = el('arAbName').value.trim(); if (n) { A({ a: 'allybreak', name: n }); hide(d); } });
+      btn(d, 457, 113, 77, 60, 20, () => hide(d));
+    }
+    el('arAbName').value = ''; show(d);
+  }
   function handle(m) {
     switch (m.w) {
       case 'computer': computer(); break;
@@ -354,6 +389,10 @@ const ArmyUI = (() => {
       case 'noticed': UI.sysLine(M0(0x19e)); break;
       case 'badge': UI.armyName = m.name; break;
       case 'perm': perm = m.perm; drawPerm(); break;
+      case 'allyask': allyAsk(); break;
+      case 'allybreak': allyBreak(); break;
+      case 'allybroken': UI.sysLine(M0(0x1a2)); break;
+      case 'askally': UI.msgBox(fmt(M0(0x15b), m.commander, m.army, m.amount), ['yes', 'no'], y => A({ a: 'allyans', commander: m.commander, ok: y ? 1 : 0 })); break;
       case 'permdone': UI.sysLine(M0(0x1a1)); break;
       case 'pwchanged': UI.sysLine(M0(0x198)); break;
       case 'unit': el('arMemUnit').textContent = m.members.join('\n'); break;
