@@ -476,6 +476,9 @@ const handlers = {
     log(`<span class="who">${esc(tag)}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : m.kind || undefined);
   },
   group(m) { UI.group(m, myName()); },
+  trade(m) { UI.trade(m); },
+  tradeask(m) { UI.msgBox(UI.M0(207).replace('%s', m.from), ['yes', 'no'], y => send({ t: 'tradeans', from: m.from, ok: y ? 1 : 0 })); },   // 0/0/207
+  tradename() { UI.msgBox('', ['ok', 'cancel'], (y, v) => { if (y && v) send({ t: 'tradeask', name: v }); }, true); },
   ginvite(m) { UI.groupInvite(m.leader, y => send({ t: 'gjoin', leader: m.leader, ok: y ? 1 : 0 })); },
 };
 // 대화 입력줄 단추 (Main.dll 0x10075960): Shout, To(귓속말), Group, Army. 이 게임은 Group 만 한다

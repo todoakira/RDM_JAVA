@@ -51,19 +51,39 @@ const UI = (() => {
     const rows = Math.max(3, Math.ceil(inv.items.length / 4)); invTop = Math.max(0, Math.min(invTop, rows - 3));
     for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
       const slot = (invTop + r) * 4 + c, it = inv.items[slot], e = cell(it, 18 + c * 40, 18 + r * 40, slot === invSel);
-      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); };
+      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (trade) send({ t: 'tradeadd', where: 'inv', slot, n: it.n }); else if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); };
         e.oncontextmenu = ev => { ev.preventDefault(); if (!bank && !shop) send({ t: 'qput', slot }); }; }   // 오른쪽 클릭: 빠른 창으로 (1/1/119~122)
       box.appendChild(e);
     }
     arrow(box, 175, 12, () => { invTop--; drawInvWin(); }); arrow(box, 175, 118, () => { invTop++; drawInvWin(); });
     const it = inv.items[invSel]; el('invtxt').textContent = it ? itemTip(it) : '';
   }
+  // 거래 창: 칸 자리는 그림의 틀 (왼쪽 내 칸 2×3, 오른쪽 상대 칸 2×3)
+  const TR_MINE = [[22, 82], [63, 82], [22, 123], [63, 123], [22, 163], [63, 163]], TR_THEIRS = [[162, 106], [202, 106], [162, 147], [202, 147], [162, 187], [202, 187]];
+  let trade = null;
+  function setTrade(m) {
+    if (m.close) { trade = null; el('winTrade').style.display = 'none'; marks(); return; }
+    trade = m; el('winTrade').style.display = 'block'; drawTrade();
+  }
+  function drawTrade() {
+    if (!trade) return;
+    el('trmymoney').textContent = trade.mine.money.toLocaleString(); el('trthmoney').textContent = trade.theirs.money.toLocaleString();
+    el('trok').classList.toggle('done', !!trade.mine.ok);
+    const box = el('trcells'); box.innerHTML = '';
+    trade.mine.items.forEach((it, k) => { const c = cell(it, TR_MINE[k][0] + 1, TR_MINE[k][1] + 1, false); if (it) c.title = itemTip(it); box.appendChild(c); });
+    trade.theirs.items.forEach((it, k) => { const c = cell(it, TR_THEIRS[k][0] + 1, TR_THEIRS[k][1] + 1, false); if (it) { c.title = itemTip(it); if (trade.theirs.ok) c.classList.add('okd'); } box.appendChild(c); });
+  }
+  setTimeout(() => {
+    el('trok').onclick = () => send({ t: 'tradeok' });
+    el('trcancel').onclick = () => send({ t: 'tradecancel' });
+    el('trmymoney').onclick = () => msgBox(M0(45), ['ok', 'cancel'], (y, v) => { const n = parseInt(v, 10); if (y && n > 0) send({ t: 'tradeadd', where: 'money', n }); }, true);
+  });
   // 빠른 창 (Quick, iw-qi-ba 479×64, 원작 위치 136,4, Main.dll 0x100909d0): 아이템 칸 여덟 (19+41k, 15) 35×35, 기술 칸 둘 (351,15)·(409,15) 50×35
   function drawQuick() {
     const box = el('qkcells'); if (!box || !inv) return; box.innerHTML = '';
     for (let k = 0; k < 8; k++) {
       const it = (inv.quick || [])[k], e = cell(it, 19 + k * 41, 15, false);
-      if (it) { e.title = `CTRL+${k + 1}\n` + itemTip(it); e.ondblclick = () => send({ t: 'quse', q: k }); e.oncontextmenu = ev => { ev.preventDefault(); send({ t: 'qget', q: k }); }; }
+      if (it) { e.title = `CTRL+${k + 1}\n` + itemTip(it); e.ondblclick = () => send(trade ? { t: 'tradeadd', where: 'quick', slot: k, n: it.n } : { t: 'quse', q: k }); e.oncontextmenu = ev => { ev.preventDefault(); send({ t: 'qget', q: k }); }; }
       box.appendChild(e);
     }
   }
@@ -333,5 +353,5 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

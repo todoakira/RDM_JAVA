@@ -37,7 +37,8 @@ const G = require('./grid');
 const SK = require('./skills');
 const { Events } = require('./events');
 const STORY = require('./story');
-const { Groups } = require('./group');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
+const { Groups } = require('./group');
+const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
 const EV_NO_ATTACK = 18, EV_MOB_OK = [0, 19, 22], EV_LURE = 22;
@@ -156,7 +157,7 @@ class World {
     this.broadcast({ t: 'add', p: pubP(p) }, p.id);
     this.game.groups.moved(p);
   }
-  leave(p) { this.release(p); p.evAt = {}; if (this.players.delete(p.id)) this.broadcast({ t: 'del', id: p.id }); }
+  leave(p) { if (p.trade) this.game.trades.cancel(p); this.release(p); p.evAt = {}; if (this.players.delete(p.id)) this.broadcast({ t: 'del', id: p.id }); }
 
   moveTo(p, x, y, z, run) {
     if (p.dead || !Number.isInteger(x) || !Number.isInteger(y)) return;
@@ -606,6 +607,7 @@ class World {
       this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
       if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); }
     } else {
+      if (d.trade) this.game.trades.cancel(d);
       d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
       this.game.deathPenalty(d);
     }
@@ -694,7 +696,7 @@ const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y,
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.groups = new Groups(this);
+    this.story = new STORY.Story(this); this.groups = new Groups(this); this.trades = new Trades(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -1068,6 +1070,7 @@ class Game {
   gotoMap(p, id) { const w = this.world(id); if (!w || p.dead) return false; p.world.leave(p); w.enter(p); return true; }
   cheatLevel(p, lv) { lv = Math.max(1, Math.min(F.MAX_LEVEL, lv | 0)); p.bonus += F.bonusTotal(lv) - F.bonusTotal(p.level); p.level = lv; p.exp = 0; this.recalc(p, true); this.sendStat(p); this.story.checkAndStart(p); }
   tick(now) { for (const w of this.worlds.values()) w.tick(now); this.groups.tick(now); }
+  exists(name) { return !!this.findOnline(name) || fs.existsSync(this.saveFile(name)); }
   findOnline(name) { for (const w of this.worlds.values()) for (const p of w.players.values()) if (p.name === name) return p; return null; }
   get online() { let n = 0; for (const w of this.worlds.values()) n += w.players.size; return n; }
 }

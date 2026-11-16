@@ -51,6 +51,8 @@ wss.on('connection', ws => {
       return;
     }
     const world = player.world;
+    // 거래 중에는 아이템을 쓰거나 옮길 수 없다 (0/2/0xa0, ProcessMoveItem 0x42f660 등)
+    if (player.trade && ['use', 'unequip', 'qput', 'qget', 'quse', 'buy', 'sell', 'pickup', 'bankput', 'bankget', 'bankmoney', 'exchsell', 'exchbuy', 'talk'].includes(m.t)) { game.story.msg(player, 0xa0); return; }
     if (m.t === 'move') world.moveTo(player, m.x, m.y, m.z, m.run);
     else if (m.t === 'attack') world.attackCmd(player, m.id, m.run);
     else if (m.t === 'evsel') world.script.choose(player, m.ev, m.k);                    // 이벤트 선택지
@@ -66,6 +68,11 @@ wss.on('connection', ws => {
     else if (m.t === 'quse') game.quickUse(player, m.q | 0);
     else if (m.t === 'shout') world.shout(player, m.text);
     else if (m.t === 'whisper') world.whisper(player, m.to, m.text);
+    else if (m.t === 'tradeask') game.trades.ask(player, m.name);
+    else if (m.t === 'tradeans') game.trades.answer(player, String(m.from || ''), !!m.ok);
+    else if (m.t === 'tradeadd') game.trades.add(player, String(m.where || ''), m.slot | 0, m.n);
+    else if (m.t === 'tradeok') game.trades.ok(player);
+    else if (m.t === 'tradecancel') game.trades.cancel(player);
     else if (m.t === 'mailread') game.story.readMail(player);
     else if (m.t === 'bonus') game.useBonus(player, m.stat);
     else if (m.t === 'pickup') world.pickupCmd(player, m.id, m.run);
@@ -91,6 +98,8 @@ wss.on('connection', ws => {
       const it = /^\/(?:아이템|item)\s+(\d+)\s+(\d+)(?:\s+(\d+))?$/.exec(String(m.text || '').trim());
       const lv = /^\/(?:레벨|level)\s+(\d+)$/.exec(String(m.text || '').trim());
       const mo = /^\/(?:돈|money)\s+(\d+)$/.exec(String(m.text || '').trim());
+      const tm = /^`trade(?:\s+(\S+))?$/i.exec(String(m.text || '').trim());   // 원작 도움말: "`trade" 로 거래 시작 (1/1/115)
+      if (tm) { if (tm[1]) game.trades.ask(player, tm[1]); else send({ t: 'tradename' }); return; }
       const sq = /^\/(?:퀘스트|story)\s+(\d+)$/.exec(String(m.text || '').trim());
       if (sq) { player.story = Number(sq[1]) >>> 0; game.story.sendInfo(player, true); } else   // 시험용: 이야기 진행 값 바꾸기
       if (/^\/(?:dp|DP)$/.test(String(m.text || '').trim())) { player.dp = player.maxDp; game.sendStat(player); }   // 시험용: DP 가득
@@ -101,7 +110,7 @@ wss.on('connection', ws => {
       else { const wm = /^\/(\S+)\s+(.+)$/.exec(String(m.text || '').trim()); if (wm) world.whisper(player, wm[1], wm[2]); else world.chat(player, m.text); }   // "/이름 내용" 은 귓속말 (1/1/37)
     }
   });
-  ws.on('close', () => { if (player) { game.groups.offline(player); game.save(player); player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });
+  ws.on('close', () => { if (player) { if (player.trade) game.trades.cancel(player); game.groups.offline(player); game.save(player); player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });
   ws.on('error', () => {});
 });
 
