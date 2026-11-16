@@ -36,7 +36,8 @@ const crypto = require('crypto');
 const G = require('./grid');
 const SK = require('./skills');
 const { Events } = require('./events');
-const STORY = require('./story');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
+const STORY = require('./story');
+const { Groups } = require('./group');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
 const EV_NO_ATTACK = 18, EV_MOB_OK = [0, 19, 22], EV_LURE = 22;
@@ -153,6 +154,7 @@ class World {
       players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
     this.game.sendStat(p); this.game.sendInv(p);
     this.broadcast({ t: 'add', p: pubP(p) }, p.id);
+    this.game.groups.moved(p);
   }
   leave(p) { this.release(p); p.evAt = {}; if (this.players.delete(p.id)) this.broadcast({ t: 'del', id: p.id }); }
 
@@ -580,7 +582,7 @@ class World {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);
       this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
-      if (!a.mob) { this.game.gainExp(a, d.exp); this.script.killed(a, d.sid); }
+      if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); }
     } else {
       d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
       this.game.deathPenalty(d);
@@ -670,7 +672,7 @@ const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y,
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this);
+    this.story = new STORY.Story(this); this.groups = new Groups(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -731,7 +733,7 @@ class Game {
     p.maxDp = F.dpMax(p.pow); p.dp = Math.min(p.dp || 0, p.maxDp);
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
-  sendStat(p) { p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
+  sendStat(p) { if (p.group) this.groups.hpChanged(p); p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
@@ -1017,7 +1019,8 @@ class Game {
   cheatItem(p, k, i, n) { if (!this.itemInfo(k, i) || !this.items[k] || !this.items[k][i]) return false; this.giveItem(p, k, i, n || 1); return true; }
   gotoMap(p, id) { const w = this.world(id); if (!w || p.dead) return false; p.world.leave(p); w.enter(p); return true; }
   cheatLevel(p, lv) { lv = Math.max(1, Math.min(F.MAX_LEVEL, lv | 0)); p.bonus += F.bonusTotal(lv) - F.bonusTotal(p.level); p.level = lv; p.exp = 0; this.recalc(p, true); this.sendStat(p); this.story.checkAndStart(p); }
-  tick(now) { for (const w of this.worlds.values()) w.tick(now); }
+  tick(now) { for (const w of this.worlds.values()) w.tick(now); this.groups.tick(now); }
+  findOnline(name) { for (const w of this.worlds.values()) for (const p of w.players.values()) if (p.name === name) return p; return null; }
   get online() { let n = 0; for (const w of this.worlds.values()) n += w.players.size; return n; }
 }
 

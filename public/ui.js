@@ -20,10 +20,11 @@ const UI = (() => {
     if (act.startsWith('win')) toggle(act);
     else if (act === 'gauge') { el('gauge').style.display = el('gauge').style.display === 'none' ? 'block' : 'none'; marks(); }
     else if (act === 'skill') { toggle('winSk'); }
+    else if (act === 'group') { toggle('winGroup'); drawGroup(); }
     else if (act === 'quit') location.reload();
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
-  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block'); } }
+  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block'); } }
   function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
   document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') { if (exch) closeExch(true); else closeShop(true); } else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
@@ -224,6 +225,24 @@ const UI = (() => {
   function closeWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display === 'block') toggle(id); }
   function openWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display !== 'block') toggle(id); }
   // 선택지 창: 메시지 창 그림 iw-me-ba(73) 위에 고를 줄을 늘어놓는다 (원작 창 안의 배치는 아직 확인하지 못함)
+  // 그룹 창: 만들기, 초대(이름), 나가기, 그룹장은 멤버 내보내기. 멤버마다 체력 %
+  let grp = { members: [] }, me = '';
+  function setGroup(g, myName) { grp = g; me = myName; if (g.members.length) el('winGroup').style.display = 'block'; drawGroup(); marks(); }
+  function drawGroup() {
+    const box = el('glist'); if (!box) return;
+    const lead = grp.leader === me, has = grp.members.length > 0;
+    el('gnew').style.display = has ? 'none' : 'inline-block'; el('gout').style.display = has ? 'inline-block' : 'none';
+    el('ginv').style.display = lead && grp.members.length < 5 ? 'block' : 'none';
+    box.innerHTML = has ? grp.members.map(m => `<div class="gm">${m.leader ? '★ ' : ''}${esc(m.name)} <span class="gl">Lv.${m.level || '?'}</span>`
+      + (m.hp >= 0 ? `<div class="ghp"><i style="width:${m.hp}%"></i></div>` : `<span class="gl"> (다른 맵)</span>`)
+      + (lead && m.name !== me ? ` <span class="gk" data-n="${esc(m.name)}">내보내기</span>` : '') + '</div>').join('') : '<div class="gl">그룹이 없습니다.</div>';
+    box.onclick = e => { const k = e.target.closest('.gk'); if (k) send({ t: 'gleave', name: k.dataset.n }); };
+  }
+  setTimeout(() => {
+    el('gnew').onclick = () => send({ t: 'gcreate' });
+    el('gout').onclick = () => send({ t: 'gleave' });
+    el('ginvb').onclick = () => { const n = el('ginvn').value.trim(); if (n) send({ t: 'ginvite', name: n }); el('ginvn').value = ''; };
+  });
   // 원작 시스템 메시지 (Message.ctf 0/2): %u %d %s 를 차례로 채운다
   function sysText(code, args) {
     const t = msgs && msgs[0] && msgs[0][2] && msgs[0][2][code]; if (!t) return '';
@@ -254,5 +273,5 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { group: setGroup, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

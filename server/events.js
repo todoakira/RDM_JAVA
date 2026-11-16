@@ -99,15 +99,19 @@ class Events {
   bought(p, k, i, n) { this.trigger(p, 'BuyItem', ([a, b]) => +a === k && +b === i); }
   // 몬스터 이름표는 "+이름_n" (n 은 맵의 몬스터를 불러온 순서, CMopServer::LoadMop 0x4772f3).
   // 에스퍼·첩보대장은 그 퀘스트 차례일 때만 진행되고, 진행한 뒤 이야기 퀘스트 시작 조건을 다시 본다 (CMopServer::Dead 0x479140~0x4792e1)
-  killed(p, sid) {
-    const S = this.w.game.story, R = require('./story').ready;
-    this.trigger(p, 'KillMonster', ([nm]) => {
+  killed(p, sid, mob) {
+    const S = this.w.game.story, R = require('./story').ready, G = this.w.game.groups;
+    // 첩보대장은 그룹으로 잡으면 근처 멤버 모두가 진행한다 (GroupShareCaptainQuest 0x4620b0)
+    const who = sid.includes('첩보대장') && p.group && mob ? G.players(G.of(p)).filter(q => q.world === this.w && !q.dead && this.w.inMgmt(mob, q)) : [p];
+    for (const q of who) this.trigger(q, 'KillMonster', ([nm]) => {
       if (nm !== sid) return false;
-      if (sid.includes('첩보대장')) return R.captain(p);
-      if (sid.includes('에스퍼')) return R.esper(p);
+      if (sid.includes('첩보대장')) return R.captain(q);
+      if (sid.includes('에스퍼')) return R.esper(q);
       return true;
-    }, false, () => S.checkAndStart(p));
+    }, false, () => S.checkAndStart(q));
   }
+  // 이름 붙은 조건(GoGoQuest, KasamQuest1 …)을 지금 단계로 가진 이벤트를 모두 진행 (DoProperEvent 0x410410)
+  named(p, name, npc) { this.trigger(p, name, () => true, false, null, npc); }
   line(c) { return line(c); }
   // 종류 41 NPC: 그 이벤트를 처음 단계로 되돌리고, 첫 조건이 EventTriggered 면 바로 진행 (ProcessEvent 0x421e60)
   startAt(p, i, npc) {
@@ -115,8 +119,6 @@ class Events {
     (p.ev ||= {})[i] = 0;
     if (firstWord(this.cond(i, 0)) === 'EventTriggered') { (p.evNpc ||= {})[i] = npc; this.run(p, i, 0); }
   }
-  // 이름 붙은 조건(GoGoQuest, KasamQuest1 …)을 지금 단계로 가진 이벤트를 모두 진행 (DoProperEvent 0x410410)
-  named(p, name, npc) { this.trigger(p, name, () => true, false, null, npc); }
   // 클라이언트가 알리는 C 조건 (Key 코드, Walk, Run, Turn, Chat)
   client(p, name, arg) { if (['Key', 'Walk', 'Run', 'Turn', 'Chat'].includes(name)) this.trigger(p, name, a => name !== 'Key' || +a[0] === +arg, true); }
 

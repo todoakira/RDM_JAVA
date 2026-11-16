@@ -47,6 +47,10 @@
   #skquick { position: fixed; left: 50%; margin-left: 260px; bottom: 44px; width: 50px; height: 35px; outline: 1px solid #6a6; z-index: 5; }
   #fxlist { position: fixed; left: 90px; bottom: 150px; font-size: 12px; color: #9fd0ff; text-shadow: 0 0 3px #000; pointer-events: none; }
   #winAsk { display: none; position: fixed; left: 50%; top: 30%; transform: translateX(-50%); width: 300px; min-height: 100px; box-sizing: border-box; padding: 14px 16px; background: url(assets/int/73.png) 0 0 / 100% 100%; z-index: 20; font-size: 13px; }
+  .gb { color: #f0e0b0; border: 1px solid #8a7a50; padding: 1px 6px; cursor: pointer; font-size: 12px; margin-right: 4px; } .gb:hover { color: #fff; }
+  .gm { color: #f0e0b0; font-size: 12px; margin-bottom: 5px; } .gl { color: #a89870; font-size: 11px; } .gk { color: #e08070; cursor: pointer; font-size: 11px; }
+  .ghp { height: 4px; background: #300; margin-top: 2px; } .ghp i { display: block; height: 4px; background: #d33; }
+  #log .grp, .grp .who { color: #8fd8ff; }
   .askopt { color: #f0e0b0; padding: 4px 6px; cursor: pointer; } .askopt:hover { color: #fff; background: rgba(255,255,255,.08); }
 </style>
 </head>
@@ -54,6 +58,11 @@
 <div id="skquick" style="display:none"></div>
 <div id="fxlist"></div>
 <div id="winAsk"></div>
+<div id="winGroup" class="win" style="left:10px;top:280px;width:220px;height:210px;background:url(assets/int/73.png) 0 0 / 100% 100%"><div class="x" data-close="winGroup"></div>
+  <div class="txt" style="left:14px;top:10px;color:#ffd890;font-weight:bold">그룹</div>
+  <div class="txt" style="left:14px;top:30px;width:192px"><span id="gnew" class="gb">그룹 만들기</span><span id="gout" class="gb">그룹 나가기</span></div>
+  <div id="ginv" class="txt" style="left:14px;top:56px;width:192px;display:none"><input id="ginvn" placeholder="초대할 이름" style="width:110px;font-size:12px"> <span id="ginvb" class="gb">초대</span></div>
+  <div id="glist" class="txt" style="left:14px;top:84px;width:192px;height:110px;overflow:auto"></div></div>
 <div id="winQuest" class="win" style="left:10px;top:120px;width:220px;height:150px;background:url(assets/int/73.png) 0 0 / 100% 100%"><div class="x" data-close="winQuest"></div>
   <div id="qtitle" class="txt" style="left:14px;top:12px;width:192px;color:#ffd890;font-weight:bold"></div>
   <div id="qtext" class="txt" style="left:14px;top:32px;width:192px;height:58px;white-space:pre-line"></div>
@@ -64,7 +73,7 @@
   <div id="mok" class="askopt" style="text-align:center;margin-top:10px">확인</div></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
-<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보</div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보 · Group 버튼: 그룹 창 · /그룹 내용: 그룹 대화</div>
 <div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
 <div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i><i id="gd" style="left:54px;background-image:url(assets/int/55.png)"></i></div>
 <div id="menubar"></div>

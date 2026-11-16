@@ -334,7 +334,9 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
-      if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
+      const gm = /^\/(?:그룹|g)\s+(.+)$/.exec(text);   // 그룹 대화 (이 게임의 입력 방식)
+      if (gm) send({ t: 'gchat', text: gm[1] });
+      else if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
       $('say').value = ''; $('say').blur();
     } else $('say').focus();
     e.preventDefault();
@@ -464,9 +466,12 @@ const handlers = {
   },
   chat(m) {
     const p = ents.get(m.id); if (p) { p.say = m.text; p.sayUntil = performance.now() + 5000; }
-    log(`<span class="who">${esc(m.name)}</span>: ${esc(m.text)}`);
+    log(`<span class="who">${m.group ? '[그룹] ' : ''}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : undefined);
   },
+  group(m) { UI.group(m, myName()); },
+  ginvite(m) { UI.ask([`${m.leader} 님의 그룹 초대를 받아들입니다`, '거절합니다'], k => send({ t: 'gjoin', leader: m.leader, ok: k === 1 ? 1 : 0 })); },
 };
+const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
 function connect(name, pw, chr, beginner) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   ws.onopen = () => send({ t: 'join', name, pw, chr, beginner });

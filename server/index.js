@@ -56,6 +56,11 @@ wss.on('connection', ws => {
     else if (m.t === 'evsel') world.script.choose(player, m.ev, m.k);                    // 이벤트 선택지
     else if (m.t === 'evc') world.script.client(player, String(m.name), m.arg);         // 클라이언트가 알리는 이벤트 조건
     else if (m.t === 'skill') { if (m.id) world.skillCmd(player, Number(m.sk), m.id, m.run); else world.selfSkillCmd(player, Number(m.sk)); }
+    else if (m.t === 'gcreate') game.groups.create(player);
+    else if (m.t === 'ginvite') game.groups.invite(player, m.name);
+    else if (m.t === 'gjoin') game.groups.join(player, String(m.leader || ''), !!m.ok);
+    else if (m.t === 'gleave') game.groups.leave(player, m.name ? String(m.name) : null);
+    else if (m.t === 'gchat') game.groups.chat(player, m.text);
     else if (m.t === 'mailread') game.story.readMail(player);
     else if (m.t === 'bonus') game.useBonus(player, m.stat);
     else if (m.t === 'pickup') world.pickupCmd(player, m.id, m.run);
@@ -91,7 +96,7 @@ wss.on('connection', ws => {
       else world.chat(player, m.text);
     }
   });
-  ws.on('close', () => { if (player) { game.save(player); player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });
+  ws.on('close', () => { if (player) { game.groups.offline(player); game.save(player); player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });
   ws.on('error', () => {});
 });
 
