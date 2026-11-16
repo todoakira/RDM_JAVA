@@ -343,13 +343,15 @@ addEventListener('keydown', e => {
       const sm = /^!(.+)$/.exec(text);   // 외치기: '!' 또는 Shout 단추 (1/1/32~33)
       if (gm || (chatMode === 'grp' && text)) send({ t: 'gchat', text: gm ? gm[1] : text });
       else if (sm || (chatMode === 'shout' && text)) send({ t: 'shout', text: sm ? sm[1] : text });
+      else if (chatMode === 'army' && text) send({ t: 'army', a: 'chat', text });   // 군단 대화 (Army 단추)
       else if (chatMode === 'whisper' && chatTo && text && text[0] !== '/') send({ t: 'whisper', to: chatTo, text });
       else if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
       $('say').value = ''; $('say').blur(); $('chatbar').style.display = 'none';
     } else { $('chatbar').style.display = 'block'; $('say').focus(); }
     e.preventDefault();
   } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-8]$/.test(e.key))) {
-    e.preventDefault();   // F9~F12: 이벤트 조건 Key 만 알린다 (원작 키 코드 112 = F1)
+    e.preventDefault();   // F9~F12: 이벤트 조건 Key 도 알린다 (원작 키 코드 112 = F1)
+    if (e.key === 'F9') ArmyUI.open();   // [F9] Army Window (1/1/77)
   } else if (!typing && myId && /^F[1-8]$/.test(e.key)) {
     // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
     e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill', 'group', 'winHist', 'quick'][Number(e.key.slice(1)) - 1]);   // [F6] 그룹, [F7] 대화 기록, [F8] 빠른 창 (1/1/52~75)
@@ -446,6 +448,7 @@ const handlers = {
   sys(m) { const t = UI.sysText(m.code, m.args); if (t) log(esc(t), 'sys'); },
   quest(m) { UI.quest(m); },
   // 우편 (서버 패킷 0x1c3 우편함 열기, 0x1af~0x1b3 목록, 0x1b5~0x1b9 읽기, 0x1bb 지우기, 0x1bd 쓰기 시작, 0x1bf 아이템 받기, 0x1c1 우편 알림)
+  army(m) { ArmyUI.handle(m); },
   mailopen() { UI.post.open(); },
   maillist(m) { UI.post.list(m); },
   mailread(m) { UI.post.read(m); },
@@ -485,7 +488,7 @@ const handlers = {
   },
   chat(m) {
     const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayUntil = performance.now() + 5000; }
-    const tag = m.group ? '[그룹] ' : m.kind === 'shout' ? '[외침] ' : m.kind === 'whisper' ? (m.name === myName() ? `[→${m.to}] ` : '[귓속말] ') : '';
+    const tag = m.group ? '[그룹] ' : m.kind === 'army' ? '[군단] ' : m.kind === 'shout' ? '[외침] ' : m.kind === 'whisper' ? (m.name === myName() ? `[→${m.to}] ` : '[귓속말] ') : '';
     log(`<span class="who">${esc(tag)}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : m.kind || undefined);
   },
   group(m) { UI.group(m, myName()); },
@@ -500,7 +503,6 @@ setTimeout(() => { const s = $('say'); if (s) s.addEventListener('blur', () => {
 addEventListener('DOMContentLoaded', () => {});
 document.addEventListener('mousedown', e => {
   const b = e.target.closest && e.target.closest('#chatbar .cb'); if (!b) return; e.preventDefault();
-  if (b.dataset.mode === 'army') { log('아직 구현되지 않은 대화 방식입니다.', 'sys'); return; }
   if (b.dataset.mode === 'whisper' && chatMode !== 'whisper') {   // To: 받는 사람 이름을 묻는다 (1/1/35~36)
     UI.msgBox(UI.M0(26), ['ok', 'cancel'], (y, v) => { if (y && v) { chatTo = v; chatMode = 'whisper'; } else chatMode = ''; for (const c of document.querySelectorAll('#chatbar .cb')) c.classList.toggle('on', c.dataset.mode === chatMode); $('chatbar').style.display = 'block'; $('say').focus(); }, true);
     return;

@@ -61,6 +61,11 @@ class Mail {
   inform(p, ev) {
     const e = this.game.gEvents[ev]; if (!e || p.dead) return;
     if (e[0] === EV_MAILBOX && this.near(p)) p.send({ t: 'mailopen' });
+    else if (e[0] === 11) this.game.army.openComputer(p);            // ProcessEvent case 0xb: 군단 컴퓨터
+  }
+  // 서버가 보내는 우편 (RMS_SENDMAIL): 받는 사람이 접속해 있으면 알린다
+  deliver(to, from, title, text) {
+    this.list(to).push({ time: Date.now(), from, read: 0, title, text, items: [] }); this.save();
   }
 
   header(m, i) { return { i, read: m.read ? 1 : 0, time: m.time, from: m.from, title: m.title, lines: String(m.text || '').split('\n').length, items: (m.items || []).filter(Boolean).length }; }

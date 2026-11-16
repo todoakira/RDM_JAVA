@@ -46,7 +46,7 @@ wss.on('connection', ws => {
       // 이름 규칙은 원작 로그인 서버와 같다: 14바이트(한글 7자)까지, 작은따옴표 금지 (svIP.exe CIPClient::ProcessNewCharacterID 0x404a10)
       if (a.created && ([...name].reduce((n, c) => n + (c.charCodeAt(0) > 127 ? 2 : 1), 0) > 14 || name.includes("'"))) { send({ t: 'error', text: '이름은 한글 7자(영문 14자)까지이고 작은따옴표를 쓸 수 없습니다.' }); return; }
       player = game.join(name, send, a.auth, a.created && Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1, !!m.beginner); game.save(player);
-      game.mail.login(player); game.story.sendInfo(player, false); game.story.checkAndStart(player);
+      game.mail.login(player); game.army.sendBadge(player); game.story.sendInfo(player, false); game.story.checkAndStart(player);
       console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
       return;
     }
@@ -73,6 +73,18 @@ wss.on('connection', ws => {
     else if (m.t === 'tradeadd') game.trades.add(player, String(m.where || ''), m.slot | 0, m.n);
     else if (m.t === 'tradeok') game.trades.ok(player);
     else if (m.t === 'tradecancel') game.trades.cancel(player);
+    else if (m.t === 'army') {                                                         // 군단 (패킷 0x70a~0x796)
+      const A = game.army, a = String(m.a || '');
+      if (a === 'reserves') A.reserveList(player, m.like); else if (a === 'reservetry') A.reserveTry(player);
+      else if (a === 'reservenew') A.reserveCreate(player, m.name, m.notice); else if (a === 'reserveinfo') A.reserveInfo(player, m.name);
+      else if (a === 'reservejoin') A.reserveJoin(player, m.commander); else if (a === 'reservebreak') A.reserveBreak(player, m.commander);
+      else if (a === 'try') A.armyTry(player); else if (a === 'create') A.armyInfo(player, m.name, m.password, m.mark);
+      else if (a === 'invite') A.invite(player, m.name); else if (a === 'inviteans') A.inviteAnswer(player, m.commander, !!m.ok);
+      else if (a === 'uninvite') A.removeInit(player, m.name); else if (a === 'form') A.armyForm(player); else if (a === 'cancel') A.armyCancel(player);
+      else if (a === 'info') A.info(player); else if (a === 'members') A.memberList(player); else if (a === 'login') A.login(player, m.password);
+      else if (a === 'notice') A.notice(player, m.text); else if (a === 'hire') A.hire(player, m.name, !!m.fire); else if (a === 'hireans') A.hireAnswer(player, m.commander, !!m.ok);
+      else if (a === 'withdraw') A.withdraw(player); else if (a === 'breakup') A.breakUp(player); else if (a === 'chat') A.chat(player, m.text);
+    }
     else if (m.t === 'inform') game.mail.inform(player, m.ev | 0);                      // 맵 클릭 영역의 이벤트 번호 (ProcessInformEvent)
     else if (m.t === 'maillist') game.mail.sendList(player, m.from | 0);
     else if (m.t === 'mailread') game.mail.read(player, m.i | 0);
@@ -106,6 +118,8 @@ wss.on('connection', ws => {
       const mo = /^\/(?:돈|money)\s+(\d+)$/.exec(String(m.text || '').trim());
       const tm = /^`trade(?:\s+(\S+))?$/i.exec(String(m.text || '').trim());   // 원작 도움말: "`trade" 로 거래 시작 (1/1/115)
       if (tm) { if (tm[1]) game.trades.ask(player, tm[1]); else send({ t: 'tradename' }); return; }
+      const fm = /^\/(?:명성|fame)\s+(-?\d+)$/.exec(String(m.text || '').trim());   // 시험용: 명성 바꾸기
+      if (fm) { player.fame = Number(fm[1]); game.sendStat(player); return; }
       const sq = /^\/(?:퀘스트|story)\s+(\d+)$/.exec(String(m.text || '').trim());
       if (sq) { player.story = Number(sq[1]) >>> 0; game.story.sendInfo(player, true); } else   // 시험용: 이야기 진행 값 바꾸기
       if (/^\/(?:dp|DP)$/.test(String(m.text || '').trim())) { player.dp = player.maxDp; game.sendStat(player); }   // 시험용: DP 가득
