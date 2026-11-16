@@ -117,13 +117,17 @@ function updateEnt(e, now) {
   e.px = e.fx + (e.tx - e.fx) * k; e.py = e.fy + (e.ty - e.fy) * k;
   if (k >= 1 && (e.last || now - e.t0 > e.dur + 200)) e.moving = false;
 }
+const onScreen = e => e.px > camX - 50 && e.px < camX + cv.width / zoom + 50 && e.py > camY - 50 && e.py < camY + cv.height / zoom + 150;
 function drawEnt(e, now) {
   const s = chrSet(e.chr); if (!s) return;
   let seq = null, i = 0;
-  if (e.deadAt) { seq = seqOf(s, ACT.die, e.dir); if (seq) i = Math.min(seq.length - 1, Math.floor((now - e.deadAt) / ANIM_MS)); }
+  if (e.deadAt) { seq = seqOf(s, ACT.die, e.dir); if (seq) { i = Math.min(seq.length - 1, Math.floor((now - e.deadAt) / ANIM_MS)); if (e.deadAt > 0 && onScreen(e)) Sound.frameSound(s.def, ACT.die, i, e, 'snd' + e.deadAt); } }
   else if (e.act) {
-    seq = seqOf(s, ACT[e.act], e.dir) || (e.act === 'attack2' ? seqOf(s, ACT.attack, e.dir) : null); i = Math.floor((now - e.actAt) / ANIM_MS);
+    let a = ACT[e.act];
+    seq = seqOf(s, a, e.dir); if (!seq && e.act === 'attack2') { a = ACT.attack; seq = seqOf(s, a, e.dir); }
+    i = Math.floor((now - e.actAt) / ANIM_MS);
     if (!seq || i >= seq.length) { e.act = ''; seq = null; }
+    else if (onScreen(e)) Sound.frameSound(s.def, a, i, e, 'snd' + e.actAt);   // 동작 소리 (ExStage SOUND_SET)
   }
   if (!seq) {
     seq = (e.moving ? (e.run && seqOf(s, ACT.run, e.dir)) || seqOf(s, ACT.walk, e.dir) : null) || seqOf(s, ACT.stand, e.dir) || seqOf(s, ACT.walk, e.dir);
@@ -276,12 +280,12 @@ function drawBullets(now) {
       const step = (BUL_SPEED[b.no] || 23) * (now - (b.last || b.t0)) / ANIM_MS; b.last = now;
       const dx = tx - b.x, dy = ty - b.y, d = Math.hypot(dx, dy);
       if (!fly || d <= step) { b.phase = 1; b.t0 = now; b.x = tx; b.y = ty; }
-      else { b.x += dx / d * step; b.y += dy / d * step; drawBulFrame(s, b, fly[Math.floor((now - b.t0) / ANIM_MS) % fly.length]); continue; }
+      else { b.x += dx / d * step; b.y += dy / d * step; const k0 = Math.floor((now - b.t0) / ANIM_MS); Sound.frameSound(s.def, 0, k0, b, 's0'); drawBulFrame(s, b, fly[k0 % fly.length]); continue; }
     }
     const hit = s.def.anims[1] && (s.def.anims[1][b.dir] || s.def.anims[1][2]);
     const k = Math.floor((now - b.t0) / ANIM_MS);
     if (!hit || k >= hit.length) { bullets.splice(i, 1); continue; }
-    b.x = tx; b.y = b.to.py; drawBulFrame(s, b, hit[k]);
+    b.x = tx; b.y = b.to.py; Sound.frameSound(s.def, 1, k, b, 's1'); drawBulFrame(s, b, hit[k]);
   }
 }
 function drawBulFrame(s, b, fi) {
@@ -344,6 +348,7 @@ addEventListener('keydown', e => {
   } else if (!typing) {
     if (e.key === 'r' || e.key === 'R' || e.key === 'ㄱ') runToggle = !runToggle;
     else if (e.key === 'i' || e.key === 'I' || e.key === 'ㅑ') UI.toggle('winInv');
+    else if (e.key === 'm' || e.key === 'M' || e.key === 'ㅡ') log(Sound.toggle() ? '소리를 켭니다.' : '소리를 끕니다.', 'sys');
     else if (e.key === 'e' || e.key === 'E' || e.key === 'ㄷ') UI.toggle('winEq');
     else if (e.key === 'c' || e.key === 'C' || e.key === 'ㅊ') UI.toggle('winChr');
     else if (e.key === '+' || e.key === '=') zoom = Math.min(3, zoom + 1);
@@ -455,7 +460,7 @@ function connect(name, pw, chr, beginner) {
     if (m.t === 'welcome') { if (typeof UI !== 'undefined') { UI.closeShop(); UI.closeBank(); UI.closeExch(); }
       // 처음 접속할 때와 다른 맵으로 넘어갈 때 모두 온다
       const first = !myId; myId = 0;
-      ready = loadAssets(m.map); await ready;
+      ready = loadAssets(m.map); Sound.playMap(m.map); await ready;
       safeStr = m.safe || ''; ents.clear(); chunks.clear(); floaters.length = 0; targetId = 0; marker = null; ground.clear();
       for (const g of m.ground || []) ground.set(g.id, g);
       for (const p of m.players) addEnt(p);

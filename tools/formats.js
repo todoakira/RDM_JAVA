@@ -69,7 +69,14 @@ function parseRmd(buf) {
       seqs.push(fr);
     }
   }
-  return { name, ents, seqs };
+  // 소리: 개수(u32) 뒤로 [소리 번호 u32, 재생할 장면 u8] (ExStage.dll 0x10007eca~0x10007f5f, SOUND_SET{버퍼, 장면}).
+  // 칸 번호가 동작 번호다. 소리 번호는 RLEs/SND/snd<번호>.rms, 0 은 소리 없음
+  const sounds = {};
+  if (r.left >= 4) {
+    const cnt = r.i32();
+    for (let k = 0; k < cnt && r.left >= 5; k++) { const no = r.i32(), fr = r.u8(); if (no) sounds[k] = [no, fr]; }
+  }
+  return { name, ents, seqs, sounds };
 }
 
 // RLE: 16비트(RGB565) 줄길이 압축 그림 묶음

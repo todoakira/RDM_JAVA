@@ -212,6 +212,7 @@ function convertSprite(kind, no, lstName, folder, outName, quiet) {
   const json = { id: no, name: def.name, pages: pages.length, frames, anims };
   if (Object.keys(adds).length) json.adds = adds;      // 장면 번호 → 밝게 더해 그릴 그림
   if (kind !== 'Chr') json.entries = def.ents.map((_, e) => index.has(e) ? index.get(e) : -1);   // 항목 번호 → 장면 번호
+  if (Object.keys(def.sounds || {}).length) json.snd = def.sounds;   // 동작 번호 → [소리 번호, 장면]
   fs.writeFileSync(path.join(out, no + '.json'), JSON.stringify(json));
   if (!quiet) console.log(`${outName} ${no} "${def.name}": 장면 ${frames.length}개, ${pages.length}쪽` + (missing ? `, 찾지 못한 그림 ${missing}장` : ''));
   return { name: def.name, frames: frames.length };
@@ -381,6 +382,18 @@ function convertMessages() {
 }
 
 // ---------- 실행 ----------
+if (has('sounds-only')) {    // 그림은 그대로 두고 동작 소리만 기존 json 에 넣는다
+  let n = 0;
+  for (const [kind, folder] of [['Chr', 'chr'], ['Bul', 'bul']]) for (const no of numbersIn(D(kind), new RegExp('^' + kind + '(\\d+)\\.rmd$', 'i'))) {
+    const f = path.join(OUT, folder, no + '.json'); if (!fs.existsSync(f)) continue;
+    const def = rmd(kind, no); if (!def) continue;
+    const j = JSON.parse(fs.readFileSync(f, 'utf8')); delete j.snd;
+    if (Object.keys(def.sounds).length) { j.snd = def.sounds; n++; }
+    fs.writeFileSync(f, JSON.stringify(j));
+  }
+  console.log(`동작 소리가 있는 그림 묶음 ${n}개`);
+  process.exit(0);
+}
 if (has('server-only')) {      // 그림은 그대로 두고 서버 자료만 다시 만든다
   convertMessages();
   convertServer(JSON.parse(fs.readFileSync(path.join(OUT, 'maps', 'index.json'), 'utf8')));
