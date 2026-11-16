@@ -46,3 +46,10 @@
 - 문장 그리기 0x100012f0: 모양 표 0x100c6a18[0..19] = is-i0~19-bu, 특수 0x100c6a00 = is-i20~25-bu, 틀 0x100c6a68 = is-f2-bu,
   색 = 번호 % 10 → {0,1,4,5,9,0x12,0x13,0x19,0x1c,0x1d} → 색 표 0x100c777c + 색*64 (효과 0xb). 색 표는 .data 의 초기값 없는 곳이라 실행 중에 채워진다.
 - 창 초기화 함수를 유니콘으로 돌려 Create 호출을 뽑는 도구: tools(작업 폴더) emuwin.py
+
+## 3단계에서 읽은 것
+- 군단장 넘기기: 넘겨받는 사람이 대답과 새 비밀번호(0x75a, 12바이트). CheckCommanderLicense, 멤버 수 > 레벨/10+100 이면 0/2/0xff, 용병이 더 높으면 0x100. 결과 0x41 / 0x56
+- 부관: 부대 다섯까지(0xf2), 이미 부관 0xde, 용병 0xdc, 부관 아님 0xdf, 해임 0xf4, 임명 0xf3, 바뀜 0xf5, 같은 이름 부대 0xf6
+- 권한 비트 (RMS_ARMY_CHANGEPERMISSION): 1 RECRUIT, 2 HIREDSOLDIER, 4 ITEMMANAGEMENT, 8 MONEYMANAGEMENT, 16 ITEMBUYING, 32 AGITMANAGEMENT
+- RMS_ARMY_REMOVESUBARMYMEMBER: Kind 0 은 우편과 함께 빼기(서버는 부대원이 스스로 나갈 때 0 을 쓴다), 1 은 그냥 빼기(부관이 내보낼 때)
+- 창: ia-z12-ba 부관 관리 (0x10058190), ia-z13-ba 부대 정보 입력 (0x10045c10), ia-z16-ba 권한 (0x1005c750), ia-z23-ba 비밀번호 (0x1004b440)

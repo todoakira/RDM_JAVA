@@ -164,30 +164,35 @@ const ArmyUI = (() => {
       text(d, 50, 122, 200, 36).id = 'arInAll'; text(d, 50, 180, 210, 25).id = 'arInNotice'; text(d, 50, 230, 210, 25).id = 'arInUnit'; text(d, 50, 278, 210, 26).id = 'arInStat';
       const no = () => UI.sysLine('아직 없는 기능입니다.');
       btn(d, 470, 76, 348, 24, 23, () => UI.msgBox(M0(0x148).trim(), ['yes', 'no'], y => { if (y) A({ a: 'withdraw' }); }));
-      btn(d, 471, 99, 348, 22, 23, () => UI.msgBox(M0(0x149), ['yes', 'no'], y => { if (y) no(); }));
+      btn(d, 471, 99, 348, 22, 23, () => UI.msgBox(M0(0x149), ['yes', 'no'], y => { if (y) A({ a: 'unitquit' }); }));
       btn(d, 472, 121, 348, 24, 23, () => employ(1));
       btn(d, 473, 145, 348, 23, 23, no);
-      btn(d, 474, 169, 348, 22, 23, no);
+      btn(d, 474, 169, 348, 22, 23, () => employ(3));
       btn(d, 475, 191, 348, 24, 23, () => UI.msgBox(M0(0x1a5), ['yes', 'no'], y => { if (y) no(); }));
       btn(d, 476, 214, 348, 24, 23, () => UI.msgBox(M0(0x1a4), ['ok', 'cancel'], (y, v) => { if (y && v) no(); }, true));
       btn(d, 477, 279, 9, 22, 22, () => hide(d));
     }
     const f = (c, v) => fmt(M0(c), v || '');
-    el('arInName').textContent = m.none ? '' : m.name; el('arInCmd').textContent = m.none ? '' : f(0xdb, m.commander); el('arInLt').textContent = m.none ? '' : f(0xdc, '');
-    el('arInAll').textContent = ''; el('arInNotice').textContent = m.none ? '' : m.notice; el('arInUnit').textContent = ''; el('arInStat').textContent = '';
+    el('arInName').textContent = m.none ? '' : m.name; el('arInCmd').textContent = m.none ? '' : f(0xdb, m.commander); el('arInLt').textContent = m.none ? '' : f(0xdc, m.lt ? `${m.lt} (${m.unit})` : '');
+    el('arInAll').textContent = ''; el('arInNotice').textContent = m.none ? '' : m.notice; el('arInUnit').textContent = m.none ? '' : m.unitNotice || ''; el('arInStat').textContent = '';
     show(d);
   }
   // ---- 모집 (ia-z11-ba 235×114, 0x100415a0): 이름칸 (36,53)~(151,70), + 넣기 (166,53), − 빼기 (192,53), 닫기 (56,81). 문장 0/0/0x155
+  //   같은 창을 부관 임명·해임(0x72e, 문장 0/0/0x156)과 부대원 모집(0x780)에도 쓴다 (받는 패킷 0x731, 0x1001ed50)
+  let empKind = 1;
   function employ(kind) {
-    const d = win('arEmp', 482, 235, 114);
+    empKind = kind; const d = win('arEmp', 482, 235, 114);
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
-      text(d, 18, 24, 207, 22, M0(0x155));
+      text(d, 18, 24, 207, 22).id = 'arEmpText';
       const n = input(d, 36, 53, 115, 17, 14); n.id = 'arEmpName';
-      btn(d, 555, 166, 53, 23, 20, () => { if (n.value.trim()) A({ a: 'hire', name: n.value.trim() }); });
-      btn(d, 554, 192, 53, 23, 20, () => { if (n.value.trim()) A({ a: 'hire', name: n.value.trim(), fire: 1 }); });
+      const go = fire => { const v = n.value.trim(); if (!v) return;
+        if (empKind === 'lt') A({ a: 'appoint', name: v, on: fire ? 0 : 1 }); else if (empKind === 3) A({ a: 'unithire', name: v, fire }); else A({ a: 'hire', name: v, fire }); };
+      btn(d, 555, 166, 53, 23, 20, () => go(0));
+      btn(d, 554, 192, 53, 23, 20, () => go(1));
       btn(d, 553, 56, 81, 60, 20, () => hide(d));
     }
+    el('arEmpText').textContent = M0(kind === 'lt' ? 0x156 : 0x155);
     el('arEmpName').value = ''; show(d);
   }
   // ---- 관리 (0x727 → ia-z20-ba 136×325, 0x100534f0): 단추 아홉 ia-z20-bu (19, 49+약 25.4k), 글 0/0/0xf3~0xfb, 닫기 (35,281)
@@ -198,7 +203,7 @@ const ArmyUI = (() => {
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
       const no = () => UI.sysLine('아직 없는 기능입니다.');
-      const act = [no, no, no, () => bulletin(), () => A({ a: 'members' }), () => cmdMenu(), no, no,
+      const act = [() => ltMenu(), no, no, () => bulletin(), () => A({ a: 'members' }), () => cmdMenu(), no, no,
         () => UI.msgBox(M0(0x65), ['yes', 'no'], y => { if (y) { A({ a: 'breakup' }); hide(d); } })];
       act.forEach((fn, k) => btn(d, 493, 19, Z20_TOP[k], 97, 23, fn, M0(0xf3 + k).trim()));
       btn(d, 553, 35, 281, 60, 20, () => hide(d));
@@ -211,7 +216,7 @@ const ArmyUI = (() => {
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
       btn(d, 495, 22, 19, 148, 23, () => { A({ a: 'notice' }); hide(d); }, M0(0x11e).trim());
-      btn(d, 495, 22, 44, 148, 23, () => UI.sysLine('아직 없는 기능입니다.'), M0(0x11f).trim());
+      btn(d, 495, 22, 44, 148, 23, () => { A({ a: 'notice', kind: 2 }); hide(d); }, M0(0x11f).trim());
       btn(d, 553, 64, 76, 60, 20, () => hide(d));
     }
     show(d);
@@ -221,21 +226,23 @@ const ArmyUI = (() => {
     const d = win('arCmd', 494, 190, 108);
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
-      btn(d, 495, 22, 19, 148, 23, () => UI.sysLine('아직 없는 기능입니다.'), M0(0x128).trim());
-      btn(d, 495, 22, 44, 148, 23, () => UI.sysLine('아직 없는 기능입니다.'), M0(0x129).trim());
+      btn(d, 495, 22, 19, 148, 23, () => pwWin('cmdpw'), M0(0x128).trim());
+      btn(d, 495, 22, 44, 148, 23, () => UI.msgBox(M0(0x12a), ['ok', 'cancel'], (y, v) => { if (y && v) A({ a: 'transfer', name: v }); }, true), M0(0x129).trim());
       btn(d, 553, 64, 76, 60, 20, () => hide(d));
     }
     show(d);
   }
   // 공지 쓰기 (ia-z15-ba 255×166, 0x1005a1b0): 지금 공지 0/0/0x120 (30,15), 새 공지 0/0/0x121 (30,70), OK (107,130), CANCEL (159,130)
-  function noticeWin(cur) {
+  let noticeKind = 1;
+  function noticeWin(cur, kind) {
+    noticeKind = kind || 1;
     const d = win('arNot', 487, 255, 166);
     if (!d.dataset.ok) {
       d.dataset.ok = 1;
       text(d, 30, 15, 203, 13, M0(0x120)); text(d, 30, 70, 203, 15, M0(0x121));
       text(d, 36, 34, 186, 29).id = 'arNotCur';
       const t = input(d, 36, 88, 186, 36, 62, 'area'); t.id = 'arNotNew';
-      btn(d, 560, 107, 130, 47, 20, () => { A({ a: 'notice', text: t.value }); hide(d); });
+      btn(d, 560, 107, 130, 47, 20, () => { A({ a: 'notice', text: t.value, kind: noticeKind }); hide(d); });
       btn(d, 457, 159, 130, 60, 20, () => hide(d));
     }
     el('arNotCur').textContent = cur; el('arNotNew').value = ''; show(d);
@@ -250,9 +257,79 @@ const ArmyUI = (() => {
       [['arMemLt', 88], ['arMemUnit', 200], ['arMemReg', 311], ['arMemMerc', 421]].forEach(([id, y]) => { const t = text(d, 50, y, 113, 78); t.id = id; t.style.overflowY = 'auto'; t.style.pointerEvents = 'auto'; });
       btn(d, 553, 77, 512, 60, 20, () => hide(d));
     }
-    el('arMemCmd').textContent = m.commander; el('arMemLt').textContent = ''; el('arMemUnit').textContent = ''; el('arMemReg').textContent = m.members.join('\n'); el('arMemMerc').textContent = '';
+    el('arMemCmd').textContent = m.commander; el('arMemUnit').textContent = ''; el('arMemReg').textContent = m.members.join('\n');
+    const lt = el('arMemLt'); lt.innerHTML = '';
+    for (const n of m.lts || []) { const r = document.createElement('div'); r.className = 'pxl'; r.textContent = n; r.onclick = () => A({ a: 'unit', name: n }); lt.appendChild(r); } el('arMemMerc').textContent = '';
     UI.sysLine(M0(0x1a9));
     show(d);
+  }
+  // ---- 부관 관리 (0x72d → ia-z12-ba 210×164, 0x10058190): 단추 넷 ia-z12-bu (23,20/46/73/99) 0/0/0xfc~0xff, CANCEL (74,131)
+  function ltMenu() {
+    const d = win('arLt', 483, 210, 164);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      btn(d, 484, 23, 20, 160, 23, () => employ('lt'), M0(0xfc).trim());
+      btn(d, 484, 23, 46, 160, 23, () => UI.msgBox(M0(0x104), ['ok', 'cancel'], (y, from) => { if (y && from) UI.msgBox(M0(0x155), ['ok', 'cancel'], (y2, to) => { if (y2 && to) A({ a: 'changelt', from, to }); }, true); }, true), M0(0xfd).trim());
+      btn(d, 484, 23, 73, 160, 23, () => permWin(), M0(0xfe).trim());
+      btn(d, 484, 23, 99, 160, 23, () => pwWin('ltpw'), M0(0xff).trim());
+      btn(d, 457, 74, 131, 60, 20, () => hide(d));
+    }
+    show(d);
+  }
+  // ---- 권한 (0x737 → ia-z16-ba 210×284, 0x1005c750): 부관 이름칸 (80,25), 찾기 ia-z6-bu (181,22), 권한 여섯 0/0/0x105~0x10a (20, 74+약 28.6k),
+  //   칸마다 두 단추 ia-z6s-bu (126,y)(160,y) = 줌·뺌, OK (53,253), CANCEL (103,253). 비트 1 모집, 2 용병, 4 아이템, 8 돈, 16 구매, 32 홀 (RMS_ARMY_CHANGEPERMISSION)
+  const PERM_Y = [74, 103, 131, 159, 188, 217];
+  let perm = 0;
+  function permWin() {
+    const d = win('arPerm', 488, 210, 284);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 20, 25, 58, 14, M0(0x104));
+      const n = input(d, 82, 25, 92, 14, 14); n.id = 'arPermName';
+      btn(d, 520, 181, 22, 19, 19, () => { if (n.value.trim()) A({ a: 'getperm', name: n.value.trim() }); });
+      PERM_Y.forEach((y, k) => {
+        text(d, 20, y, 100, 18, M0(0x105 + k));
+        btn(d, 521, 126, y, 18, 17, () => { perm |= 1 << k; drawPerm(); }).id = 'arPermOn' + k;
+        btn(d, 521, 160, y, 18, 17, () => { perm &= ~(1 << k); drawPerm(); }).id = 'arPermOff' + k;
+      });
+      btn(d, 560, 53, 253, 47, 20, () => { if (n.value.trim()) A({ a: 'setperm', name: n.value.trim(), perm }); });
+      btn(d, 457, 103, 253, 60, 20, () => hide(d));
+    }
+    perm = 0; drawPerm(); el('arPermName').value = ''; show(d);
+  }
+  function drawPerm() { if (!el('arPermOn0')) return; for (let k = 0; k < 6; k++) { const on = !!(perm & (1 << k)); el('arPermOn' + k).style.backgroundPosition = on ? '0 100%' : '0 0'; el('arPermOff' + k).style.backgroundPosition = on ? '0 0' : '0 100%'; } }
+  // ---- 비밀번호 (ia-z23-ba 227×141, 0x1004b440): ENTER PW 0/0/0x10d (20,27), CONFIRM PW 0/0/0x10e (20,70), OK (61,105), CANCEL (109,105)
+  //   군단장 비밀번호(0x756), 부관 비밀번호(0x73e), 군단장을 넘겨받을 때·부관이 바뀔 때의 새 비밀번호에 쓴다
+  let pwThen = null;
+  function pwWin(kind, then) {
+    pwThen = then || (pw => A({ a: kind, password: pw }));
+    const d = win('arPw', 497, 227, 141);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 20, 27, 90, 15, M0(0x10d)); text(d, 20, 70, 90, 18, M0(0x10e));
+      input(d, 122, 27, 73, 15, 10, 'pw').id = 'arPw1'; input(d, 122, 70, 73, 18, 10, 'pw').id = 'arPw2';
+      btn(d, 560, 61, 105, 47, 20, () => { const a = el('arPw1').value; if (!a || a !== el('arPw2').value) { UI.msgBox(M0(0x153), ['ok']); return; } hide(d); pwThen(a); });
+      btn(d, 457, 109, 105, 60, 20, () => { hide(d); if (pwThen.cancel) pwThen.cancel(); });
+    }
+    el('arPw1').value = el('arPw2').value = ''; show(d);
+  }
+  // ---- 부관으로 임명될 때 (0/0/0x195, 0x197 → ia-z13-ba 220×195, 0x10045c10): 부대 이름 0/0/0x100, 비밀번호 0x101, 확인 0x10e, OK (57,165), CANCEL (106,165)
+  let ltAsk = null;
+  function ltWin(m) {
+    ltAsk = m; const d = win('arLtNew', 485, 220, 195);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 18, 16, 186, 12, M0(0x100)); text(d, 18, 64, 186, 12, M0(0x101)); text(d, 18, 112, 186, 12, M0(0x10e));
+      input(d, 66, 31, 88, 16, 10).id = 'arLtUnit'; input(d, 66, 81, 88, 16, 10, 'pw').id = 'arLtPw'; input(d, 66, 131, 88, 16, 10, 'pw').id = 'arLtPw2';
+      btn(d, 560, 57, 165, 47, 20, () => {
+        const u = el('arLtUnit').value.trim(), pw = el('arLtPw').value; if (!u) { UI.msgBox(M0(0x100), ['ok']); return; }
+        if (!pw || pw !== el('arLtPw2').value) { UI.msgBox(M0(0x153), ['ok']); return; }
+        A({ a: 'appointans', commander: ltAsk.commander, ok: 1, unit: u, password: pw }); hide(d);
+      });
+      btn(d, 457, 106, 165, 60, 20, () => { A({ a: 'appointans', commander: ltAsk.commander, ok: 0 }); hide(d); });
+    }
+    for (const id of ['arLtUnit', 'arLtPw', 'arLtPw2']) el(id).value = '';
+    UI.sysLine(fmt(M0(0x195), m.commander, m.army)); UI.sysLine(M0(0x197)); show(d);
   }
   function handle(m) {
     switch (m.w) {
@@ -273,9 +350,22 @@ const ArmyUI = (() => {
       case 'info': info(m); break;
       case 'members': members(m); break;
       case 'manage': manage(); break;
-      case 'notice': noticeWin(m.text); break;
+      case 'notice': noticeWin(m.text, m.kind); break;
       case 'noticed': UI.sysLine(M0(0x19e)); break;
       case 'badge': UI.armyName = m.name; break;
+      case 'perm': perm = m.perm; drawPerm(); break;
+      case 'permdone': UI.sysLine(M0(0x1a1)); break;
+      case 'pwchanged': UI.sysLine(M0(0x198)); break;
+      case 'unit': el('arMemUnit').textContent = m.members.join('\n'); break;
+      case 'asklt': ltWin(m); break;
+      case 'ltdone': UI.sysLine(M0(0x19f)); break;
+      case 'askltchange': UI.msgBox(fmt(M0(0x196), m.unit, m.from), ['yes', 'no'], y => {
+        if (!y) { A({ a: 'changeltans', commander: m.commander, ok: 0 }); return; }
+        const f = pw => A({ a: 'changeltans', commander: m.commander, ok: 1, password: pw }); f.cancel = () => A({ a: 'changeltans', commander: m.commander, ok: 0 }); pwWin('', f); }); break;
+      case 'askcmd': UI.msgBox(fmt(M0(0x15c), m.commander, m.army), ['yes', 'no'], y => {
+        if (!y) { A({ a: 'transferans', commander: m.commander, ok: 0 }); return; }
+        const f = pw => A({ a: 'transferans', commander: m.commander, ok: 1, password: pw }); f.cancel = () => A({ a: 'transferans', commander: m.commander, ok: 0 }); pwWin('', f); }); break;
+      case 'askunit': UI.msgBox(fmt(M0(0x159), m.unit, m.army), ['yes', 'no'], y => A({ a: 'unitans', ok: y ? 1 : 0 })); break;
     }
   }
   const fmt = (t, ...a) => { let k = 0; return t.replace(/%[sud]/g, () => String(a[k++] ?? '')); };

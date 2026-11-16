@@ -16,7 +16,7 @@ class Army {
   constructor(game) {
     this.game = game;
     try { this.db = JSON.parse(fs.readFileSync(path.join(ROOT, 'save', 'army.json'), 'utf8')); } catch (e) { this.db = {}; }
-    this.db.seq ||= 0; this.db.armies ||= {}; this.db.members ||= {}; this.db.sanction ||= {};
+    this.db.seq ||= 0; this.db.armies ||= {}; this.db.members ||= {}; this.db.sanction ||= {}; this.db.subs ||= {};
   }
   save() { try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(path.join(ROOT, 'save', 'army.json'), JSON.stringify(this.db)); } catch (e) { console.log('군단 저장 실패', e.message); } }
   msg(p, code, ...a) { this.game.story.msg(p, code, ...a); }
@@ -101,7 +101,7 @@ class Army {
     const id = this.idOf(p.name), a = this.db.armies[id]; if (!a || a.state !== STATE.RESERVE || a.commander !== p.name) return;
     this.remove(id); this.msg(p, 0x2b, a.name); this.save();
   }
-  remove(id) { delete this.db.armies[id]; for (const n of this.members(id)) delete this.db.members[n]; }
+  remove(id) { delete this.db.armies[id]; for (const n of this.members(id)) delete this.db.members[n]; for (const l of Object.keys(this.db.subs)) if (this.db.subs[l].army === id) delete this.db.subs[l]; }
 
   // ---- 군단 만들기
   // 시도 (ProcessTryToCreateArmy 0x4128b0, GetArmyCreateInfo): 예비 군단이 있으면 그 이름. 진영의 이미 쓰는 문장 목록
@@ -193,34 +193,42 @@ class Army {
   info(p) {
     const id = this.idOf(p.name, true), a = this.db.armies[id];
     if (!a) { p.send({ t: 'army', w: 'info', none: 1 }); return; }
-    p.send({ t: 'army', w: 'info', name: a.name, commander: a.commander, notice: a.notice, mark: a.mark, camp: a.camp, me: a.commander === p.name ? 'cmd' : 'reg' });
+    const m = this.db.members[p.name], lt = this.db.subs[p.name] ? p.name : m && m.sub, sub = lt && this.db.subs[lt];
+    p.send({ t: 'army', w: 'info', name: a.name, commander: a.commander, notice: a.notice, mark: a.mark, camp: a.camp, me: a.commander === p.name ? 'cmd' : 'reg',
+      lt: sub ? lt : '', unit: sub ? sub.name : '', unitNotice: sub ? sub.notice : '' });
   }
   // 멤버 (ProcessClickArmyMemberInfo 0x4171a0): 군단장, 병사
   memberList(p) {
     const id = this.idOf(p.name, true), a = this.db.armies[id]; if (!a) { this.msg(p, 0x101); return; }
-    p.send({ t: 'army', w: 'members', commander: a.commander, members: this.members(id) });
+    const lts = this.subsOf(id);
+    p.send({ t: 'army', w: 'members', commander: a.commander, lts, members: this.members(id).filter(n => !lts.includes(n)) });
   }
   // 관리 로그인 (ProcessArmyManagementLogin 0x4137b0): 군단장 비밀번호. 맞으면 관리 창
   login(p, password) {
     const id = this.idOf(p.name, true), a = this.db.armies[id];
     if (!a) { this.msg(p, 0xdb); return; }
     const side = this.side(p.world); if (side && a.camp !== side) { this.msg(p, 0xee); return; }
-    if (a.commander !== p.name || a.password !== String(password || '')) { this.msg(p, 0x1f); return; }
-    p.armyLogin = id; p.send({ t: 'army', w: 'manage', kind: 1 });
+    // CArmy::ProcessArmyPassword: 군단장은 군단 비밀번호, 부관은 부대 비밀번호. 1 = 군단장, 2 = 부관
+    const sub = this.db.subs[p.name];
+    const kind = a.commander === p.name && a.password === String(password || '') ? 1 : sub && sub.army === id && sub.password === String(password || '') ? 2 : 0;
+    if (!kind) { this.msg(p, 0x1f); return; }
+    p.armyLogin = id; p.send({ t: 'army', w: 'manage', kind });
   }
   // 공지 (ProcessRewriteNotice 0x413900, ProcessFinishRewriteNotice 0x413a90)
-  notice(p, text) {
+  notice(p, text, kind) {
     const id = this.idOf(p.name, true), a = this.db.armies[id];
     if (!a) { this.msg(p, 0xdb); return; }
-    if (a.commander !== p.name) { this.msg(p, 0x1e); return; }
-    if (text === undefined) { p.send({ t: 'army', w: 'notice', text: a.notice }); return; }
-    a.notice = String(text).slice(0, 62); this.save(); p.send({ t: 'army', w: 'noticed' });
+    let o = a;
+    if (kind === 2) { o = this.db.subs[p.name]; if (!o || o.army !== id) { this.msg(p, 0xdf, p.name); return; } }   // 부대 공지: 부관만
+    else if (a.commander !== p.name) { this.msg(p, 0x1e); return; }
+    if (text === undefined) { p.send({ t: 'army', w: 'notice', text: o.notice, kind: kind === 2 ? 2 : 1 }); return; }
+    o.notice = String(text).slice(0, 62); this.save(); p.send({ t: 'army', w: 'noticed' });
   }
   // 병사 모집 (ProcessArmyEmployment 0x4197f0): 군단장. 한도 = 군단장 레벨/10 + 100. 해고는 RMS_ARMY_REMOVEARMYMEMBER Kind 1
   hire(p, who, fire) {
     who = String(who || '').trim(); const id = this.idOf(p.name, true), a = this.db.armies[id];
     if (!a) { this.msg(p, 0xdb); return; }
-    if (a.commander !== p.name) { this.msg(p, 0xf1); return; }
+    if (!this.permitted(p.name, id, 1)) { this.msg(p, 0xf1); return; }
     if (fire) {
       const m = this.db.members[who]; if (!m || m.army !== id) return;
       delete this.db.members[who]; this.addSanction(who); this.save();
@@ -228,19 +236,20 @@ class Army {
       this.msg(p, 0x10c, who); const q = this.game.findOnline(who); if (q) this.sendBadge(q); return;
     }
     if (this.idOf(who)) { this.msg(p, 0xd8); return; }
-    if (this.count(id) >= Math.floor(p.level / 10) + 100) { this.msg(p, 0x26); return; }
+    if (this.count(id) >= Math.floor(this.levelOf(a.commander) / 10) + 100) { this.msg(p, 0x26); return; }
     if (this.sanctioned(who)) { this.msg(p, 0x164, who); return; }
     const q = this.game.findOnline(who); if (!q) return;
     (q.armyAsk ||= {})[p.name] = 'reg';
     q.send({ t: 'army', w: 'askjoin', army: a.name, commander: p.name });
+    q.armyHireBy = id;
   }
   // 대답 (ProcessAnswerJoinArmy 0x419b80)
   hireAnswer(p, commander, yes) {
     commander = String(commander || ''); if (!p.armyAsk || p.armyAsk[commander] !== 'reg') return; delete p.armyAsk[commander];
     if (!yes) { const c = this.game.findOnline(commander); if (c) this.msg(c, 0xd9, p.name); return; }
     if (this.idOf(p.name)) { this.msg(p, 0xd7); return; }
-    const id = this.idOf(commander, true), a = this.db.armies[id]; if (!a || a.commander !== commander) return;
-    if (this.count(id) >= Math.floor(this.levelOf(commander) / 10) + 100) { this.msg(p, 0x26); return; }
+    const id = this.idOf(commander, true), a = this.db.armies[id]; if (!a || !this.permitted(commander, id, 1)) return;
+    if (this.count(id) >= Math.floor(this.levelOf(a.commander) / 10) + 100) { this.msg(p, 0x26); return; }
     this.db.members[p.name] = { army: id, joined: Date.now() }; this.save();
     this.msg(p, 0x44, a.name); this.sendBadge(p);
   }
@@ -249,6 +258,7 @@ class Army {
     const id = this.idOf(p.name, true), a = this.db.armies[id];
     if (!a) { this.msg(p, 0xdb); return; }
     if (a.commander === p.name) { this.msg(p, 0x10b); return; }
+    if (this.db.subs[p.name]) this.removeSub(p.name, 0);       // RMS_ARMY_REMOVEARMYMEMBER: 부관이면 부대부터 없앤다
     delete this.db.members[p.name]; this.addSanction(p.name); this.save();
     this.msg(p, 0x10c, p.name); this.sendBadge(p);
   }
@@ -274,6 +284,159 @@ class Army {
   }
   // 내 군단 이름 (머리 위·정보용)
   sendBadge(p) { const id = this.idOf(p.name, true), a = this.db.armies[id]; p.send({ t: 'army', w: 'badge', name: a ? a.name : '', mark: a ? a.mark : 0 }); }
+
+  // ---- 군단장 관리·부관·부대 (3단계)
+  subsOf(id) { return Object.keys(this.db.subs).filter(l => this.db.subs[l].army === id); }
+  // CheckArmyPermission 0x4120f0: 군단장이거나, 권한 비트가 있는 부관 (1 모집, 2 용병, 4 아이템, 8 돈, 16 구매, 32 홀)
+  permitted(name, id, bit) { const a = this.db.armies[id]; if (a && a.commander === name) return true; const s = this.db.subs[name]; return !!(s && s.army === id && (s.perm & bit)); }
+  cmdArmy(p) { const id = this.idOf(p.name, true), a = this.db.armies[id]; if (!a) { this.msg(p, 0xdb); return [0, null]; } if (a.commander !== p.name) { this.msg(p, 0x1e); return [0, null]; } return [id, a]; }
+  // 군단장 비밀번호 바꾸기 (ProcessChangeCommanderPassword 0x416330 → 0x757)
+  cmdPassword(p, pw) {
+    pw = String(pw || '').slice(0, 10); if (!pw) return;
+    const [, a] = this.cmdArmy(p); if (!a) return;
+    a.password = pw; this.save(); p.send({ t: 'army', w: 'pwchanged' });
+  }
+  // 군단장 넘기기 (ProcessChangeArmyCommander 0x416450): 같은 군단 병사에게 0/0/0x15c 질문
+  transfer(p, who) {
+    who = String(who || '').trim(); if (!who) return;
+    if (who === p.name) { this.msg(p, 0x29); return; }
+    const [id, a] = this.cmdArmy(p); if (!a) return;
+    if (this.idOf(who, true) !== id) { this.msg(p, 0xdb); return; }
+    const q = this.game.findOnline(who); if (!q) { this.msg(p, 0xf7, who); return; }
+    (q.armyAsk ||= {})[p.name] = 'cmd'; q.send({ t: 'army', w: 'askcmd', army: a.name, commander: p.name });
+  }
+  // 대답 (ProcessResultAskChangeCommander 0x4165e0): 받으면 새 군단장 자격·한도를 보고 RMS_ARMY_CHANGEARMYCOMMANDER (모두에게 우편)
+  transferAnswer(p, commander, yes, password) {
+    commander = String(commander || ''); if (!p.armyAsk || p.armyAsk[commander] !== 'cmd') return; delete p.armyAsk[commander];
+    const id = this.idOf(p.name, true), a = this.db.armies[id]; if (!a || a.commander !== commander) return;
+    const c = this.game.findOnline(commander);
+    if (!yes) { if (c) this.msg(c, 0x56, p.name); return; }
+    if (!this.license(p)) return;
+    if (this.count(id) > Math.floor(p.level / 10) + 100) { this.msg(p, 0xff); return; }
+    password = String(password || '').slice(0, 10); if (!password) return;
+    const from = a.commander, joined = a.created;
+    if (this.db.subs[p.name]) this.removeSub(p.name, 1);
+    delete this.db.members[p.name];
+    a.commander = p.name; a.password = password;
+    this.db.members[from] = { army: id, joined, sub: this.db.subs[from] ? from : '' };
+    const text = `${a.name} Army Commander ${from}\nhas entrusted his position to ${p.name}.\nFor more information, contact the appropriate\nArmy Commander.`;
+    for (const n of [...this.members(id), p.name]) this.mail(n, 'Commander Change', text);
+    this.save(); if (c) this.msg(c, 0x41, p.name); this.msg(p, 0x41, p.name);
+  }
+  // 부관 임명·해임 (ProcessAppointSubCommander 0x413ce0): 부대는 다섯까지 (0xf2). 임명은 상대에게 0/0/0x195 질문, 대답에 부대 이름·비밀번호
+  appoint(p, who, on) {
+    who = String(who || '').trim(); const [id, a] = this.cmdArmy(p); if (!a) return;
+    if (this.idOf(who, true) !== id || who === p.name) { this.msg(p, 0xdb); return; }
+    if (!on) {
+      if (!this.db.subs[who]) { this.msg(p, 0xdf, who); return; }
+      this.removeSub(who, 1); this.save(); this.msg(p, 0xf4, who); return;
+    }
+    if (this.db.subs[who]) { this.msg(p, 0xde, who); return; }
+    if (this.subsOf(id).length >= 5) { this.msg(p, 0xf2); return; }
+    const q = this.game.findOnline(who); if (!q) { this.msg(p, 0xf7, who); return; }
+    (q.armyAsk ||= {})[p.name] = 'lt'; q.send({ t: 'army', w: 'asklt', army: a.name, commander: p.name });
+  }
+  // 대답 (ProcessSubArmyCreateInfo 0x413f40, RMS_ARMY_CREATESUBARMY: 부관이 이미 있으면 실패)
+  appointAnswer(p, commander, yes, unit, password) {
+    commander = String(commander || ''); if (!p.armyAsk || p.armyAsk[commander] !== 'lt') return; delete p.armyAsk[commander];
+    const id = this.idOf(commander, true), a = this.db.armies[id], c = this.game.findOnline(commander);
+    if (!a || a.commander !== commander || this.idOf(p.name, true) !== id) return;
+    if (!yes) { if (c) this.msg(c, 0xd9, p.name); return; }
+    unit = String(unit || '').trim().slice(0, 10); password = String(password || '').slice(0, 10);
+    if (!unit || !password || this.db.subs[p.name]) return;
+    if (this.subsOf(id).length >= 5) { if (c) this.msg(c, 0xf2); return; }
+    if (this.subsOf(id).some(l => this.db.subs[l].name === unit)) { this.msg(p, 0xf6); return; }
+    this.db.subs[p.name] = { army: id, name: unit, password, perm: 0, notice: '' };
+    this.db.members[p.name].sub = p.name; this.save();
+    if (c) this.msg(c, 0xf3, p.name); p.send({ t: 'army', w: 'ltdone' });
+  }
+  // 부관 바꾸기 (ProcessChangeSubCommander 0x414140): 부관 A 의 부대를 병사 B 에게. B 에게 0/0/0x196 질문, 대답에 비밀번호
+  changeLt(p, from, to) {
+    from = String(from || '').trim(); to = String(to || '').trim(); const [id, a] = this.cmdArmy(p); if (!a) return;
+    if (this.idOf(from, true) !== id || this.idOf(to, true) !== id) { this.msg(p, 0xdb); return; }
+    if (!this.db.subs[from]) { this.msg(p, 0xdf, from); return; }
+    if (this.db.subs[to] || to === a.commander) { this.msg(p, 0xde, to); return; }
+    const q = this.game.findOnline(to); if (!q) { this.msg(p, 0xf7, to); return; }
+    (q.armyAsk ||= {})[p.name] = 'ltchange:' + from; q.send({ t: 'army', w: 'askltchange', unit: this.db.subs[from].name, from, commander: p.name });
+  }
+  // 대답 (ProcessSubArmyChangeInfo 0x414390, RMS_ARMY_CHANGESUBARMYCOMMANDER: 부대원에게 우편)
+  changeLtAnswer(p, commander, yes, password) {
+    commander = String(commander || ''); const k = p.armyAsk && p.armyAsk[commander]; if (!k || !k.startsWith('ltchange:')) return; delete p.armyAsk[commander];
+    const from = k.slice(9), s = this.db.subs[from], id = this.idOf(p.name, true), a = this.db.armies[id], c = this.game.findOnline(commander);
+    if (!s || s.army !== id || !a || a.commander !== commander) return;
+    if (!yes) { if (c) this.msg(c, 0xd9, p.name); return; }
+    password = String(password || '').slice(0, 10); if (!password || this.db.subs[p.name]) return;
+    const text = `${a.commander} Commander ${a.name} Army's\nLieutenant ${from}${p.name}\nhas been changed to For more information contact\nthe appropriate Army Commander.`;
+    for (const n of this.unitMembers(from)) this.mail(n, 'Unit Lieutenant Change', text);
+    this.db.subs[p.name] = Object.assign(s, { password }); delete this.db.subs[from];
+    for (const n of this.unitMembers(from)) this.db.members[n].sub = p.name;
+    this.db.members[p.name].sub = p.name; if (this.db.members[from]) this.db.members[from].sub = '';
+    this.save(); if (c) this.msg(c, 0xf5, from, p.name); this.msg(p, 0xf5, from, p.name);
+  }
+  unitMembers(lt) { return Object.keys(this.db.members).filter(n => n !== lt && this.db.members[n].sub === lt); }
+  // 부대 없애기 (RMS_ARMY_REMOVESUBARMY): Kind 1 = 부관 해임, 0 = 부관이 부대 해산. 부대원에게 우편, 모두 일반 병사로
+  removeSub(lt, kind) {
+    const s = this.db.subs[lt], a = s && this.db.armies[s.army]; if (!s) return;
+    const text = kind === 1
+      ? `${a.commander}Commander ${a.name} from the\nArmy Lieutenant ${lt} has been\ndemoted.  All Unit members have become Free Agent\nsoldiers. For more information contact the\nappropriate Commander.`
+      : `${a.commander} Commander ${a.name} Army Lieutenant${lt} has ordered to disband the unit.\nAll the members of this unit will become Regular\nSoldiers.  For more information, contact the\nappropriate Commander.`;
+    for (const n of this.unitMembers(lt)) { this.mail(n, 'Disband Army Unit', text); this.db.members[n].sub = ''; }
+    if (this.db.members[lt]) this.db.members[lt].sub = '';
+    delete this.db.subs[lt];
+  }
+  // 권한 (ProcessRequestSubCommanderPermission 0x4146a0, ProcessChangeSubCommanderPermission 0x4147e0)
+  getPerm(p, lt) {
+    const [id, a] = this.cmdArmy(p); if (!a) return; lt = String(lt || '').trim();
+    const s = this.db.subs[lt]; if (!s || s.army !== id) { this.msg(p, 0xdf, lt); return; }
+    p.send({ t: 'army', w: 'perm', lt, perm: s.perm });
+  }
+  setPerm(p, lt, perm) {
+    const [id, a] = this.cmdArmy(p); if (!a) return; lt = String(lt || '').trim();
+    const s = this.db.subs[lt]; if (!s || s.army !== id) { this.msg(p, 0xdf, lt); return; }
+    s.perm = (perm | 0) & 63; this.save(); p.send({ t: 'army', w: 'permdone' });
+  }
+  // 부관 비밀번호 (ProcessChangeSubCommanderPassword 0x414a30)
+  ltPassword(p, pw) {
+    pw = String(pw || '').slice(0, 10); const s = this.db.subs[p.name];
+    if (!s || s.army !== this.idOf(p.name, true)) { this.msg(p, 0xdf, p.name); return; }
+    if (!pw) return; s.password = pw; this.save(); p.send({ t: 'army', w: 'pwchanged' });
+  }
+  // 부대원 모집·내보내기 (ProcessSubArmyEmployment 0x419d80): 부관만. 같은 군단의 병사에게 0/0/0x159 질문
+  unitHire(p, who, fire) {
+    who = String(who || '').trim(); const id = this.idOf(p.name, true), s = this.db.subs[p.name];
+    if (!id) { this.msg(p, 0xdb); return; }
+    if (!s || s.army !== id) { this.msg(p, 0xdf, p.name); return; }
+    if (this.idOf(who, true) !== id) { this.msg(p, 0xdb); return; }
+    const m = this.db.members[who];
+    if (fire) { if (m && m.sub === p.name) { m.sub = ''; this.save(); this.msg(p, 0x10e, who); } return; }   // RMS_ARMY_REMOVESUBARMYMEMBER Kind 1
+    if (!m || this.db.subs[who] || m.sub) { this.msg(p, 0xd8); return; }
+    const q = this.game.findOnline(who); if (!q) { this.msg(p, 0xf7, who); return; }
+    (q.armyAsk ||= {})[p.name] = 'unit'; q.send({ t: 'army', w: 'askunit', unit: s.name, army: this.db.armies[id].name });
+    q.armyAskUnitLt = p.name;
+  }
+  // 대답 (ProcessAnswerJoinSubArmy 0x419f10, RMS_ARMY_ADDSUBARMYMEMBER)
+  unitAnswer(p, yes) {
+    const lt = p.armyAskUnitLt; if (!lt || !p.armyAsk || p.armyAsk[lt] !== 'unit') return; delete p.armyAsk[lt];
+    const s = this.db.subs[lt], m = this.db.members[p.name], c = this.game.findOnline(lt);
+    if (!yes) { if (c) this.msg(c, 0xd9, p.name); return; }
+    if (!s || !m || m.army !== s.army || this.db.subs[p.name] || m.sub) return;
+    m.sub = lt; this.save(); this.msg(p, 0x10f, p.name); if (c) this.msg(c, 0x10f, p.name);
+  }
+  // 부대 탈퇴 (ProcessWithdrawalFromArmy 종류 2): 부관이면 부대 해산 (0x111), 부대원이면 나가기 (0x110, RMS_ARMY_REMOVESUBARMYMEMBER Kind 0 우편)
+  unitQuit(p) {
+    const m = this.db.members[p.name]; if (!m) { this.msg(p, 0xdb); return; }
+    if (this.db.subs[p.name]) { this.removeSub(p.name, 0); this.save(); this.msg(p, 0x111); return; }
+    if (!m.sub) return;
+    const s = this.db.subs[m.sub], a = this.db.armies[m.army];
+    if (s && a) this.mail(p.name, 'Army Lieutenant demotion', `${a.name} belongs to Army${m.sub} Lieutenant${s.name} has been dismissed from the Unit.\nFor more information, contact the appropriate\nArmy Lieutenant`);
+    m.sub = ''; this.save(); this.msg(p, 0x110);
+  }
+  // 부대원 목록 (ProcessRequestSubArmyMemberInfo 0x417490 → 0x795)
+  unitList(p, lt) {
+    const id = this.idOf(p.name, true); lt = String(lt || ''); const s = this.db.subs[lt];
+    if (!id || !s || s.army !== id) { this.msg(p, 0xdb); return; }
+    p.send({ t: 'army', w: 'unit', lt, members: this.unitMembers(lt) });
+  }
 
   // 시간 지난 예비 군단 (RMS_ARMY_BREAKUPRESERVEARMY TimeOut=1): 모두에게 우편
   tick(now) {

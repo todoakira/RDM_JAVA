@@ -82,7 +82,14 @@ wss.on('connection', ws => {
       else if (a === 'invite') A.invite(player, m.name); else if (a === 'inviteans') A.inviteAnswer(player, m.commander, !!m.ok);
       else if (a === 'uninvite') A.removeInit(player, m.name); else if (a === 'form') A.armyForm(player); else if (a === 'cancel') A.armyCancel(player);
       else if (a === 'info') A.info(player); else if (a === 'members') A.memberList(player); else if (a === 'login') A.login(player, m.password);
-      else if (a === 'notice') A.notice(player, m.text); else if (a === 'hire') A.hire(player, m.name, !!m.fire); else if (a === 'hireans') A.hireAnswer(player, m.commander, !!m.ok);
+      else if (a === 'notice') A.notice(player, m.text, m.kind | 0); else if (a === 'hire') A.hire(player, m.name, !!m.fire); else if (a === 'hireans') A.hireAnswer(player, m.commander, !!m.ok);
+      else if (a === 'cmdpw') A.cmdPassword(player, m.password); else if (a === 'transfer') A.transfer(player, m.name);
+      else if (a === 'transferans') A.transferAnswer(player, m.commander, !!m.ok, m.password); else if (a === 'appoint') A.appoint(player, m.name, !!m.on);
+      else if (a === 'appointans') A.appointAnswer(player, m.commander, !!m.ok, m.unit, m.password); else if (a === 'changelt') A.changeLt(player, m.from, m.to);
+      else if (a === 'changeltans') A.changeLtAnswer(player, m.commander, !!m.ok, m.password); else if (a === 'getperm') A.getPerm(player, m.name);
+      else if (a === 'setperm') A.setPerm(player, m.name, m.perm); else if (a === 'ltpw') A.ltPassword(player, m.password);
+      else if (a === 'unithire') A.unitHire(player, m.name, !!m.fire); else if (a === 'unitans') A.unitAnswer(player, !!m.ok);
+      else if (a === 'unitquit') A.unitQuit(player); else if (a === 'unit') A.unitList(player, m.name);
       else if (a === 'withdraw') A.withdraw(player); else if (a === 'breakup') A.breakUp(player); else if (a === 'chat') A.chat(player, m.text);
     }
     else if (m.t === 'inform') game.mail.inform(player, m.ev | 0);                      // 맵 클릭 영역의 이벤트 번호 (ProcessInformEvent)
