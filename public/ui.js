@@ -23,11 +23,12 @@ const UI = (() => {
     else if (act === 'skill') { toggle('winSk'); }
     else if (act === 'group') groupMenu();
     else if (act === 'quit') location.reload();
-    else if (act === 'quick' || act === 'army' || act === 'help') log('아직 구현되지 않은 창입니다.', 'sys');
+    else if (act === 'quick') toggle('winQuick');
+    else if (act === 'army' || act === 'help') log('아직 구현되지 않은 창입니다.', 'sys');
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
-  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block' || a === 'skill' && false); } }
-  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winHist') drawHist(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
+  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block' || a === 'quick' && el('winQuick').style.display === 'block'); } }
+  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winHist') drawHist(); if (id === 'winQuick') drawQuick(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
   document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') { if (exch) closeExch(true); else closeShop(true); } else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
 
@@ -50,11 +51,21 @@ const UI = (() => {
     const rows = Math.max(3, Math.ceil(inv.items.length / 4)); invTop = Math.max(0, Math.min(invTop, rows - 3));
     for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
       const slot = (invTop + r) * 4 + c, it = inv.items[slot], e = cell(it, 18 + c * 40, 18 + r * 40, slot === invSel);
-      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); }; }
+      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); };
+        e.oncontextmenu = ev => { ev.preventDefault(); if (!bank && !shop) send({ t: 'qput', slot }); }; }   // 오른쪽 클릭: 빠른 창으로 (1/1/119~122)
       box.appendChild(e);
     }
     arrow(box, 175, 12, () => { invTop--; drawInvWin(); }); arrow(box, 175, 118, () => { invTop++; drawInvWin(); });
     const it = inv.items[invSel]; el('invtxt').textContent = it ? itemTip(it) : '';
+  }
+  // 빠른 창 (Quick, iw-qi-ba 479×64, 원작 위치 136,4, Main.dll 0x100909d0): 아이템 칸 여덟 (19+41k, 15) 35×35, 기술 칸 둘 (351,15)·(409,15) 50×35
+  function drawQuick() {
+    const box = el('qkcells'); if (!box || !inv) return; box.innerHTML = '';
+    for (let k = 0; k < 8; k++) {
+      const it = (inv.quick || [])[k], e = cell(it, 19 + k * 41, 15, false);
+      if (it) { e.title = `CTRL+${k + 1}\n` + itemTip(it); e.ondblclick = () => send({ t: 'quse', q: k }); e.oncontextmenu = ev => { ev.preventDefault(); send({ t: 'qget', q: k }); }; }
+      box.appendChild(e);
+    }
   }
   function drawEq() {
     if (el('winEq').style.display !== 'block' || !inv) return;
@@ -322,5 +333,5 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

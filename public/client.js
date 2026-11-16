@@ -335,7 +335,10 @@ addEventListener('keydown', e => {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
       const gm = /^@(.+)$/.exec(text);   // 그룹 대화: 글 앞에 '@' 또는 입력줄의 Group 단추 (원작 도움말 Message.ctf 1/1/41~42)
+      const sm = /^!(.+)$/.exec(text);   // 외치기: '!' 또는 Shout 단추 (1/1/32~33)
       if (gm || (chatMode === 'grp' && text)) send({ t: 'gchat', text: gm ? gm[1] : text });
+      else if (sm || (chatMode === 'shout' && text)) send({ t: 'shout', text: sm ? sm[1] : text });
+      else if (chatMode === 'whisper' && chatTo && text && text[0] !== '/') send({ t: 'whisper', to: chatTo, text });
       else if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
       $('say').value = ''; $('say').blur(); $('chatbar').style.display = 'none';
     } else { $('chatbar').style.display = 'block'; $('say').focus(); }
@@ -345,6 +348,8 @@ addEventListener('keydown', e => {
   } else if (!typing && myId && /^F[1-8]$/.test(e.key)) {
     // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
     e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill', 'group', 'winHist', 'quick'][Number(e.key.slice(1)) - 1]);   // [F6] 그룹, [F7] 대화 기록, [F8] 빠른 창 (1/1/52~75)
+  } else if (!typing && myId && e.ctrlKey && /^Digit[1-8]$/.test(e.code)) {
+    e.preventDefault(); send({ t: 'quse', q: Number(e.code[5]) - 1 });   // 빠른 창 아이템 CTRL+1~8 (1/1/123)
   } else if (!typing && myId && e.ctrlKey && /^Key[A-Z]$/.test(e.code) && SKILL_KEYS.includes(e.code[3].toLowerCase())) {
     // 브라우저가 가로채는 조합(CTRL+W, CTRL+T 등)은 막을 수 없다
     e.preventDefault();
@@ -466,20 +471,25 @@ const handlers = {
     if (m.id === myId) log(`레벨 ${m.level}이 되었습니다.`, 'sys');
   },
   chat(m) {
-    const p = ents.get(m.id); if (p) { p.say = m.text; p.sayUntil = performance.now() + 5000; }
-    log(`<span class="who">${m.group ? '[그룹] ' : ''}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : undefined);
+    const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayUntil = performance.now() + 5000; }
+    const tag = m.group ? '[그룹] ' : m.kind === 'shout' ? '[외침] ' : m.kind === 'whisper' ? (m.name === myName() ? `[→${m.to}] ` : '[귓속말] ') : '';
+    log(`<span class="who">${esc(tag)}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : m.kind || undefined);
   },
   group(m) { UI.group(m, myName()); },
   ginvite(m) { UI.groupInvite(m.leader, y => send({ t: 'gjoin', leader: m.leader, ok: y ? 1 : 0 })); },
 };
 // 대화 입력줄 단추 (Main.dll 0x10075960): Shout, To(귓속말), Group, Army. 이 게임은 Group 만 한다
-let chatMode = '';
+let chatMode = '', chatTo = '';
 setTimeout(() => { const s = $('say'); if (s) s.addEventListener('blur', () => { $('chatbar').style.display = 'none'; }); });
 addEventListener('DOMContentLoaded', () => {});
 document.addEventListener('mousedown', e => {
   const b = e.target.closest && e.target.closest('#chatbar .cb'); if (!b) return; e.preventDefault();
-  if (b.dataset.mode !== 'grp') { log('아직 구현되지 않은 대화 방식입니다.', 'sys'); return; }
-  chatMode = chatMode === 'grp' ? '' : 'grp'; for (const c of document.querySelectorAll('#chatbar .cb')) c.classList.toggle('on', c.dataset.mode === chatMode);
+  if (b.dataset.mode === 'army') { log('아직 구현되지 않은 대화 방식입니다.', 'sys'); return; }
+  if (b.dataset.mode === 'whisper' && chatMode !== 'whisper') {   // To: 받는 사람 이름을 묻는다 (1/1/35~36)
+    UI.msgBox(UI.M0(26), ['ok', 'cancel'], (y, v) => { if (y && v) { chatTo = v; chatMode = 'whisper'; } else chatMode = ''; for (const c of document.querySelectorAll('#chatbar .cb')) c.classList.toggle('on', c.dataset.mode === chatMode); $('chatbar').style.display = 'block'; $('say').focus(); }, true);
+    return;
+  }
+  chatMode = chatMode === b.dataset.mode ? '' : b.dataset.mode; for (const c of document.querySelectorAll('#chatbar .cb')) c.classList.toggle('on', c.dataset.mode === chatMode);
 });
 const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
 function connect(name, pw, chr, beginner) {

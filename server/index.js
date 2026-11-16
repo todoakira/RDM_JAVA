@@ -61,6 +61,11 @@ wss.on('connection', ws => {
     else if (m.t === 'gjoin') game.groups.join(player, String(m.leader || ''), !!m.ok);
     else if (m.t === 'gleave') game.groups.leave(player, m.name ? String(m.name) : null);
     else if (m.t === 'gchat') game.groups.chat(player, m.text);
+    else if (m.t === 'qput') game.quickPut(player, m.slot | 0);
+    else if (m.t === 'qget') game.quickGet(player, m.q | 0);
+    else if (m.t === 'quse') game.quickUse(player, m.q | 0);
+    else if (m.t === 'shout') world.shout(player, m.text);
+    else if (m.t === 'whisper') world.whisper(player, m.to, m.text);
     else if (m.t === 'mailread') game.story.readMail(player);
     else if (m.t === 'bonus') game.useBonus(player, m.stat);
     else if (m.t === 'pickup') world.pickupCmd(player, m.id, m.run);
@@ -93,7 +98,7 @@ wss.on('connection', ws => {
       else if (lv) game.cheatLevel(player, Number(lv[1]));
       else if (it) { if (!game.cheatItem(player, Number(it[1]), Number(it[2]), Number(it[3] || 1))) send({ t: 'chat', id: 0, name: '안내', text: '그런 아이템이 없습니다.' }); }
       else if (g) { if (!game.gotoMap(player, Number(g[1]))) send({ t: 'chat', id: 0, name: '안내', text: '그 번호의 맵이 없습니다.' }); }
-      else world.chat(player, m.text);
+      else { const wm = /^\/(\S+)\s+(.+)$/.exec(String(m.text || '').trim()); if (wm) world.whisper(player, wm[1], wm[2]); else world.chat(player, m.text); }   // "/이름 내용" 은 귓속말 (1/1/37)
     }
   });
   ws.on('close', () => { if (player) { game.groups.offline(player); game.save(player); player.world.leave(player); console.log(`[퇴장] ${player.name} 접속자 ${game.online}명`); } });

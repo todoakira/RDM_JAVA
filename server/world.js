@@ -368,9 +368,31 @@ class World {
     const took = this.game.giveItem(p, g.k, g.i, g.n);
     if (took >= g.n) { this.ground.delete(g.id); this.broadcast({ t: 'gdel', id: g.id }); } else g.n -= took;
   }
+  // 대화 (CMapServerClient::ProcessChat 0x441070)
+  //  보통: 5초에 세 번까지 (최근 세 번의 시각, ProcessNormalChat 0x441150). 주변에
+  //  외치기: 10초에 세 번까지, 레벨 5 부터 (아니면 0/2/0x17), 같은 맵 모두에게 (ProcessLoudChat 0x441280, CMapServerServer::ProcessLoudChat 0x473820)
+  //  귓속말: 이름이 없으면 0/2/0x11, 감옥(맵 78)에서는 0/2/0xac (ProcessWhisperChat 0x4413f0, ProcessWhisperFailed 0x474030)
+  rateOk(p, key, ms) { const q = (p[key] ||= [0, 0, 0]); const now = Date.now(); if (q[0] && now > q[0] && now - q[0] < ms) return false; q.shift(); q.push(now); return true; }
   chat(p, text) {
     text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CFG.maxChat);
-    if (text) this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
+    if (!text || !this.rateOk(p, 'chatAt', 5000)) return;
+    this.near(p, { t: 'chat', id: p.id, name: p.name, text });
+  }
+  shout(p, text) {
+    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CFG.maxChat);
+    if (!text || !this.rateOk(p, 'shoutAt', 10000)) return;
+    if (p.level < 5) { this.game.story.msg(p, 0x17, 5); return; }
+    this.broadcast({ t: 'chat', id: p.id, name: p.name, text, kind: 'shout' });
+  }
+  whisper(p, to, text) {
+    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CFG.maxChat); to = String(to || '').trim();
+    if (!text || !to || to === p.name) return;
+    if (this.mapId === 78) { this.game.story.msg(p, 0xac); return; }
+    const q = this.game.findOnline(to);
+    if (!q) { this.game.story.msg(p, 0x11, to); return; }
+    if (q.world.mapId === 78) { this.game.story.msg(p, 0xab, q.name); return; }   // 받는 사람이 감옥에 있으면 0/2/171
+    const m = { t: 'chat', id: p.id, name: p.name, to: q.name, text, kind: 'whisper' };
+    p.send(m); q.send(m);
   }
 
   // ---------- 몬스터 ----------
@@ -701,6 +723,7 @@ class Game {
     if (pct > 0) {
       for (let s = p.inv.length - 1; s >= 0; s--) { const e = p.inv[s]; if (e.k !== 6 && roll()) { p.inv.splice(s, 1); w.dropItem(p, [e.k, e.i, e.n]); } }
       p.equip.forEach((e, s) => { if (e && e.k !== 6 && roll()) { p.equip[s] = null; w.dropItem(p, [e.k, e.i, 1]); } });
+      (p.quick || []).forEach((e, s) => { if (e && e.k !== 6 && roll()) { p.quick[s] = null; w.dropItem(p, [e.k, e.i, e.n]); } });   // DropAllQuickItem 0x433490
       if (p.money > 0 && roll()) { w.dropItem(p, [5, 0, p.money]); p.money = 0; }
       this.recalc(p, false);
     }
@@ -714,7 +737,7 @@ class Game {
   }
   weightOf(p) {
     let w = 0; const add = (e, n) => { const f = e && this.itemInfo(e.k, e.i); if (f && f.weight) w += f.weight * n; };
-    for (const e of p.inv) add(e, e.n); for (const e of p.equip) add(e, 1);
+    for (const e of p.inv) add(e, e.n); for (const e of p.equip) add(e, 1); for (const e of p.quick || []) add(e, e && e.n);
     return w;
   }
   recalc(p, heal) {
@@ -738,7 +761,7 @@ class Game {
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
   save(p) {
-    const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, money: p.money, bank: p.bank, fame: p.fame,
+    const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [] };
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
@@ -768,6 +791,7 @@ class Game {
       for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame']) if (d[k] !== undefined) p[k] = d[k];
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
       if (d.bank) p.bank = d.bank;
+      p.quick = Array.isArray(d.quick) ? d.quick : null;
       p.story = d.story >>> 0 || 0; p.qitems = Array.isArray(d.qitems) ? d.qitems : null; p.mails = Array.isArray(d.mails) ? d.mails : [];
     }
     if (!d) { p.money = NEW_CHAR.money; p.inv = NEW_CHAR.items.map(([k, i, n]) => ({ k, i, n })); p.skills = NEW_CHAR.skills[chr]; }
@@ -962,7 +986,7 @@ class Game {
   itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : (this.items[k] && this.items[k][i]) || null; }
   sendInv(p) {
     const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, name: f.name, desc: f.desc || '', icon: f.icon, hp: f.hp || 0, mp: f.mp || 0, atk: f.atk || 0, def: f.def || 0, v: f.v || [], req: f.req || 0, reqStat: f.reqStat || [], cls: f.cls || 0, weight: f.weight || 0, wear: f.type !== undefined && f.type !== 14 ? 1 : 0 }; };
-    p.send({ t: 'inv', money: p.money, items: p.inv.map(view), equip: p.equip.map((e, s) => e ? { ...view(e), slot: SLOT_NAMES[s] } : null) });
+    p.send({ t: 'inv', money: p.money, items: p.inv.map(view), quick: (p.quick || []).map(e => e ? view(e) : null), equip: p.equip.map((e, s) => e ? { ...view(e), slot: SLOT_NAMES[s] } : null) });
   }
   // 넣을 수 있는 만큼만 넣고 넣은 개수를 돌려준다. 같은 아이템은 종류에 상관없이 한 칸에 겹쳐 쌓인다 (GetAvailableItemIndex 0x431b4b)
   giveItem(p, k, i, n) {
@@ -980,6 +1004,30 @@ class Game {
     return take;
   }
   // 아이템 사용: 회복 수치만큼 체력을 채운다. 19억 이상이면 초과분만큼의 % 회복
+  // 빠른 창: 아이템 여덟 칸 (CMapServerClient+0x3fa0, 칸 종류 3). 소지품의 아이템을 오른쪽 클릭하면 들어가고 CTRL+1~8 로 쓴다 (원작 도움말 1/1/119~123).
+  // 옮기기는 같은 아이템이면 겹치고, 아니면 빈 칸으로 (MoveItem 0x42f6f0, GetAvailableItemIndex)
+  quickPut(p, slot) {
+    const e = p.inv[slot]; if (!e || p.dead) return;
+    const q = p.quick ||= Array(8).fill(null);
+    let k = q.findIndex(x => x && x.k === e.k && x.i === e.i); if (k < 0) k = q.findIndex(x => !x); if (k < 0) return;
+    if (q[k]) q[k].n += e.n; else q[k] = { k: e.k, i: e.i, n: e.n };
+    p.inv.splice(slot, 1); this.sendInv(p);
+  }
+  quickGet(p, k) {
+    const q = p.quick || [], e = q[k]; if (!e || p.dead) return;
+    const st = p.inv.find(x => x.k === e.k && x.i === e.i);
+    if (!st && p.inv.length >= F.INV_SLOTS) return;
+    if (st) st.n += e.n; else p.inv.push({ k: e.k, i: e.i, n: e.n });
+    q[k] = null; this.sendInv(p);
+  }
+  quickUse(p, k) {
+    const q = p.quick || [], e = q[k]; if (!e || p.dead) return;
+    p.inv.push(e); q[k] = null;                       // 소지품 쓰기와 같은 처리를 하고, 남은 것은 제자리로
+    const at = p.inv.length - 1; this.useItem(p, at);
+    const left = p.inv[at] === e ? p.inv.splice(at, 1)[0] : null;
+    if (left && left.n > 0) q[k] = left;
+    this.sendInv(p);
+  }
   useItem(p, slot) {
     const e = p.inv[slot]; if (!e || p.dead) return;
     const f = this.itemInfo(e.k, e.i);
