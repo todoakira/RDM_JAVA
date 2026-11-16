@@ -56,6 +56,9 @@
   .askopt { position: absolute; left: 17px; width: 436px; height: 25px; box-sizing: border-box; padding: 5px 8px; color: #fff; cursor: pointer; background: url(assets/int/357.png) 0 0; white-space: nowrap; overflow: hidden; }
   .askopt:hover { background-position: 0 -25px; }
   .clb { position: absolute; width: 21px; height: 21px; background: url(assets/int/52.png) 0 0; cursor: pointer; } .clb:hover { background-position: 0 -21px; }
+  .pbtn { position: absolute; cursor: pointer; background-position: 0 0; } .pbtn:active { background-position: 0 100%; }
+  .pxl { cursor: pointer; padding-left: 2px; } .pxl.on { background: rgba(255, 210, 122, .3); }
+  .xwin { position: absolute; box-sizing: border-box; border: 0; padding: 0 2px; background: transparent; color: #fff; font: 12px sans-serif; outline: none; }
   .mbtn { position: absolute; height: 15px; cursor: pointer; } .mbtn:hover { background-position: 0 -15px !important; }
   .gslot { position: absolute; left: 0; width: 60px; height: 60px; background: url(assets/int/59.png); }
   .gslot .face { position: absolute; left: 5px; top: 5px; width: 50px; height: 50px; }
@@ -84,12 +87,24 @@
   <div id="msgtext" class="txt" style="left:16px;top:14px;width:268px;height:56px;text-align:center"></div>
   <input id="msgin" style="position:absolute;left:18px;top:75px;width:173px;height:13px;border:0;padding:0 2px;background:url(assets/int/86.png);color:#fff;font-size:11px;display:none">
   <div id="msgb1" class="mbtn" style="left:196px;top:75px"></div><div id="msgb2" class="mbtn" style="left:238px;top:75px"></div></div>
-<!-- 우편 읽기 창 (PostItem, 원작 위치 200,130): iw-xw-ba 400×300 -->
-<div id="winMail" class="o" style="display:none;position:fixed;--x:200px;--y:130px;width:400px;height:300px;background:url(assets/int/166.png);z-index:21;font-size:12px;color:#fff">
-  <div id="mfrom" class="txt" style="left:82px;top:16px;width:92px;height:16px"></div>
-  <div id="mtitle" class="txt" style="left:82px;top:42px;width:210px;height:16px"></div>
-  <div id="mtext" class="txt" style="left:18px;top:74px;width:340px;height:160px;overflow:auto;white-space:pre-line"></div>
-  <div id="mok" class="mbtn" style="left:345px;top:262px;width:41px;background-image:url(assets/int/88.png)"></div></div>
+<!-- 우편함 창 (Post, iw-px-ba 500×282, 원작 위치 150,140, Main.dll 0x1008ca10) -->
+<div id="winPost" class="win o" style="--x:150px;--y:140px;width:500px;height:282px;background:url(assets/int/164.png);z-index:20">
+  <div class="clb" data-close="winPost" style="left:477px;top:0"></div>
+  <div id="pxlist" style="position:absolute;left:18px;top:36px;width:447px;height:200px;overflow-y:auto;overflow-x:hidden;font:12px/16px monospace;color:#fff;white-space:pre"></div>
+  <div id="pxwrite" class="pbtn" style="left:298px;top:244px;width:61px;height:20px;background-image:url(assets/int/170.png)"></div>
+  <div id="pxread" class="pbtn" style="left:360px;top:245px;width:60px;height:18px;background-image:url(assets/int/169.png)"></div>
+  <div id="pxdel" class="pbtn" style="left:421px;top:245px;width:60px;height:18px;background-image:url(assets/int/168.png)"></div></div>
+<!-- 우편 창 (PostItem, iw-xw-ba 400×300, 원작 위치 200,130, Main.dll 0x1008e6b0): 읽기와 쓰기 -->
+<div id="winPost2" class="win o" style="--x:200px;--y:130px;width:400px;height:300px;background:url(assets/int/166.png);z-index:21">
+  <div id="xwlabel" class="txt" style="left:27px;top:20px;width:48px;height:19px;color:#fff;line-height:19px"></div>
+  <div class="txt" style="left:27px;top:46px;width:48px;height:19px;color:#fff;line-height:19px">Title</div>
+  <input id="xwname" readonly class="xwin" style="left:82px;top:20px;width:96px;height:18px">
+  <input id="xwtitle" maxlength="80" class="xwin" style="left:82px;top:46px;width:208px;height:18px">
+  <textarea id="xwbody" maxlength="1000" class="xwin" style="left:18px;top:75px;width:346px;height:164px;resize:none;line-height:16px"></textarea>
+  <div id="xwcells"></div>
+  <div id="xwsend" class="pbtn" style="left:260px;top:263px;width:60px;height:18px;background-image:url(assets/int/173.png)"></div>
+  <div id="xwcancel" class="pbtn" style="left:321px;top:263px;width:60px;height:18px;background-image:url(assets/int/172.png)"></div>
+  <div id="xwclose" class="pbtn" style="left:321px;top:263px;width:60px;height:18px;background-image:url(assets/int/171.png)"></div></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
 <div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 · F6 그룹 · F7 대화 기록<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 대화 입력줄 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 · F8 빠른 창(소지품 오른쪽 클릭으로 넣고 CTRL+1~8) · !외치기 · /이름 귓속말 · @그룹 · `trade 이름: 거래</div>

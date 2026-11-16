@@ -51,7 +51,7 @@ const UI = (() => {
     const rows = Math.max(3, Math.ceil(inv.items.length / 4)); invTop = Math.max(0, Math.min(invTop, rows - 3));
     for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
       const slot = (invTop + r) * 4 + c, it = inv.items[slot], e = cell(it, 18 + c * 40, 18 + r * 40, slot === invSel);
-      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (trade) send({ t: 'tradeadd', where: 'inv', slot, n: it.n }); else if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); };
+      if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (post.writing()) post.attach(slot, it); else if (trade) send({ t: 'tradeadd', where: 'inv', slot, n: it.n }); else if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); };
         e.oncontextmenu = ev => { ev.preventDefault(); if (!bank && !shop) send({ t: 'qput', slot }); }; }   // 오른쪽 클릭: 빠른 창으로 (1/1/119~122)
       box.appendChild(e);
     }
@@ -337,14 +337,88 @@ const UI = (() => {
     const cs = el('qcells'); cs.innerHTML = '';
     (quest.items || []).forEach((it, k) => { const c = cell(it, 67 + k * 41, 159, false); if (it) c.title = it.name + (it.desc ? '\n' + it.desc : ''); cs.appendChild(c); });
   }
-  // 우편: 원작은 우체통에서 읽는다. 여기서는 받은 우편을 바로 띄운다
-  let mails = [];
-  function showMail(list) {
-    mails = mails.concat(list); const m = mails[0]; if (!m) return;
-    el('mfrom').textContent = m.from; el('mtitle').textContent = m.title; el('mtext').textContent = m.text;
-    el('winMail').style.display = 'block';
+  // 우편함 창 (Post, iw-px-ba 500×282, 원작 위치 150,140, Main.dll 0x1008ca10): 목록 (18,36)~(463,236), 막대 (465,36),
+  //   Write (298,244) 61×20, Read (360,245) 60×18, Delete (421,245) 60×18, 닫기 (477,0).
+  //   목록 한 줄은 원작 형식 "%c %05u %14s %s %d %05d %s" = 읽음 표시(R), 번호, 보낸 사람, 날짜(%Y/%m/%d), 아이템 수, 줄 수, 제목 (0x1008d870)
+  // 우편 창 (PostItem, iw-xw-ba 400×300, 원작 위치 200,130, 0x1008e6b0): From/To (27,20) 이름칸 (82,20)~(178,38), Title (27,46) 제목칸 (82,46)~(290,64),
+  //   본문 (18,75)~(363,239), 막대 (364,73), 아이템 다섯 칸 (16+42k, 247), Send (260,263) Cancel (321,263) 은 쓸 때, Close (321,263) 는 읽을 때
+  const post = (() => {
+    let heads = [], sel = 0, cur = null, mode = '', to = '', att = [];
+    const pad = (v, n, c = '0') => String(v).padStart(n, c);
+    const day = t => { const d = new Date(t); return `${d.getFullYear()}/${pad(d.getMonth() + 1, 2)}/${pad(d.getDate(), 2)}`; };
+    const line = h => `${h.read ? 'R' : ' '} ${pad(h.i, 5)} ${pad(h.from, 14, ' ')} ${day(h.time)} ${h.items} ${pad(h.lines, 5)} ${h.title}`;
+    function drawList() {
+      const b = el('pxlist'); b.innerHTML = '';
+      for (const h of heads) {
+        const d = document.createElement('div'); d.className = 'pxl' + (h.i === sel ? ' on' : ''); d.textContent = line(h);
+        d.onclick = () => { sel = h.i; drawList(); }; d.ondblclick = () => { sel = h.i; send({ t: 'mailread', i: h.i }); };
+        b.appendChild(d);
+      }
+    }
+    function open() { heads = []; sel = 0; drawList(); el('winPost').style.display = 'block'; send({ t: 'maillist', from: 0 }); }
+    function list(m) {
+      if (m.reset) heads = [];
+      for (const h of m.heads) if (!heads.some(x => x.i === h.i)) heads.push(h);
+      heads.sort((a, b) => b.i - a.i); drawList();
+    }
+    // 목록 끝까지 내리면 그 아래 16통을 더 받는다
+    function more() { const b = el('pxlist'); const low = heads.length && heads[heads.length - 1].i; if (low > 1 && b.scrollTop + b.clientHeight >= b.scrollHeight - 2) send({ t: 'maillist', from: low - 1 }); }
+    function drawCells() {
+      const b = el('xwcells'); b.innerHTML = '';
+      const items = mode === 'read' ? cur.items : att.map(a => a && a.view);
+      for (let k = 0; k < 5; k++) {
+        const it = items[k] || null, c = cell(it, 16 + 42 * k, 247, false);
+        if (it) c.title = it.money ? `${it.n.toLocaleString()}` : itemTip(it);
+        c.onclick = () => {
+          if (mode === 'read') { if (it) send({ t: 'mailget', i: cur.i, slot: k }); return; }
+          if (att[k]) { att[k] = null; drawCells(); return; }           // 붙인 것을 다시 떼기
+          msgBox(M0(45), ['ok', 'cancel'], (y, v) => { const n = parseInt(v, 10); if (y && n > 0) { att[k] = { money: 1, n, view: { k: 5, i: 0, n, icon: 0, money: 1, name: '' } }; drawCells(); } }, true);   // 빈 칸: 돈 붙이기
+        };
+        b.appendChild(c);
+      }
+    }
+    function show(kind) {
+      mode = kind; const w = el('winPost2'); w.style.display = 'block';
+      el('xwlabel').textContent = kind === 'read' ? 'From' : 'To';
+      el('xwsend').style.display = el('xwcancel').style.display = kind === 'write' ? 'block' : 'none';
+      el('xwclose').style.display = kind === 'read' ? 'block' : 'none';
+      for (const id of ['xwtitle', 'xwbody']) el(id).readOnly = kind === 'read';
+      drawCells();
+    }
+    function read(m) {
+      cur = m; el('xwname').value = m.from; el('xwtitle').value = m.title; el('xwbody').value = m.text;
+      const h = heads.find(x => x.i === m.i); if (h) { h.read = 1; drawList(); }
+      show('read');
+    }
+    function write(name) { to = name; att = [null, null, null, null, null]; el('xwname').value = name; el('xwtitle').value = ''; el('xwbody').value = ''; show('write'); el('xwtitle').focus(); }
+    function close() { el('winPost2').style.display = 'none'; mode = ''; cur = null; att = []; }
+    function sent() { close(); }
+    function item(m) {
+      if (cur && cur.i === m.i) { cur.items[m.slot] = m.item; drawCells(); }
+      const h = heads.find(x => x.i === m.i); if (h) { h.items = m.items; drawList(); }
+    }
+    function del(m) { if (cur && cur.i === m.i) close(); sel = 0; }
+    // 쓰는 중에 소지품을 두 번 누르면 빈 칸에 붙인다 (보낼 때 서버가 소지품에서 뺀다)
+    function attach(slot, it) {
+      const k = att.findIndex(a => !a); if (k < 0 || att.some(a => a && a.slot === slot)) return;
+      att[k] = { slot, n: it.n, view: it }; drawCells();
+    }
+    el('pxwrite').onclick = () => msgBox(M0(24), ['ok', 'cancel'], (y, v) => { if (y && v) send({ t: 'mailstart', to: v }); }, true);
+    el('pxread').onclick = () => { if (sel) send({ t: 'mailread', i: sel }); };
+    el('pxdel').onclick = () => { if (!sel) return; const i = sel; msgBox(boardText(8), ['yes', 'no'], y => { if (y) send({ t: 'maildel', i }); }); };
+    el('pxlist').onscroll = more;
+    el('xwclose').onclick = close; el('xwcancel').onclick = close;
+    el('xwsend').onclick = () => {
+      const title = el('xwtitle').value.trim(); if (!title) { msgBox(M0(25), ['ok']); return; }
+      send({ t: 'mailsend', title, text: el('xwbody').value, att: att.map(a => a && (a.money ? { money: 1, n: a.n } : { slot: a.slot, n: a.n })) });
+    };
+    return { open, list, read, write, sent, item, del, attach, writing: () => mode === 'write' };
+  })();
+  // 우편 알림 (패킷 0x1c1): Message.ctf 0/4 의 그 번호 줄
+  function boardText(code, args) {
+    const t = msgs && msgs[0] && msgs[0][4] && msgs[0][4][code]; if (!t) return '';
+    let k = 0; return t.replace(/\\n/g, '\n').replace(/%[uds]/g, () => String(args && args[k] !== undefined ? args[k++] : ''));
   }
-  function nextMail() { mails.shift(); if (mails.length) showMail([]); else { el('winMail').style.display = 'none'; return true; } }
   // 선택지 창 (Main.dll 0x100797c0): 보기 단추 다섯 개, 왼쪽 17, 위 18·45·71·99·125, 크기 436×25
   const ASK_TOP = [18, 45, 71, 99, 125];
   function askChoice(options, cb) {
@@ -353,5 +427,5 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

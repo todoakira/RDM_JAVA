@@ -186,7 +186,7 @@ function frame() {
     camX = Math.round(Math.max(0, Math.min(map.pw - vw, me.px - vw / 2)));
     camY = Math.round(Math.max(0, Math.min(map.ph - vh, me.py - vh / 2 - 30)));
   }
-  if (mouse) { const h = mobAt(mouse.x / zoom + camX, mouse.y / zoom + camY); const hn = h ? null : mobAt(mouse.x / zoom + camX, mouse.y / zoom + camY, true); hoverId = h ? h.id : 0; const gi = h || hn ? null : groundAt(mouse.x / zoom + camX, mouse.y / zoom + camY); hoverItem = gi ? gi.id : 0; cv.style.cursor = h || gi || hn ? 'pointer' : 'crosshair'; }
+  if (mouse) { const h = mobAt(mouse.x / zoom + camX, mouse.y / zoom + camY); const hn = h ? null : mobAt(mouse.x / zoom + camX, mouse.y / zoom + camY, true); hoverId = h ? h.id : 0; const gi = h || hn ? null : groundAt(mouse.x / zoom + camX, mouse.y / zoom + camY); hoverItem = gi ? gi.id : 0; cv.style.cursor = h || gi || hn || rectAt(mouse.x / zoom + camX, mouse.y / zoom + camY) ? 'pointer' : 'crosshair'; }
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom); ctx.imageSmoothingEnabled = false;
 
@@ -297,6 +297,8 @@ function drawBulFrame(s, b, fi) {
 // ---------- 입력 ----------
 let holdTimer = null, lastPtr = null;
 const send = m => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
+// 맵의 클릭 영역 (.rmm 머리, tools/map_rects.js). 누르면 그 이벤트 번호를 서버에 알린다 (게시판 1, 우체통 2 등)
+function rectAt(wx, wy) { return ((map && map.rects) || []).find(r => wx >= r[1] && wx < r[3] && wy >= r[2] && wy < r[4]) || null; }
 function sendMove() {
   if (!lastPtr) return;
   const wx = lastPtr.x / zoom + camX, wy = lastPtr.y / zoom + camY;
@@ -324,12 +326,15 @@ cv.addEventListener('pointerdown', e => {
   if (nc) { targetId = 0; send({ t: 'talk', id: nc.id, run: runToggle !== shift }); return; }
   const gi = groundAt(e.clientX / zoom + camX, e.clientY / zoom + camY);
   if (gi) { targetId = 0; send({ t: 'pickup', id: gi.id, run: runToggle !== shift }); return; }
+  const ra = rectAt(e.clientX / zoom + camX, e.clientY / zoom + camY);
+  if (ra) { send({ t: 'inform', ev: ra[0] }); return; }
   lastPtr = { x: e.clientX, y: e.clientY }; sendMove(); holdTimer = setInterval(sendMove, 300);
 });
 cv.addEventListener('pointermove', e => { mouse = { x: e.clientX, y: e.clientY }; if (lastPtr) lastPtr = mouse; });
 addEventListener('pointerup', () => { clearInterval(holdTimer); lastPtr = null; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('keydown', e => {
+  const ae = document.activeElement; if (ae && ae !== $('say') && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && !['nm', 'pw'].includes(ae.id)))) return;   // 우편·메시지 창 입력칸
   const typing = document.activeElement === $('say') || document.activeElement === $('nm') || document.activeElement === $('pw');
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
@@ -440,7 +445,15 @@ const handlers = {
   note(m) { log(esc(m.text), 'sys'); },
   sys(m) { const t = UI.sysText(m.code, m.args); if (t) log(esc(t), 'sys'); },
   quest(m) { UI.quest(m); },
-  mail(m) { UI.mail(m.mails); $('mok').onclick = () => { if (UI.nextMail()) send({ t: 'mailread' }); }; },
+  // 우편 (서버 패킷 0x1c3 우편함 열기, 0x1af~0x1b3 목록, 0x1b5~0x1b9 읽기, 0x1bb 지우기, 0x1bd 쓰기 시작, 0x1bf 아이템 받기, 0x1c1 우편 알림)
+  mailopen() { UI.post.open(); },
+  maillist(m) { UI.post.list(m); },
+  mailread(m) { UI.post.read(m); },
+  maildel(m) { UI.post.del(m); },
+  mailwrite(m) { UI.post.write(m.to); },
+  mailsent() { UI.post.sent(); },
+  mailitem(m) { UI.post.item(m); },
+  mailmsg(m) { const t = UI.boardText(m.code, m.args); if (t) log(esc(t), 'sys'); },
   // 이벤트 대본의 클라이언트 행동: CloseWindow n / OpenWindow n. n 1~5 는 F1~F5 창, 100 은 상점 창
   evui(m) {
     const [cmd, n] = m.act.split(/\s+/), WIN = { 1: 'gauge', 2: 'winChr', 3: 'winInv', 4: 'winEq', 5: 'skill' };

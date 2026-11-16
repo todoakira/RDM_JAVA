@@ -39,6 +39,7 @@ const { Events } = require('./events');
 const STORY = require('./story');
 const { Groups } = require('./group');
 const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
+const { Mail } = require('./mail');      // 우편 (ProcessGetMailList 등)
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
 const EV_NO_ATTACK = 18, EV_MOB_OK = [0, 19, 22], EV_LURE = 22;
@@ -696,7 +697,7 @@ const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y,
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.groups = new Groups(this); this.trades = new Trades(this);
+    this.story = new STORY.Story(this); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -1067,7 +1068,7 @@ class Game {
   // 시험용: /맵 번호 로 바로 이동
   // 시험용: /아이템 분류 번호 [수량]
   cheatItem(p, k, i, n) { if (!this.itemInfo(k, i) || !this.items[k] || !this.items[k][i]) return false; this.giveItem(p, k, i, n || 1); return true; }
-  gotoMap(p, id) { const w = this.world(id); if (!w || p.dead) return false; p.world.leave(p); w.enter(p); return true; }
+  gotoMap(p, id, x, y) { const w = this.world(id); if (!w || p.dead) return false; p.world.leave(p); if (x && y) w.enter(p, x, y); else w.enter(p); return true; }
   cheatLevel(p, lv) { lv = Math.max(1, Math.min(F.MAX_LEVEL, lv | 0)); p.bonus += F.bonusTotal(lv) - F.bonusTotal(p.level); p.level = lv; p.exp = 0; this.recalc(p, true); this.sendStat(p); this.story.checkAndStart(p); }
   tick(now) { for (const w of this.worlds.values()) w.tick(now); this.groups.tick(now); }
   exists(name) { return !!this.findOnline(name) || fs.existsSync(this.saveFile(name)); }

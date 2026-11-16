@@ -46,7 +46,7 @@ wss.on('connection', ws => {
       // 이름 규칙은 원작 로그인 서버와 같다: 14바이트(한글 7자)까지, 작은따옴표 금지 (svIP.exe CIPClient::ProcessNewCharacterID 0x404a10)
       if (a.created && ([...name].reduce((n, c) => n + (c.charCodeAt(0) > 127 ? 2 : 1), 0) > 14 || name.includes("'"))) { send({ t: 'error', text: '이름은 한글 7자(영문 14자)까지이고 작은따옴표를 쓸 수 없습니다.' }); return; }
       player = game.join(name, send, a.auth, a.created && Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1, !!m.beginner); game.save(player);
-      game.story.sendInfo(player, false); game.story.sendMail(player); game.story.checkAndStart(player);
+      game.mail.login(player); game.story.sendInfo(player, false); game.story.checkAndStart(player);
       console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
       return;
     }
@@ -73,7 +73,13 @@ wss.on('connection', ws => {
     else if (m.t === 'tradeadd') game.trades.add(player, String(m.where || ''), m.slot | 0, m.n);
     else if (m.t === 'tradeok') game.trades.ok(player);
     else if (m.t === 'tradecancel') game.trades.cancel(player);
-    else if (m.t === 'mailread') game.story.readMail(player);
+    else if (m.t === 'inform') game.mail.inform(player, m.ev | 0);                      // 맵 클릭 영역의 이벤트 번호 (ProcessInformEvent)
+    else if (m.t === 'maillist') game.mail.sendList(player, m.from | 0);
+    else if (m.t === 'mailread') game.mail.read(player, m.i | 0);
+    else if (m.t === 'maildel') game.mail.del(player, m.i | 0);
+    else if (m.t === 'mailstart') game.mail.startWrite(player, m.to);
+    else if (m.t === 'mailsend') game.mail.send(player, m.title, m.text, m.att);
+    else if (m.t === 'mailget') game.mail.getItem(player, m.i | 0, m.slot | 0);
     else if (m.t === 'bonus') game.useBonus(player, m.stat);
     else if (m.t === 'pickup') world.pickupCmd(player, m.id, m.run);
     else if (m.t === 'use') game.useItem(player, m.slot | 0);
@@ -93,8 +99,8 @@ wss.on('connection', ws => {
     else if (m.t === 'exchcancel') game.exchCancel(player);
     else if (m.t === 'exchclose') player.exchAt = null;
     else if (m.t === 'chat') {
-      // 시험용 명령: "/맵 3" 으로 해당 맵에 바로 이동
-      const g = /^\/(?:맵|map)\s+(\d+)$/.exec(String(m.text || '').trim());
+      // 시험용 명령: "/맵 3" 으로 해당 맵에 바로 이동 ("/맵 1 75 100" 처럼 칸을 줄 수도 있다)
+      const g = /^\/(?:맵|map)\s+(\d+)(?:\s+(\d+)\s+(\d+))?$/.exec(String(m.text || '').trim());
       const it = /^\/(?:아이템|item)\s+(\d+)\s+(\d+)(?:\s+(\d+))?$/.exec(String(m.text || '').trim());
       const lv = /^\/(?:레벨|level)\s+(\d+)$/.exec(String(m.text || '').trim());
       const mo = /^\/(?:돈|money)\s+(\d+)$/.exec(String(m.text || '').trim());
@@ -106,7 +112,7 @@ wss.on('connection', ws => {
       else if (mo) { player.money = Math.min(4000000000, Number(mo[1])); game.sendInv(player); }
       else if (lv) game.cheatLevel(player, Number(lv[1]));
       else if (it) { if (!game.cheatItem(player, Number(it[1]), Number(it[2]), Number(it[3] || 1))) send({ t: 'chat', id: 0, name: '안내', text: '그런 아이템이 없습니다.' }); }
-      else if (g) { if (!game.gotoMap(player, Number(g[1]))) send({ t: 'chat', id: 0, name: '안내', text: '그 번호의 맵이 없습니다.' }); }
+      else if (g) { if (!game.gotoMap(player, Number(g[1]), g[2] && Number(g[2]), g[3] && Number(g[3]))) send({ t: 'chat', id: 0, name: '안내', text: '그 번호의 맵이 없습니다.' }); }
       else { const wm = /^\/(\S+)\s+(.+)$/.exec(String(m.text || '').trim()); if (wm) world.whisper(player, wm[1], wm[2]); else world.chat(player, m.text); }   // "/이름 내용" 은 귓속말 (1/1/37)
     }
   });

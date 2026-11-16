@@ -131,6 +131,7 @@ function convertMap(no, lists) {
   mk(path.join(OUT, 'maps'));
   fs.writeFileSync(path.join(OUT, 'maps', no + '.json'), JSON.stringify({
     id: no, name: m.name, w: m.w, h: m.h, tw: 48, th: 24, spawn, tileDefs, ground, objDefs, objs, col,
+    rects: m.rects.filter(q => q.id > 0 && q.x1 >= 0 && q.y1 >= 0 && q.x2 > q.x1 && q.y2 > q.y1 && q.x2 <= m.w * 48 && q.y2 <= m.h * 24).map(q => [q.id, q.x1, q.y1, q.x2, q.y2]),   // 클릭 영역 (tools/map_rects.js 참고)
   }));
   return { id: no, name: m.name, w: m.w, h: m.h };
 }

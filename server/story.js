@@ -66,12 +66,9 @@ class Story {
   view(e) { const f = this.game.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0 }; }
   mail(p, key) {
     const m = MAIL[key]; if (!m) return;
-    (p.mails ||= []).push({ from: m.from, title: m.title, text: m.text, read: 0 });
-    this.msg(p, 0x74);                                // "급한 우편이 왔습니다"
-    this.sendMail(p);
+    this.game.mail.system(p, m);
+    this.msg(p, 0x74);                                // "You have an urgent mail. Please check it now at a mailbox."
   }
-  sendMail(p) { const m = (p.mails || []).filter(x => !x.read); if (m.length) p.send({ t: 'mail', mails: m }); }
-  readMail(p) { for (const m of p.mails || []) m.read = 1; }
 
   set(p, bits) { p.story = (p.story || 0) | bits; }
 
@@ -157,7 +154,7 @@ class Story {
           if (gain) this.msg(p, 0x7d, gain);
           if ((p.fame || 0) !== 0) { const f = this.increaseAbsFame(p, k * 10); if (f) this.msg(p, 0x7c, f); }
           this.msg(p, 0x7b, 500);
-          const m = MAIL.RMS_KASAMSPACESHIPMAIL; if (m) { (p.mails ||= []).push({ from: m.from, title: m.title, text: m.text, read: 0 }); this.msg(p, 0x74); this.sendMail(p); }
+          this.mail(p, 'RMS_KASAMSPACESHIPMAIL');
         }
         this.sendInfo(p, true); return true;
     }
