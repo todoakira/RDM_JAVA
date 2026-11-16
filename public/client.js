@@ -402,6 +402,7 @@ const handlers = {
     if (a) { a.dir = m.dir; a.act = m.k ? 'attack2' : 'attack'; a.actAt = now; a.moving = false; a.shownAt = now; }
     if (!d) return;
     if (m.sk && !m.area) addBullet(UI.skillBul(m.sk), a, d);   // 한 대상 기술: 시전자에서 대상까지 날아간다
+    else if (m.bul) addBullet(m.bul, a, d);                     // 원거리 무기·몬스터 원거리 공격의 총알
     d.hp = m.hp; d.shownAt = now;
     if (!m.miss && !d.act && !d.moving) { d.act = 'hit'; d.actAt = now; }
     floaters.push({ x: d.px, y: d.py, text: m.miss ? '빗나감' : m.crit ? m.dmg + '!' : String(m.dmg), color: m.miss ? '#bbb' : d.mob ? '#ffe066' : '#ff5a5a', t0: now });

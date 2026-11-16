@@ -499,23 +499,31 @@ class World {
   }
 
   // ---------- 전투 ----------
+  // 공격 총알 그림 번호. 주인공은 무기의 +0x57 (Main.dll 0x1002adfc 에서 공격 꾸러미에 싣는다),
+  // 몬스터는 공격 1·2 마다 MopInfo 의 총알 번호 (bullet, bullet2). 0 이면 총알 없음
+  attackBul(a, kind) {
+    if (a.mob) return (kind ? a.info.bullet2 : a.info.bullet) || 0;
+    const w = a.equip && a.equip[7], r = w && this.game.itemBul[w.k] && this.game.itemBul[w.k][w.i];
+    return (r && r.bul) || 0;
+  }
   hit(a, d, now, kind = 0) {
+    const bul = this.attackBul(a, kind);
     // 치명타면 반드시 맞고 피해 2배, 아니면 명중 판정
     const crit = F.rand100() < F.critPct(a.dex, d.dex);
     const defDex = d.mob ? d.dex : Math.floor(d.dex * F.PLAYER_DEX_DEFENCE);
     if (!a.mob) { this.fxOff(a, 1); this.fxOff(a, 19); }                                // 공격하면 위장이 풀린다 (ProcessUserAttack 0x43a931)
-    if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(a.dex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp }); return; }
+    if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(a.dex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp, bul }); return; }
     // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
     let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
     if (!d.mob && this.fxOn(d, 8, now)) dmg = Math.max(1, Math.floor(dmg * d.guard / 100));   // 효과 8 (CMapServerClient::GetAttack 0x4102ce)
     if (a.mob && !d.mob && this.fxOn(d, 6, now)) {             // 효과 6: 체력 대신 마력 (CMopServer::Attack 0x47f58f)
       d.mp = Math.max(0, d.mp - (2 * dmg + Math.floor(dmg / 4))); d.hitAt = now;
-      this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, k: kind, crit: crit ? 1 : 0 });
+      this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, k: kind, crit: crit ? 1 : 0, bul });
       if (!d.mp) this.fxOff(d, 6);
       this.game.sendStat(d); return;
     }
     if (d.mob && !a.mob) dmg = this.mobDamage(a, dmg, now);
-    this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0 });
+    this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0, bul });
   }
   applyDamage(a, d, dmg, now, extra) {
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
@@ -616,6 +624,8 @@ class Game {
     this.mopInfo = readJson('data', 'mops.json') || {};
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
+    // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
+    this.itemBul = readJson('data', 'client_items.json') || {};
     this.chrIndex = readJson('assets', 'chr', 'index.json') || {};
     this.mapIndex = new Map((readJson('assets', 'maps', 'index.json') || []).map(m => [m.id, m]));
     this.worlds = new Map(); this.nextId = 1;
