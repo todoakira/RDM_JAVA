@@ -34,7 +34,8 @@ const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 �
 
 const crypto = require('crypto');
 const G = require('./grid');
-const SK = require('./skills');   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
+const SK = require('./skills');
+const { Events } = require('./events');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
 const MOB_TICK = 250;                // 몬스터 처리 주기 (CMopServer::InitializeMopTimer 0x477000)
 const T200 = Math.ceil(200 / MOB_TICK), T400 = Math.ceil(400 / MOB_TICK);   // 몬스터 구조체의 두 대기 단위 (0x10c, 0x108)
 const EV_NO_ATTACK = 18, EV_MOB_OK = [0, 19, 22], EV_LURE = 22;
@@ -54,6 +55,7 @@ class World {
     const m = readJson('assets', 'maps', mapId + '.json');
     const sv = readJson('data', 'maps', mapId + '.json') || { spawns: [], events: {}, npcs: [], ev: '' };
     this.game = game; this.mapId = mapId; this.name = m.name;
+    this.script = new Events(this);
     this.w = m.w; this.h = m.h; this.spawn = m.spawn;
     // 이동 가능 여부: 서버 맵이 있으면 그것을(칸마다 자리 0·1 두 비트), 없으면 클라이언트 맵의 값을 쓴다
     const fallback = sv.walkUser ? '' : m.col.replace(/1/g, '3');
@@ -149,7 +151,7 @@ class World {
     this.game.sendStat(p); this.game.sendInv(p);
     this.broadcast({ t: 'add', p: pubP(p) }, p.id);
   }
-  leave(p) { this.release(p); if (this.players.delete(p.id)) this.broadcast({ t: 'del', id: p.id }); }
+  leave(p) { this.release(p); p.evAt = {}; if (this.players.delete(p.id)) this.broadcast({ t: 'del', id: p.id }); }
 
   moveTo(p, x, y, z, run) {
     if (p.dead || !Number.isInteger(x) || !Number.isInteger(y)) return;
@@ -536,7 +538,7 @@ class World {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);
       this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
-      if (!a.mob) this.game.gainExp(a, d.exp);
+      if (!a.mob) { this.game.gainExp(a, d.exp); this.script.killed(a, d.name); }
     } else {
       d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
       this.game.deathPenalty(d);
@@ -547,8 +549,10 @@ class World {
   tick(now) {
     for (let i = this.timers.length - 1; i >= 0; i--) if (now >= this.timers[i].at) { const t = this.timers.splice(i, 1)[0]; t.fn(); }
     if (!this.players.size) { this.mobTickAt = now + MOB_TICK; return; }
+    this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
       if (p.dead) continue;
+      this.script.tickPlayer(p, now); if (p.world !== this) continue;
       // 자연 회복: 10초마다. 기력이 덜 찼으면 기력만, 가득 찼으면 체력, 그다음 마력
       if (now >= p.regenAt) {
         p.regenAt = now + F.REGEN_MS;
@@ -597,6 +601,7 @@ class World {
       const dir = G.direction(p, n), dur = stepMs(dir, running);
       this.release(p); if (dir !== 5) p.dir = dir; p.x = n.x; p.y = n.y; p.z = n.z; p.nextAt = now + dur; this.take(p);
       this.near(p, { t: 'step', id: p.id, x: n.x, y: n.y, z: n.z, dir: p.dir, dur, run: running ? 1 : 0, last: p.path.length ? 0 : 1 });
+      this.script.moved(p); if (p.world !== this) continue;
       // 맵 이동 지점을 밟으면 다른 맵으로 넘어간다
       const e = this.eventAt(n.x, n.y);
       if (e && e[0] === EV_WARP) {
@@ -886,6 +891,7 @@ class Game {
     const took = this.giveItem(p, e[0], e[1], n); if (!took) return;
     p.money -= price * took; if (e[2] <= 4000000000) e[2] -= took;
     this.sendInv(p);
+    p.world.script.bought(p, e[0], e[1], took);
   }
   // 팔기: 그 상점이 사 주는 목록에 있는 아이템만 판다 (ProcessUserSellItem 0x42a540)
   sell(p, slot, n) {

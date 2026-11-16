@@ -46,11 +46,14 @@
   .ska { position: absolute; width: 22px; height: 35px; cursor: pointer; }
   #skquick { position: fixed; left: 50%; margin-left: 260px; bottom: 44px; width: 50px; height: 35px; outline: 1px solid #6a6; z-index: 5; }
   #fxlist { position: fixed; left: 90px; bottom: 150px; font-size: 12px; color: #9fd0ff; text-shadow: 0 0 3px #000; pointer-events: none; }
+  #winAsk { display: none; position: fixed; left: 50%; top: 30%; transform: translateX(-50%); width: 300px; min-height: 100px; box-sizing: border-box; padding: 14px 16px; background: url(assets/int/73.png) 0 0 / 100% 100%; z-index: 20; font-size: 13px; }
+  .askopt { color: #f0e0b0; padding: 4px 6px; cursor: pointer; } .askopt:hover { color: #fff; background: rgba(255,255,255,.08); }
 </style>
 </head>
 <body>
 <div id="skquick" style="display:none"></div>
 <div id="fxlist"></div>
+<div id="winAsk"></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
 <div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp</div>

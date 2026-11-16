@@ -305,6 +305,7 @@ function sendMove() {
   const d0 = Math.abs(wx - x0 * map.tw) / 2 + Math.abs(wy - y0 * map.th), d1 = Math.abs(wx - (x1 + .5) * map.tw) / 2 + Math.abs(wy - (y1 + .5) * map.th);
   const [x, y, z] = d0 < d1 ? [x0, y0, 0] : [x1, y1, 1];
   send({ t: 'move', x, y, z, run: runToggle !== shift }); targetId = 0;
+  send({ t: 'evc', name: runToggle !== shift ? 'Run' : 'Walk' });   // 이벤트 조건 Walk / Run
   marker = { x, y, z, until: performance.now() + 600 };
 }
 cv.addEventListener('pointerdown', e => {
@@ -333,10 +334,12 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
-      if (text) send({ t: 'chat', text });
+      if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
       $('say').value = ''; $('say').blur();
     } else $('say').focus();
     e.preventDefault();
+  } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-5]$/.test(e.key))) {
+    e.preventDefault();   // F6~F12: 이벤트 조건 Key 만 알린다 (원작 키 코드 112 = F1)
   } else if (!typing && myId && /^F[1-5]$/.test(e.key)) {
     // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
     e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill'][Number(e.key.slice(1)) - 1]);
@@ -426,6 +429,14 @@ const handlers = {
     drawSkills();
   },
   note(m) { log(esc(m.text), 'sys'); },
+  // 이벤트 대본의 클라이언트 행동: CloseWindow n / OpenWindow n. n 1~5 는 F1~F5 창, 100 은 상점 창
+  evui(m) {
+    const [cmd, n] = m.act.split(/\s+/), WIN = { 1: 'gauge', 2: 'winChr', 3: 'winInv', 4: 'winEq', 5: 'skill' };
+    if (cmd === 'CloseWindow') { if (+n === 100) UI.closeShop && UI.closeShop(); else UI.close && UI.close(WIN[n]); }
+    else if (cmd === 'OpenWindow' && WIN[n]) UI.open && UI.open(WIN[n]);
+  },
+  // 선택지 (GetUserResponseByCode)
+  ask(m) { UI.ask(m.options, k => send({ t: 'evsel', ev: m.ev, k })); },
   cast(m) {
     const a = ents.get(m.id); if (a) { a.act = 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; }
     const no = UI.skillBul(m.sk);
