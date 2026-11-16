@@ -2,8 +2,9 @@
 // 화면 구성: 원작 인터페이스 그림(assets/int)을 쓴다. 칸·단추·값 칸의 자리는 그림에서 잰 좌표다.
 // 창을 화면 어디에 띄우는지는 임시로 정했다 (원작은 800×600 고정 화면).
 const UI = (() => {
-  // 아래 메뉴 줄의 단추: [그림 번호, 왼쪽 좌표, 너비, 하는 일]
-  const MENU = [[38, 45, 52, 'group'], [37, 97, 74, 'winChr'], [42, 173, 44, 'winInv'], [34, 217, 82, 'winEq'], [39, 301, 45, 'help'], [40, 347, 59, 'history'], [41, 407, 51, 'gauge'], [44, 460, 51, 'quick'], [46, 512, 51, 'setup'], [47, 671, 46, 'skill'], [45, 718, 41, 'quit']];
+  // 아래 메뉴 줄의 단추: [그림 번호, 왼쪽 좌표, 너비, 하는 일]. 원작 Main.dll 0x1000c3d5~0x1000dbeb 의 단추 자리 (위 572, 높이 20)
+  // im-hm(Status) im-gc(Character) im-it(Item) im-eq(Equipment) im-sk(Skill) im-hi(History) im-gr(Group) im-qi(Quick) ia-ia(Army) im-qe(Quest) im-he(Help) im-qu(Quit)
+  const MENU = [[41, 44, 51, 'gauge'], [37, 96, 74, 'winChr'], [42, 171, 44, 'winInv'], [34, 216, 82, 'winEq'], [47, 299, 46, 'skill'], [40, 346, 59, 'winHist'], [38, 406, 52, 'group'], [44, 459, 51, 'quick'], [271, 511, 51, 'army'], [355, 563, 52, 'winQuest'], [39, 670, 46, 'help'], [45, 717, 41, 'quit']];
   const FACE = [113, 114, 115, 116, 118, 117, 121, 119, 120];      // 직업 번호 → 얼굴 그림
   // 장비 창의 칸 자리. 원작 클라이언트가 장비 창을 만들 때 칸을 등록하는 순서와 좌표 그대로다 (Main.dll 0x1007a6c9~0x1007a936).
   // 순서가 곧 장비 칸 번호: 0 모자, 1 목걸이, 2 상의, 3 하의, 4 신발, 5 방패, 6 장갑, 7 무기, 8 허리띠, 9~11 반지, 12·13
@@ -22,10 +23,11 @@ const UI = (() => {
     else if (act === 'skill') { toggle('winSk'); }
     else if (act === 'group') groupMenu();
     else if (act === 'quit') location.reload();
+    else if (act === 'quick' || act === 'army' || act === 'help') log('아직 구현되지 않은 창입니다.', 'sys');
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
-  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block'); } }
-  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
+  function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block' || a === 'skill' && false); } }
+  function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winHist') drawHist(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
   function show(first) { el('menubar').style.display = 'block'; if (first) { el('gauge').style.display = 'block'; el('winInv').style.display = 'block'; } marks(); }
   document.addEventListener('click', e => { const c = e.target.dataset && e.target.dataset.close; if (c) { if (c === 'winShop') { if (exch) closeExch(true); else closeShop(true); } else if (c === 'winBank') closeBank(true); else { el(c).style.display = 'none'; marks(); } } });
 
@@ -61,9 +63,10 @@ const UI = (() => {
   }
   function drawChr() {
     if (!stat) return;
-    const hp = el('gh'), mp = el('gm'), sp = el('gs');
-    hp.style.height = Math.round(120 * Math.max(0, stat.hp) / stat.maxHp) + 'px'; mp.style.height = Math.round(120 * stat.mp / stat.maxMp) + 'px'; sp.style.height = Math.round(120 * stat.sp / 2000) + 'px'; el('gd').style.height = Math.round(120 * (stat.dp || 0) / (stat.maxDp || 1)) + 'px';
-    el('gauge').title = `체력 ${stat.hp} / ${stat.maxHp}\n마력 ${stat.mp} / ${stat.maxMp}\n기력 ${stat.sp} / 2000\n위험 점수(DP) ${stat.dp || 0} / ${stat.maxDp || 0}`;
+    // 상태 막대 (n-iw-hm-ba, Main.dll 0x10095960): 값은 % 로 (0x10095f80 등). 막대 너비 HP·MP 154, SP·DP 111, 경험치 276
+    const bar = (id, v, max, w) => { el(id).style.width = Math.round(w * Math.min(100, max ? Math.floor(Math.max(0, v) * 100 / max) : 0) / 100) + 'px'; };
+    bar('gh', stat.hp, stat.maxHp, 154); bar('gm', stat.mp, stat.maxMp, 154); bar('gs', stat.sp, 2000, 111); bar('gd', stat.dp || 0, stat.maxDp || 0, 111); bar('ge', stat.exp, stat.need, 276);
+    el('gauge').title = `체력 ${stat.hp} / ${stat.maxHp}\n마력 ${stat.mp} / ${stat.maxMp}\n기력 ${stat.sp} / 2000\n위험 점수(DP) ${stat.dp || 0} / ${stat.maxDp || 0}\n경험치 ${stat.exp} / ${stat.need}`;
     if (el('winChr').style.display !== 'block') return;
     el('cface').style.background = `url(assets/int/${FACE[stat.chr] || 114}.png)`;
     el('cname').textContent = `${stat.name}\n${CLASS_KR[stat.chr] || ''}  Lv.${stat.level}\n공격 ${Math.floor(stat.atk * stat.minPct / 100)}~${stat.atk}  방어 ${stat.armor}`;
@@ -225,6 +228,17 @@ const UI = (() => {
   function closeWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display === 'block') toggle(id); }
   function openWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display !== 'block') toggle(id); }
   // 선택지 창: 메시지 창 그림 iw-me-ba(73) 위에 고를 줄을 늘어놓는다 (원작 창 안의 배치는 아직 확인하지 못함)
+  // 대화 기록 창 (History, iw-hi-ba 400×250, 원작 위치 397,317, Main.dll 0x10082870): 글 칸 (23,12)~(358,215),
+  // 아래 단추 System (36) Shout (96) Whisper (147) Group (216) Army (272), 위 220 높이 17. 단추를 누르면 그 종류의 글을 보이거나 감춘다
+  const HIST = [], HSHOW = { sys: 1, shout: 1, whisper: 1, grp: 1, army: 1 };
+  function hist(html, cls) { HIST.push([html, cls || '']); if (HIST.length > 300) HIST.shift(); if (el('winHist').style.display === 'block') drawHist(); }
+  function drawHist() {
+    const box = el('histtext'); if (!box) return;
+    box.innerHTML = HIST.filter(([, c]) => !c || HSHOW[c] !== 0).map(([h, c]) => `<div class="${c}">${h}</div>`).join('');
+    box.scrollTop = box.scrollHeight;
+    for (const b of document.querySelectorAll('#winHist .htab')) b.classList.toggle('on', !!HSHOW[b.dataset.k]);
+  }
+  document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#winHist .htab'); if (b) { HSHOW[b.dataset.k] = HSHOW[b.dataset.k] ? 0 : 1; drawHist(); } });
   // 원작 메시지 창 (iw-me-ba, Main.dll 0x10086e20): 글, 입력칸(선택), 단추 둘 (예/아니오, 확인/취소)
   const M0 = c => (msgs && msgs[0] && msgs[0][0] && msgs[0][0][c] || '').replace(/\\n/g, '\n');
   const BTN = { ok: [88, 41], yes: [89, 41], cancel: [85, 45], no: [87, 45] };
@@ -308,5 +322,5 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

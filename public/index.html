@@ -15,8 +15,7 @@
   #log { max-height: 150px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
   #log .sys { color: #9fd0ff; }
   #log .who { color: #ffd27a; }
-  #say { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 6px 8px; background: rgba(0,0,0,.55); border: 1px solid #555; color: #fff; font: inherit; font-size: 13px; outline: none; }
-  #say:focus { border-color: #c33; }
+  #say { position: absolute; left: 15px; top: 12px; width: 452px; height: 20px; box-sizing: border-box; padding: 0 4px; background: transparent; border: 0; color: #fff; font: inherit; font-size: 13px; outline: none; }   /* 입력칸 (15,12)~(467,32), Main.dll 0x10076203 */
   #login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000 url(assets/int/441.png) center 35% no-repeat; }   /* 원작 접속 화면 그림 */
   #login form { text-align: center; margin-top: 46vh; background: rgba(0,0,0,.6); padding: 14px 20px; }
   #login h1 { font-size: 34px; letter-spacing: 6px; color: #d22; margin: 0 0 6px; }
@@ -29,10 +28,15 @@
   #login button { padding: 10px 18px; font: inherit; font-size: 15px; background: #a11; color: #fff; border: 0; cursor: pointer; margin-left: 6px; }
   /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
   #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
-  .mb { position: absolute; top: 9px; height: 20px; cursor: pointer; background-position: 0 0; }
-  .mb:hover { background-position: 0 -20px; } .mb.on { background-position: 0 -40px; }
-  #gauge { display: none; position: fixed; left: 8px; bottom: 42px; width: 74px; height: 145px; background: url(assets/int/112.png); }
-  #gauge i { position: absolute; bottom: 4px; width: 9px; background-position: left bottom; background-repeat: no-repeat; }
+  .mb { position: absolute; top: 8px; height: 20px; cursor: pointer; background-position: 0 -20px; }   /* 단추 그림 세 칸: 보통 20~40, 강조 40~60, 눌림 0~20 */
+  .mb:hover, .mb.on { background-position: 0 -40px; } .mb:active { background-position: 0 0; }
+  #gauge { display: none; position: fixed; width: 291px; height: 29px; background: url(assets/int/463.png); }   /* 상태 막대 n-iw-hm-ba, 원작 위치 505,540 */
+  #gauge b { position: absolute; height: 8px; } #gauge i { position: absolute; left: 0; top: 0; height: 8px; }
+  #chatbar { display: none; position: fixed; width: 479px; height: 64px; background: url(assets/int/53.png); z-index: 15; }   /* 대화 입력줄 iw-ct-ba, 원작 위치 160,531 */
+  #chatbar .cb { position: absolute; top: 38px; height: 16px; cursor: pointer; background-position: 0 0; } #chatbar .cb:hover, #chatbar .cb.on { background-position: 0 -16px; }
+  #winHist .htab { position: absolute; top: 220px; height: 18px; cursor: pointer; background-position: 0 0; } #winHist .htab.on { background-position: 0 -18px; }
+  #histtext { position: absolute; left: 23px; top: 12px; width: 335px; height: 203px; overflow-y: auto; font-size: 12px; color: #fff; text-shadow: 0 0 2px #000; }
+  #histtext .sys { color: #9fd0ff; } #histtext .grp { color: #8fd8ff; } #histtext .who { color: #ffd27a; }
   .win { display: none; position: fixed; font-size: 12px; color: #e8e2b8; user-select: none; }
   .o { left: calc(50% - 400px + var(--x)); top: calc(100% - 600px + var(--y)); }
   .win .x { position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; cursor: pointer; }
@@ -88,9 +92,22 @@
   <div id="mok" class="mbtn" style="left:345px;top:262px;width:41px;background-image:url(assets/int/88.png)"></div></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
-<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보 · F6: 그룹 창 · @내용: 그룹 대화</div>
-<div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
-<div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i><i id="gd" style="left:54px;background-image:url(assets/int/55.png)"></i></div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 · F6 그룹 · F7 대화 기록<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 대화 입력줄 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보 · @내용: 그룹 대화</div>
+<div id="chat"><div id="log"></div></div>
+<div id="gauge" class="o" style="--x:505px;--y:540px">
+  <b style="left:13px;top:2px;width:154px;background:url(assets/int/464.png)"><i id="gh" style="background:url(assets/int/465.png)"></i></b>
+  <b style="left:13px;top:10px;width:154px;background:url(assets/int/466.png)"><i id="gm" style="background:url(assets/int/467.png)"></i></b>
+  <b style="left:178px;top:2px;width:111px;background:url(assets/int/468.png)"><i id="gs" style="background:url(assets/int/469.png)"></i></b>
+  <b style="left:178px;top:10px;width:111px;background:url(assets/int/460.png)"><i id="gd" style="background:url(assets/int/459.png)"></i></b>
+  <b style="left:13px;top:19px;width:276px;background:url(assets/int/461.png)"><i id="ge" style="background:url(assets/int/462.png)"></i></b></div>
+<div id="chatbar" class="o" style="--x:160px;--y:531px"><input id="say" maxlength="120" autocomplete="off">
+  <div class="cb" data-mode="shout" style="left:41px;width:59px;background-image:url(assets/int/77.png)"></div><div class="cb" data-mode="whisper" style="left:100px;width:59px;background-image:url(assets/int/83.png)"></div>
+  <div class="cb" data-mode="grp" style="left:160px;width:59px;background-image:url(assets/int/58.png)"></div><div class="cb" data-mode="army" style="left:220px;width:59px;background-image:url(assets/int/552.png)"></div></div>
+<div id="winHist" class="win o" style="--x:397px;--y:317px;width:400px;height:250px;background:url(assets/int/60.png)">
+  <div class="clb" data-close="winHist" style="left:376px;top:0"></div><div id="histtext"></div>
+  <div class="htab on" data-k="sys" style="left:36px;width:59px;background-image:url(assets/int/82.png)"></div><div class="htab on" data-k="shout" style="left:96px;width:51px;background-image:url(assets/int/81.png)"></div>
+  <div class="htab on" data-k="whisper" style="left:147px;width:67px;background-image:url(assets/int/84.png)"></div><div class="htab on" data-k="grp" style="left:216px;width:55px;background-image:url(assets/int/57.png)"></div>
+  <div class="htab on" data-k="army" style="left:272px;width:55px;background-image:url(assets/int/551.png)"></div></div>
 <div id="menubar"></div>
 <div id="winInv" class="win o" style="--x:4px;--y:4px;width:350px;height:150px;background:url(assets/int/66.png)"><div class="x" data-close="winInv"></div><div id="invcells"></div><div id="invtxt" class="txt" style="left:200px;top:16px;width:136px;height:120px"></div></div>
 <div id="winEq" class="win o" style="--x:4px;--y:146px;width:234px;height:317px;background:url(assets/int/56.png)"><div class="x" data-close="winEq"></div><div id="eqcells"></div></div>

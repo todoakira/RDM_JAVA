@@ -334,17 +334,17 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
-      const gm = /^@(.+)$/.exec(text);   // 그룹 대화: 글 앞에 '@' (원작 도움말 Message.ctf 1/1/41~42)
-      if (gm) send({ t: 'gchat', text: gm[1] });
+      const gm = /^@(.+)$/.exec(text);   // 그룹 대화: 글 앞에 '@' 또는 입력줄의 Group 단추 (원작 도움말 Message.ctf 1/1/41~42)
+      if (gm || (chatMode === 'grp' && text)) send({ t: 'gchat', text: gm ? gm[1] : text });
       else if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
-      $('say').value = ''; $('say').blur();
-    } else $('say').focus();
+      $('say').value = ''; $('say').blur(); $('chatbar').style.display = 'none';
+    } else { $('chatbar').style.display = 'block'; $('say').focus(); }
     e.preventDefault();
-  } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-6]$/.test(e.key))) {
-    e.preventDefault();   // F7~F12: 이벤트 조건 Key 만 알린다 (원작 키 코드 112 = F1)
-  } else if (!typing && myId && /^F[1-6]$/.test(e.key)) {
+  } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-8]$/.test(e.key))) {
+    e.preventDefault();   // F9~F12: 이벤트 조건 Key 만 알린다 (원작 키 코드 112 = F1)
+  } else if (!typing && myId && /^F[1-8]$/.test(e.key)) {
     // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
-    e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill', 'group'][Number(e.key.slice(1)) - 1]);   // [F6] 그룹 창 (1/1/67)
+    e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill', 'group', 'winHist', 'quick'][Number(e.key.slice(1)) - 1]);   // [F6] 그룹, [F7] 대화 기록, [F8] 빠른 창 (1/1/52~75)
   } else if (!typing && myId && e.ctrlKey && /^Key[A-Z]$/.test(e.code) && SKILL_KEYS.includes(e.code[3].toLowerCase())) {
     // 브라우저가 가로채는 조합(CTRL+W, CTRL+T 등)은 막을 수 없다
     e.preventDefault();
@@ -374,6 +374,7 @@ function drawSkills() {
   if (typeof UI !== 'undefined') UI.skills();
 }
 function log(html, cls) {
+  if (typeof UI !== 'undefined' && UI.hist) UI.hist(html, cls);   // 대화 기록 창에도 남긴다
   const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html;
   $('log').appendChild(d); while ($('log').children.length > 8) $('log').firstChild.remove();
 }
@@ -471,6 +472,15 @@ const handlers = {
   group(m) { UI.group(m, myName()); },
   ginvite(m) { UI.groupInvite(m.leader, y => send({ t: 'gjoin', leader: m.leader, ok: y ? 1 : 0 })); },
 };
+// 대화 입력줄 단추 (Main.dll 0x10075960): Shout, To(귓속말), Group, Army. 이 게임은 Group 만 한다
+let chatMode = '';
+setTimeout(() => { const s = $('say'); if (s) s.addEventListener('blur', () => { $('chatbar').style.display = 'none'; }); });
+addEventListener('DOMContentLoaded', () => {});
+document.addEventListener('mousedown', e => {
+  const b = e.target.closest && e.target.closest('#chatbar .cb'); if (!b) return; e.preventDefault();
+  if (b.dataset.mode !== 'grp') { log('아직 구현되지 않은 대화 방식입니다.', 'sys'); return; }
+  chatMode = chatMode === 'grp' ? '' : 'grp'; for (const c of document.querySelectorAll('#chatbar .cb')) c.classList.toggle('on', c.dataset.mode === chatMode);
+});
 const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
 function connect(name, pw, chr, beginner) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
