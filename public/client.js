@@ -334,17 +334,17 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
-      const gm = /^\/(?:그룹|g)\s+(.+)$/.exec(text);   // 그룹 대화 (이 게임의 입력 방식)
+      const gm = /^@(.+)$/.exec(text);   // 그룹 대화: 글 앞에 '@' (원작 도움말 Message.ctf 1/1/41~42)
       if (gm) send({ t: 'gchat', text: gm[1] });
       else if (text) { send({ t: 'chat', text }); send({ t: 'evc', name: 'Chat' }); }   // 이벤트 조건 Chat
       $('say').value = ''; $('say').blur();
     } else $('say').focus();
     e.preventDefault();
-  } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-5]$/.test(e.key))) {
-    e.preventDefault();   // F6~F12: 이벤트 조건 Key 만 알린다 (원작 키 코드 112 = F1)
-  } else if (!typing && myId && /^F[1-5]$/.test(e.key)) {
+  } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-6]$/.test(e.key))) {
+    e.preventDefault();   // F7~F12: 이벤트 조건 Key 만 알린다 (원작 키 코드 112 = F1)
+  } else if (!typing && myId && /^F[1-6]$/.test(e.key)) {
     // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
-    e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill'][Number(e.key.slice(1)) - 1]);
+    e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill', 'group'][Number(e.key.slice(1)) - 1]);   // [F6] 그룹 창 (1/1/67)
   } else if (!typing && myId && e.ctrlKey && /^Key[A-Z]$/.test(e.code) && SKILL_KEYS.includes(e.code[3].toLowerCase())) {
     // 브라우저가 가로채는 조합(CTRL+W, CTRL+T 등)은 막을 수 없다
     e.preventDefault();
@@ -469,7 +469,7 @@ const handlers = {
     log(`<span class="who">${m.group ? '[그룹] ' : ''}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : undefined);
   },
   group(m) { UI.group(m, myName()); },
-  ginvite(m) { UI.ask([`${m.leader} 님의 그룹 초대를 받아들입니다`, '거절합니다'], k => send({ t: 'gjoin', leader: m.leader, ok: k === 1 ? 1 : 0 })); },
+  ginvite(m) { UI.groupInvite(m.leader, y => send({ t: 'gjoin', leader: m.leader, ok: y ? 1 : 0 })); },
 };
 const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
 function connect(name, pw, chr, beginner) {

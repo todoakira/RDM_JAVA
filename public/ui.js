@@ -20,7 +20,7 @@ const UI = (() => {
     if (act.startsWith('win')) toggle(act);
     else if (act === 'gauge') { el('gauge').style.display = el('gauge').style.display === 'none' ? 'block' : 'none'; marks(); }
     else if (act === 'skill') { toggle('winSk'); }
-    else if (act === 'group') { toggle('winGroup'); drawGroup(); }
+    else if (act === 'group') groupMenu();
     else if (act === 'quit') location.reload();
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
@@ -225,24 +225,57 @@ const UI = (() => {
   function closeWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display === 'block') toggle(id); }
   function openWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display !== 'block') toggle(id); }
   // 선택지 창: 메시지 창 그림 iw-me-ba(73) 위에 고를 줄을 늘어놓는다 (원작 창 안의 배치는 아직 확인하지 못함)
-  // 그룹 창: 만들기, 초대(이름), 나가기, 그룹장은 멤버 내보내기. 멤버마다 체력 %
-  let grp = { members: [] }, me = '';
-  function setGroup(g, myName) { grp = g; me = myName; if (g.members.length) el('winGroup').style.display = 'block'; drawGroup(); marks(); }
-  function drawGroup() {
-    const box = el('glist'); if (!box) return;
-    const lead = grp.leader === me, has = grp.members.length > 0;
-    el('gnew').style.display = has ? 'none' : 'inline-block'; el('gout').style.display = has ? 'inline-block' : 'none';
-    el('ginv').style.display = lead && grp.members.length < 5 ? 'block' : 'none';
-    box.innerHTML = has ? grp.members.map(m => `<div class="gm">${m.leader ? '★ ' : ''}${esc(m.name)} <span class="gl">Lv.${m.level || '?'}</span>`
-      + (m.hp >= 0 ? `<div class="ghp"><i style="width:${m.hp}%"></i></div>` : `<span class="gl"> (다른 맵)</span>`)
-      + (lead && m.name !== me ? ` <span class="gk" data-n="${esc(m.name)}">내보내기</span>` : '') + '</div>').join('') : '<div class="gl">그룹이 없습니다.</div>';
-    box.onclick = e => { const k = e.target.closest('.gk'); if (k) send({ t: 'gleave', name: k.dataset.n }); };
+  // 원작 메시지 창 (iw-me-ba, Main.dll 0x10086e20): 글, 입력칸(선택), 단추 둘 (예/아니오, 확인/취소)
+  const M0 = c => (msgs && msgs[0] && msgs[0][0] && msgs[0][0][c] || '').replace(/\\n/g, '\n');
+  const BTN = { ok: [88, 41], yes: [89, 41], cancel: [85, 45], no: [87, 45] };
+  function msgBox(text, kinds, cb, input) {
+    const box = el('winMsg'); el('msgtext').textContent = text;
+    const inp = el('msgin'); inp.style.display = input ? 'block' : 'none'; inp.value = '';
+    [el('msgb1'), el('msgb2')].forEach((b, k) => {
+      const kd = kinds[k]; b.style.display = kd ? 'block' : 'none'; if (!kd) return;
+      b.style.width = BTN[kd][1] + 'px'; b.style.backgroundImage = `url(assets/int/${BTN[kd][0]}.png)`;
+      b.onclick = () => { box.style.display = 'none'; cb && cb(k === 0, inp.value.trim()); };
+    });
+    box.style.display = 'block'; if (input) setTimeout(() => inp.focus());
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.stopPropagation(); el('msgb1').onclick(); } };
   }
-  setTimeout(() => {
-    el('gnew').onclick = () => send({ t: 'gcreate' });
-    el('gout').onclick = () => send({ t: 'gleave' });
-    el('ginvb').onclick = () => { const n = el('ginvn').value.trim(); if (n) send({ t: 'ginvite', name: n }); el('ginvn').value = ''; };
-  });
+  // 그룹 창 (Main.dll 0x1007f100, 그리기 0x10080220): 그룹장이 맨 위. 멤버마다 60×60 칸, 얼굴은 (5,5) 에 50×50.
+  // 체력은 얼굴 위쪽부터 체력/2 픽셀만 보이고 나머지는 빈 얼굴(gr-fa-bl)을 반투명으로 덮는다. 다른 맵에 있는 멤버는 효과를 입혀 그린다.
+  // 단추: 칸마다 (48,5) 의 '−' (그룹장은 내보내기·해산, 멤버는 자기 칸에서 나가기), 그룹장 칸 (5,5) 의 '+' (초대). 마우스를 올리면 이름과 맵 이름
+  const GFACE = [122, 123, 124, 125, 127, 126, 130, 128, 129, 124];   // 직업 0~9 → gr-fa-pi, az, sa, de, pa, ca, ha, lu, la, sa (0x100800a0)
+  let grp = { members: [] }, me = '';
+  function setGroup(g, myName) {
+    grp = g; me = myName;
+    if (g.why) log(esc(M0(g.why)), 'sys');                            // 34 해산, 35 내보내짐, 36 나감
+    el('winGroup').style.display = g.members.length ? 'block' : 'none'; drawGroup(); marks();
+  }
+  function groupMenu() {
+    if (!grp.members.length) { msgBox(M0(28), ['yes', 'no'], y => { if (y) send({ t: 'gcreate' }); }); return; }   // 그룹이 없으면 만들지 묻는다
+    toggle('winGroup');
+  }
+  function drawGroup() {
+    const box = el('winGroup'); if (!box) return;
+    const lead = grp.leader === me;
+    box.innerHTML = ''; box.style.height = grp.members.length * 60 + 'px';
+    grp.members.forEach((m, i) => {
+      const d = document.createElement('div'); d.className = 'gslot'; d.style.top = i * 60 + 'px';
+      const away = m.hp < 0 || m.hp > 100, hp = away ? 100 : m.hp;
+      d.innerHTML = `<div class="face" style="background:url(assets/int/${GFACE[m.chr] || 131}.png);${away ? 'filter:grayscale(1) brightness(.6)' : ''}"></div>`
+        + (away ? '' : `<div class="blank" style="top:${5 + Math.floor(hp / 2)}px;height:${50 - Math.floor(hp / 2)}px"></div>`)
+        + `<div class="gtip"><span style="color:#ffff80">${esc(m.name)}</span><br><span style="color:#0080ff">${esc(m.mapName || '')}</span></div>`;
+      const btn = (x, img, fn) => { const b = document.createElement('div'); b.className = 'gbtn'; b.style.cssText += `left:${x}px;top:5px;background:url(assets/int/${img}.png)`; b.onclick = fn; d.appendChild(b); };
+      if (lead || m.name === me) btn(48, 133, () => {
+        if (m.name !== me) msgBox(M0(37).replace('%s', m.name), ['yes', 'no'], y => { if (y) send({ t: 'gleave', name: m.name }); });
+        else msgBox(M0(lead ? 30 : 31), ['yes', 'no'], y => { if (y) send({ t: 'gleave' }); });
+      });
+      if (lead && m.name === me) btn(5, 132, () => {
+        if (grp.members.length >= 5) { msgBox(M0(32), ['ok']); return; }
+        msgBox(M0(33), ['ok', 'cancel'], (y, v) => { if (y && v) send({ t: 'ginvite', name: v }); }, true);
+      });
+      box.appendChild(d);
+    });
+  }
+  function groupInvite(leader, cb) { msgBox(leader + M0(29), ['yes', 'no'], y => cb(y)); }
   // 원작 시스템 메시지 (Message.ctf 0/2): %u %d %s 를 차례로 채운다
   function sysText(code, args) {
     const t = msgs && msgs[0] && msgs[0][2] && msgs[0][2][code]; if (!t) return '';
@@ -254,10 +287,10 @@ const UI = (() => {
   function setQuest(q) { quest = q; drawQuest(); if (q.open) openWin('winQuest'); }
   function drawQuest() {
     const box = el('winQuest'); if (!box || !quest) return;
-    el('qtitle').textContent = m7(quest.lines[0]) || '진행 중인 퀘스트가 없습니다.';
+    el('qtitle').textContent = m7(quest.lines[0]);
     el('qtext').textContent = m7(quest.lines[1]);
     const cs = el('qcells'); cs.innerHTML = '';
-    (quest.items || []).forEach((it, k) => { const c = cell(it, 14 + k * 38, 0, false); if (it) c.title = it.name + (it.desc ? '\n' + it.desc : ''); cs.appendChild(c); });
+    (quest.items || []).forEach((it, k) => { const c = cell(it, 67 + k * 41, 159, false); if (it) c.title = it.name + (it.desc ? '\n' + it.desc : ''); cs.appendChild(c); });
   }
   // 우편: 원작은 우체통에서 읽는다. 여기서는 받은 우편을 바로 띄운다
   let mails = [];
@@ -267,11 +300,13 @@ const UI = (() => {
     el('winMail').style.display = 'block';
   }
   function nextMail() { mails.shift(); if (mails.length) showMail([]); else { el('winMail').style.display = 'none'; return true; } }
+  // 선택지 창 (Main.dll 0x100797c0): 보기 단추 다섯 개, 왼쪽 17, 위 18·45·71·99·125, 크기 436×25
+  const ASK_TOP = [18, 45, 71, 99, 125];
   function askChoice(options, cb) {
     const box = el('winAsk');
-    box.innerHTML = options.map((t, k) => `<div class="askopt" data-k="${k + 1}">${esc(t)}</div>`).join('');
+    box.innerHTML = options.slice(0, 5).map((t, k) => `<div class="askopt" data-k="${k + 1}" style="top:${ASK_TOP[k]}px">${esc(t)}</div>`).join('');
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { group: setGroup, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, mail: showMail, nextMail, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

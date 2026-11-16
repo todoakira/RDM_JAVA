@@ -63,11 +63,11 @@ class Groups {
     if (!g.members.includes(who)) return;
     if (who === g.leader) { this.dissolve(g); return; }
     g.members = g.members.filter(n => n !== who);
-    const q = this.game.findOnline(who); if (q) { q.group = 0; q.send({ t: 'group', members: [] }); }
+    const q = this.game.findOnline(who); if (q) { q.group = 0; q.send({ t: 'group', members: [], why: who === p.name ? 36 : 35 }); }   // 0/0/36 나감, 35 내보내짐
     this.sendInfo(g);
   }
   dissolve(g) {
-    for (const q of this.players(g)) { q.group = 0; q.send({ t: 'group', members: [] }); }
+    for (const q of this.players(g)) { q.group = 0; q.send({ t: 'group', members: [], why: 34 }); }   // 0/0/34 해산
     this.list.delete(g.id);
   }
   // 멤버 목록과 체력 % (SendGroupMemberInfo 0x440680). 다른 맵에 있으면 맵 번호를 보인다
@@ -75,9 +75,10 @@ class Groups {
     const ps = this.players(g);
     const members = g.members.map(n => {
       const q = ps.find(x => x.name === n);
-      return { name: n, leader: n === g.leader ? 1 : 0, chr: q ? q.chr : 0, level: q ? q.level : 0, hp: q ? Math.min(100, Math.floor(q.hp * 100 / Math.max(1, q.maxHp))) : -1, map: q ? q.world.mapId : -1 };
+      return { name: n, leader: n === g.leader ? 1 : 0, chr: q ? q.chr : 0, level: q ? q.level : 0, hp: q ? Math.min(100, Math.floor(q.hp * 100 / Math.max(1, q.maxHp))) : -1, map: q ? q.world.mapId : -1, mapName: q ? q.world.name : '' };
     });
-    for (const q of ps) q.send({ t: 'group', members, leader: g.leader });
+    // 다른 맵에 있는 멤버의 체력 칸에는 원작처럼 ~맵번호 를 넣는다 (그리기에서 음수면 다른 맵)
+    for (const q of ps) q.send({ t: 'group', members: members.map(m => ({ ...m, hp: m.map === q.world.mapId ? m.hp : ~m.map })), leader: g.leader });
   }
   hpChanged(p) { const g = this.of(p); if (!g) return; const pct = Math.min(100, Math.floor(p.hp * 100 / Math.max(1, p.maxHp))); if (pct === p.gHp) return; p.gHp = pct; const now = Date.now(); if (now - (g.hpAt || 0) < 500) { g.hpDirty = 1; return; } g.hpAt = now; g.hpDirty = 0; this.sendInfo(g); }
   tick(now) { for (const g of this.list.values()) if (g.hpDirty && now - (g.hpAt || 0) >= 500) { g.hpAt = now; g.hpDirty = 0; this.sendInfo(g); } }

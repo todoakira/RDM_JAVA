@@ -34,6 +34,7 @@
   #gauge { display: none; position: fixed; left: 8px; bottom: 42px; width: 74px; height: 145px; background: url(assets/int/112.png); }
   #gauge i { position: absolute; bottom: 4px; width: 9px; background-position: left bottom; background-repeat: no-repeat; }
   .win { display: none; position: fixed; font-size: 12px; color: #e8e2b8; user-select: none; }
+  .o { left: calc(50% - 400px + var(--x)); top: calc(100% - 600px + var(--y)); }
   .win .x { position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; cursor: pointer; }
   .cell { position: absolute; width: 35px; height: 35px; cursor: pointer; image-rendering: pixelated; }
   .cell.sel { outline: 1px solid #ffd27a; }
@@ -46,51 +47,65 @@
   .ska { position: absolute; width: 22px; height: 35px; cursor: pointer; }
   #skquick { position: fixed; left: 50%; margin-left: 260px; bottom: 44px; width: 50px; height: 35px; outline: 1px solid #6a6; z-index: 5; }
   #fxlist { position: fixed; left: 90px; bottom: 150px; font-size: 12px; color: #9fd0ff; text-shadow: 0 0 3px #000; pointer-events: none; }
-  #winAsk { display: none; position: fixed; left: 50%; top: 30%; transform: translateX(-50%); width: 300px; min-height: 100px; box-sizing: border-box; padding: 14px 16px; background: url(assets/int/73.png) 0 0 / 100% 100%; z-index: 20; font-size: 13px; }
-  .gb { color: #f0e0b0; border: 1px solid #8a7a50; padding: 1px 6px; cursor: pointer; font-size: 12px; margin-right: 4px; } .gb:hover { color: #fff; }
-  .gm { color: #f0e0b0; font-size: 12px; margin-bottom: 5px; } .gl { color: #a89870; font-size: 11px; } .gk { color: #e08070; cursor: pointer; font-size: 11px; }
-  .ghp { height: 4px; background: #300; margin-top: 2px; } .ghp i { display: block; height: 4px; background: #d33; }
   #log .grp, .grp .who { color: #8fd8ff; }
-  .askopt { color: #f0e0b0; padding: 4px 6px; cursor: pointer; } .askopt:hover { color: #fff; background: rgba(255,255,255,.08); }
+  #winAsk { display: none; position: fixed; width: 471px; height: 170px; background: url(assets/int/356.png); z-index: 20; font-size: 12px; }
+  .askopt { position: absolute; left: 17px; width: 436px; height: 25px; box-sizing: border-box; padding: 5px 8px; color: #fff; cursor: pointer; background: url(assets/int/357.png) 0 0; white-space: nowrap; overflow: hidden; }
+  .askopt:hover { background-position: 0 -25px; }
+  .clb { position: absolute; width: 21px; height: 21px; background: url(assets/int/52.png) 0 0; cursor: pointer; } .clb:hover { background-position: 0 -21px; }
+  .mbtn { position: absolute; height: 15px; cursor: pointer; } .mbtn:hover { background-position: 0 -15px !important; }
+  .gslot { position: absolute; left: 0; width: 60px; height: 60px; background: url(assets/int/59.png); }
+  .gslot .face { position: absolute; left: 5px; top: 5px; width: 50px; height: 50px; }
+  .gslot .blank { position: absolute; left: 5px; width: 50px; background: url(assets/int/131.png) 0 0; opacity: .5; }
+  .gslot .gbtn { position: absolute; width: 7px; height: 7px; cursor: pointer; }
+  .gslot .gtip { display: none; position: absolute; right: 64px; top: 0; white-space: nowrap; text-align: right; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+  .gslot:hover .gtip { display: block; }
 </style>
 </head>
 <body>
 <div id="skquick" style="display:none"></div>
 <div id="fxlist"></div>
-<div id="winAsk"></div>
-<div id="winGroup" class="win" style="left:10px;top:280px;width:220px;height:210px;background:url(assets/int/73.png) 0 0 / 100% 100%"><div class="x" data-close="winGroup"></div>
-  <div class="txt" style="left:14px;top:10px;color:#ffd890;font-weight:bold">그룹</div>
-  <div class="txt" style="left:14px;top:30px;width:192px"><span id="gnew" class="gb">그룹 만들기</span><span id="gout" class="gb">그룹 나가기</span></div>
-  <div id="ginv" class="txt" style="left:14px;top:56px;width:192px;display:none"><input id="ginvn" placeholder="초대할 이름" style="width:110px;font-size:12px"> <span id="ginvb" class="gb">초대</span></div>
-  <div id="glist" class="txt" style="left:14px;top:84px;width:192px;height:110px;overflow:auto"></div></div>
-<div id="winQuest" class="win" style="left:10px;top:120px;width:220px;height:150px;background:url(assets/int/73.png) 0 0 / 100% 100%"><div class="x" data-close="winQuest"></div>
-  <div id="qtitle" class="txt" style="left:14px;top:12px;width:192px;color:#ffd890;font-weight:bold"></div>
-  <div id="qtext" class="txt" style="left:14px;top:32px;width:192px;height:58px;white-space:pre-line"></div>
-  <div id="qcells" style="position:absolute;left:0;top:100px"></div></div>
-<div id="winMail" style="display:none;position:fixed;left:50%;top:12%;transform:translateX(-50%);width:380px;box-sizing:border-box;padding:16px 18px;background:url(assets/int/73.png) 0 0 / 100% 100%;z-index:21;font-size:12px;color:#f0e0b0">
-  <div style="color:#ffd890">보낸이: <span id="mfrom"></span></div><div id="mtitle" style="font-weight:bold;margin:4px 0 8px"></div>
-  <div id="mtext" style="white-space:pre-line;max-height:320px;overflow:auto;line-height:1.45"></div>
-  <div id="mok" class="askopt" style="text-align:center;margin-top:10px">확인</div></div>
+<!-- 선택지 창 (Choose, 원작 위치 164,315): im-qs-ba 471×170, 보기 단추 im-qs-bu 436×25 (위 보통·아래 강조) 다섯 개 (Main.dll 0x100797c0) -->
+<div id="winAsk" class="o" style="--x:164px;--y:315px"></div>
+<!-- 그룹 창 (Group, 원작 위치 737,147): 멤버마다 60×60 칸 iw-gr-ba, 얼굴 gr-fa-* (Main.dll 0x1007f100, 그리기 0x10080220) -->
+<div id="winGroup" class="win o" style="--x:737px;--y:147px;width:60px"></div>
+<!-- 퀘스트 창 (Quest, 원작 위치 4,154): im-qe-ba 343×211 (Main.dll 0x100900f0) -->
+<div id="winQuest" class="win o" style="--x:4px;--y:154px;width:343px;height:211px;background:url(assets/int/354.png)">
+  <div class="clb" data-close="winQuest" style="left:319px;top:0"></div>
+  <div id="qtitle" class="txt" style="left:16px;top:33px;width:310px;height:20px;color:#f09c00;text-align:center"></div>
+  <div id="qtext" class="txt" style="left:16px;top:74px;width:310px;height:35px;color:#fff;text-align:center"></div>
+  <div id="qtime" class="txt" style="left:153px;top:123px;width:132px;height:19px;color:#f00;text-align:center"></div>
+  <div id="qcells"></div></div>
+<!-- 메시지 창: iw-me-ba 300×100, 입력칸 me-in-ba, 단추 me-ok/ye/ca/no-bu (Main.dll 0x10086e20) -->
+<div id="winMsg" style="display:none;position:fixed;left:calc(50% - 150px);top:calc(100% - 600px + 250px);width:300px;height:100px;background:url(assets/int/73.png);z-index:22;font-size:12px;color:#fff">
+  <div id="msgtext" class="txt" style="left:16px;top:14px;width:268px;height:56px;text-align:center"></div>
+  <input id="msgin" style="position:absolute;left:18px;top:75px;width:173px;height:13px;border:0;padding:0 2px;background:url(assets/int/86.png);color:#fff;font-size:11px;display:none">
+  <div id="msgb1" class="mbtn" style="left:196px;top:75px"></div><div id="msgb2" class="mbtn" style="left:238px;top:75px"></div></div>
+<!-- 우편 읽기 창 (PostItem, 원작 위치 200,130): iw-xw-ba 400×300 -->
+<div id="winMail" class="o" style="display:none;position:fixed;--x:200px;--y:130px;width:400px;height:300px;background:url(assets/int/166.png);z-index:21;font-size:12px;color:#fff">
+  <div id="mfrom" class="txt" style="left:82px;top:16px;width:92px;height:16px"></div>
+  <div id="mtitle" class="txt" style="left:82px;top:42px;width:210px;height:16px"></div>
+  <div id="mtext" class="txt" style="left:18px;top:74px;width:340px;height:160px;overflow:auto;white-space:pre-line"></div>
+  <div id="mok" class="mbtn" style="left:345px;top:262px;width:41px;background-image:url(assets/int/88.png)"></div></div>
 <canvas id="cv"></canvas>
 <div id="hud"></div>
-<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보 · Group 버튼: 그룹 창 · /그룹 내용: 그룹 대화</div>
+<div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 창<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 채팅 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 정보 · F6: 그룹 창 · @내용: 그룹 대화</div>
 <div id="chat"><div id="log"></div><input id="say" maxlength="120" placeholder="Enter 키로 채팅" autocomplete="off"></div>
 <div id="gauge"><i id="gh" style="left:9px;background-image:url(assets/int/63.png)"></i><i id="gm" style="left:24px;background-image:url(assets/int/43.png)"></i><i id="gs" style="left:39px;background-image:url(assets/int/239.png)"></i><i id="gd" style="left:54px;background-image:url(assets/int/55.png)"></i></div>
 <div id="menubar"></div>
-<div id="winInv" class="win" style="right:10px;bottom:46px;width:350px;height:150px;background:url(assets/int/66.png)"><div class="x" data-close="winInv"></div><div id="invcells"></div><div id="invtxt" class="txt" style="left:200px;top:16px;width:136px;height:120px"></div></div>
-<div id="winEq" class="win" style="right:10px;bottom:206px;width:234px;height:317px;background:url(assets/int/56.png)"><div class="x" data-close="winEq"></div><div id="eqcells"></div></div>
-<div id="winChr" class="win" style="left:10px;top:60px;width:250px;height:353px;background:url(assets/int/50.png)"><div class="x" data-close="winChr"></div>
+<div id="winInv" class="win o" style="--x:4px;--y:4px;width:350px;height:150px;background:url(assets/int/66.png)"><div class="x" data-close="winInv"></div><div id="invcells"></div><div id="invtxt" class="txt" style="left:200px;top:16px;width:136px;height:120px"></div></div>
+<div id="winEq" class="win o" style="--x:4px;--y:146px;width:234px;height:317px;background:url(assets/int/56.png)"><div class="x" data-close="winEq"></div><div id="eqcells"></div></div>
+<div id="winChr" class="win o" style="--x:547px;--y:125px;width:250px;height:353px;background:url(assets/int/50.png)"><div class="x" data-close="winChr"></div>
   <div id="cface" style="position:absolute;left:19px;top:19px;width:70px;height:70px"></div><div id="cname" class="txt" style="left:96px;top:26px;width:140px;height:60px;color:#fff"></div>
   <div class="val" id="cexp" style="top:96px"></div><div class="val" id="cnext" style="top:119px"></div>
   <div class="stb" data-s="str" style="left:20px;background-image:url(assets/int/75.png)"></div><div class="stb" data-s="spi" style="left:73px;background-image:url(assets/int/65.png)"></div><div class="stb" data-s="dex" style="left:126px;background-image:url(assets/int/54.png)"></div><div class="stb" data-s="pow" style="left:179px;background-image:url(assets/int/48.png)"></div>
   <div id="cstats" style="position:absolute;left:21px;top:193px;width:208px;height:17px;line-height:17px;display:flex;color:#fff"></div>
   <div class="val" id="cbonus" style="top:213px"></div><div class="val" id="cfame" style="top:238px"></div><div class="val" id="cweight" style="top:263px"></div><div class="val" id="cmoney" style="top:292px"></div>
 </div>
-<div id="winSk" class="win" style="left:280px;top:60px;width:232px;height:200px;background:url(assets/int/80.png)"><div class="x" data-close="winSk"></div><div id="skcells"></div><div id="sktxt" class="txt" style="left:14px;top:128px;width:204px;height:64px"></div></div>
-<div id="winBank" class="win" style="left:280px;top:60px;width:264px;height:261px;background:url(assets/int/193.png)"><div class="x" data-close="winBank"></div>
+<div id="winSk" class="win o" style="--x:565px;--y:4px;width:232px;height:200px;background:url(assets/int/80.png)"><div class="x" data-close="winSk"></div><div id="skcells"></div><div id="sktxt" class="txt" style="left:14px;top:128px;width:204px;height:64px"></div></div>
+<div id="winBank" class="win o" style="--x:268px;--y:169px;width:264px;height:261px;background:url(assets/int/193.png)"><div class="x" data-close="winBank"></div>
   <div id="bankput" title="돈 맡기기" style="position:absolute;left:30px;top:32px;width:46px;height:24px;cursor:pointer"></div>
   <div id="bankmoney" title="돈 찾기" style="position:absolute;left:80px;top:37px;width:170px;height:17px;line-height:17px;text-align:right;color:#fff;cursor:pointer"></div><div id="bankcells"></div></div>
-<div id="winShop" class="win" style="left:280px;top:60px;width:300px;height:400px;background:url(assets/int/159.png)"><div class="x" data-close="winShop"></div><div id="shoptitle" class="txt" style="left:24px;top:16px;width:230px;height:18px;color:#ffd27a"></div><div id="shopcells"></div>
+<div id="winShop" class="win o" style="--x:250px;--y:90px;width:300px;height:400px;background:url(assets/int/159.png)"><div class="x" data-close="winShop"></div><div id="shoptitle" class="txt" style="left:24px;top:16px;width:230px;height:18px;color:#ffd27a"></div><div id="shopcells"></div>
   <div id="shoptxt" class="txt" style="left:20px;top:202px;width:262px;height:156px"></div>
   <div class="sb" id="sbBuy" style="left:98px;top:367px;background-image:url(assets/int/158.png)"></div><div class="sb" id="sbSell" style="left:160px;top:367px;background-image:url(assets/int/157.png)"></div><div class="sb" id="sbCancel" style="left:224px;top:367px;background-image:url(assets/int/155.png)"></div>
 </div>
