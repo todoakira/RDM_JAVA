@@ -157,6 +157,22 @@ const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 6: 3, 9: 6, 10: 7, 11: 8, 12: 9, 13: 10,
   60: 50, 61: 51, 63: 52, 66: 46, 75: 60, 79: 63, 80: 64, 81: 67, 82: 68, 83: 69, 85: 71, 86: 72, 88: 73, 89: 74, 90: 75, 92: 77 };
 // 바뀌면 능력치를 다시 셈하는 효과: 48 Berserker, 69 Focused Spirit, 73 Bull's Eye, 75 Godly Shield, 30 Evasion (방어)
 const RECALC_FX = new Set([30, 48, 69, 73, 75]);
+// 몬스터 한 마리에게 거는 약화 (UseSkillAttackSingleMop 0x44d720 의 분기 0x44f864~0x450700). 효과 종류 n → 몬스터 효과 e
+//   hit: 'spi' 면 정신력 합 대 몬스터 정신력, 'dex' 면 싸움 민첩성 대 몬스터 민첩성으로 명중 판정 (GetAttackSuccessful)
+//   지속(초) = ⌊정신력 합 ÷ div⌋ + p (div 가 0 이면 p 만). dmg 가 참이면 먼저 피해를 주고 몬스터가 살아 있을 때 건다 (n=37)
+//   몬스터 그림이 0x5a 면 (+0x2d8) 확률 clamp(⌊min(몬스터 정신력, 7000) × 3 ÷ 350⌋ + 20, 20, 80)% 로 시전자에게 되돌아온다 (self = 시전자에게 걸리는 효과, 지속 ⌊정신력/20⌋ + p)
+const MOB_DEBUFF = {
+  7: { e: 4, hit: 'spi', div: 20, self: 4 }, 15: { e: 12, hit: 'spi', div: 20, self: 12 }, 16: { e: 5, hit: 'spi', div: 20, self: 5 },
+  17: { e: 13, hit: 'spi', div: 20, self: 13 }, 21: { e: 15, hit: 'spi', div: 20, self: 0 }, 22: { e: 16, hit: 'spi', div: 40, self: 16 },
+  37: { e: 16, hit: 'dex', div: 10, self: 16, dmg: true }, 38: { e: 55, hit: 'spi', div: 20, self: 55 }, 54: { e: 43, hit: 'spi', div: 50, self: 43 },
+  57: { e: 47, hit: 'dex', div: 40, self: 47 }, 65: { e: 54, hit: 'dex', div: 20, self: 54 }, 74: { e: 58, hit: 'spi', div: 0, self: 58 },
+};
+// 몬스터 쪽 막음 (CMopServer::InitializeMopInstance 0x4793b0~0x4793d9, DoSkillEffect 0x479630):
+//   +0x2cc: 배치 종류 5 (강화형) 또는 그림 0x50·0x54·0x57·0x61·0x62 → 약화가 걸리지 않음. 몬스터에게 효과 23 이 있어도 걸리지 않음
+//   +0x2d0: 그림 0x52·0x5d → 지속이 늘 5초.  +0x2d8: 그림 0x5a → 되돌림
+const mobImmune = m => m.pattern === 5 || [0x50, 0x54, 0x57, 0x61, 0x62].includes(m.info.img);
+const mobShort = m => m.info.img === 0x52 || m.info.img === 0x5d;
+const mobReflect = m => m.info.img === 0x5a;
 const DUR_DIV = { 27: 5, 31: 10, 32: 10, 63: 10, 55: 40, 56: 40 };
 // 효과 8 의 값: 100 − min(50, 25 + ⌊기본 정신력 ÷ 100⌋). 기본 정신력은 USERDB+0x94 (= 사용자 +0x4364, 장비를 뺀 값)
 const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.bSpi || 0) / 100));
@@ -207,4 +223,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

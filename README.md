@@ -271,6 +271,7 @@ Shop (250,90), Bank (268,169), Post (150,140), PostItem (200,130), Choose (164,3
 | 10 | 22번 | 걸려 있던 나쁜 효과(5, 12, 14, 16, 18번)를 지움 | UseSkillAlone 0x447b36 |
 | 11 | 23·62번 | 받는 피해 × v ÷ 100 (v = 100 − min(50, 25 + ⌊기본 정신력 ÷ 100⌋), 기본 = 장비를 뺀 값 USERDB+0x94), 방어를 뺀 뒤 곱하고 최소 1 | UseSkillAlone 0x447bdb, CMapServerClient::GetAttack 0x4102ce |
 | 7 | 81번 Enticement | 정신력 명중 판정 후 몬스터에 표시. 표시된 몬스터를 공격하면 명중률 +25 | UseSkillAttackSingleMop 0x44f98b, GetAttackSuccessful |
+| 15·16·17·21·22·37·38·54·57·65·74 | 7, 9, 83, 86, 305, 317, 332 등 | 몬스터 약화 (멈춤, 공격 금지, 느려짐, 눈멀기, 능력치 0.7배, Voodoo 등). 표는 `docs/skills_notes.md` | UseSkillAttackSingleMop, CMopServer::DoSkillEffect |
 
 그 밖의 자기 기술 (효과 번호 = 사용자 효과 비트. 60 이상은 rm3944 가 따로 둔 표. 자세한 원본 위치는 `docs/skills_notes.md`)
 

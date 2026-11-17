@@ -176,6 +176,8 @@ class World {
   // 사거리 밖이면 걸어가서 쓴다. 원작은 이 걸음을 클라이언트가 하고 서버는 사거리만 확인한다 (UseSkill 0x45ed73)
   // 쓸 수 있는 기술인지: 일반 기술은 목록에 있어야 하고, 특수 기술은 직업의 특수 기술이면서 DP 가 가득 차야 한다
   skillReady(p, sid, s) {
+    // 효과 58 이면 기술을 쓸 수 없고, 효과 43 이면 특수 기술만 (ProcessUseSkill 0x43c44c~0x43c476)
+    if (this.fxOn(p, 58) || (this.fxOn(p, 43) && s.a === 0)) return false;
     if (s.a === 1) { if (sid !== SK.SPECIAL[p.chr]) return false; if (p.dp < p.maxDp) { p.send({ t: 'note', text: 'DP가 가득 차야 쓸 수 있습니다.' }); return false; } return true; }
     return SK.list(p).includes(sid);
   }
@@ -184,7 +186,7 @@ class World {
     if (p.dead || !s || !this.skillReady(p, sid, s)) return;
     const area = s.l >= 10000;
     const ok = area ? s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))
-      : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n === 7);
+      : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF);
     if (!ok) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
     if (!m) {                                                   // 대상 없이 쓰는 범위 기술은 내 자리가 중심
       if (!area) return;
@@ -283,7 +285,7 @@ class World {
   // 명중률 (GetAttackSuccessful 0x45fab0 뒤): 몬스터 효과 4 면 +25 (0x45fc3a, 최대 100), 그다음 rm3944 NewMasterEffect (0x100024d9):
   //   공격자 효과 60·76 마다 +50 (최대 100), 공격자 효과 26 이면 최대 90, 방어자 효과 44 면 ⌊/4⌋ × 3, 67 이면 ⌊/4⌋ × 2
   hitChance(a, d, base, now) {
-    let h = Math.min(100, base + (d.mob && this.fxOn(d, 4, now) ? 25 : 0));
+    let h = Math.min(100, base + (this.fxOn(d, 4, now) || this.fxOn(d, 43, now) ? 25 : 0));   // 방어자 효과 4·43 이면 +25 (0x45fc44~0x45fc61)
     if (this.fxOn(a, 60, now)) h = Math.min(100, h + 50);
     if (this.fxOn(a, 76, now)) h = Math.min(100, h + 50);
     if (this.fxOn(a, 26, now)) h = Math.min(90, h);
@@ -312,11 +314,44 @@ class World {
       let dmg;
       if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o);            // 특수: 반드시 맞음 (0x45d409)
       else {
-        if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, m.spi), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
+        if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, this.mobSpi(m, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
         dmg = SK.damage(cost, s.o);                                               // 일반: 공격 값 = 마력 소모량 (0x45d094)
       }
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now, m), now, { k: 2, sk: sid, area: 1 });
     }
+  }
+  // 몬스터 효과 54 면 GetDexterity·GetSpirit 이 0.7배 (CMopServer 0x47ae20, 0x47ae60, 상수 0x48ffc0)
+  mobDex(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.dex * 0.7) : m.dex; }
+  mobSpi(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.spi * 0.7) : m.spi; }
+  // 몬스터 약화 기술 (skills.js 의 MOB_DEBUFF)
+  castDebuff(p, m, s, sid, db, cost, now) {
+    const msp = this.mobSpi(m, now);
+    if (SK.mobReflect(m)) {
+      const r = Math.max(20, Math.min(80, Math.floor(Math.min(msp, 7000) * 3 / 350) + 20));
+      if (F.rand100() < r) {                                    // 되돌아온다
+        if (db.self) { (p.fx ||= {})[db.self] = now + (Math.floor(p.spi / 20) + s.p) * 1000; this.sendFx(p); }
+        this.near(p, { t: 'cast', id: p.id, sk: sid, tid: p.id });
+        return;
+      }
+    }
+    const miss = () => this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp });
+    if (db.hit === 'dex') { if (F.rand100() > this.hitChance(p, m, F.hitPct(this.fightDex(p, now), this.mobDex(m, now)), now)) return miss(); }
+    else if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, msp), now)) return miss();
+    if (db.dmg) {                                               // n=37: 공격 값 = 마력 소모량 (+ USERDB+0x34) 로 피해를 주고 살아 있으면 건다 (0x450060)
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(cost, s.o)), now, m), now, { k: 2, sk: sid });
+      if (m.hp <= 0) return;
+    } else this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
+    this.mobEffect(m, db.e, (db.div ? Math.floor(p.spi / db.div) : 0) + s.p, p, now);
+  }
+  // 몬스터에게 효과 걸기 (CMopServer::DoSkillEffect 0x479630). 막히면 false
+  mobEffect(m, e, sec, caster, now) {
+    if (e !== 8 && e !== 23 && e !== 25 && e !== 26) {
+      if (SK.mobImmune(m) || this.fxOn(m, 23, now)) return false;
+      if (SK.mobShort(m)) sec = 5;
+    }
+    (m.fx ||= {})[e] = now + sec * 1000;
+    if (e === 15) m.voodoo = caster ? caster.name : '';           // Voodoo: 시전자 이름 (+0x15b, CVoodooManager_Add)
+    return true;
   }
   castSkill(p, m, s, sid, now) {
     const cost = this.payForSkill(p, s); if (cost < 0) return;   // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
@@ -326,23 +361,19 @@ class World {
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o)), now, m), now, { k: 2, sk: sid });
       return;
     }
-    this.fxOff(p, 1); this.fxOff(p, 19);                                            // 공격 기술을 쓰면 위장이 풀린다 (0x44d873)
+    this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);                         // 공격 기술을 쓰면 위장·19·35 가 풀린다 (0x44d873~0x44d8a6)
     const d = G.direction(p, m); if (d !== 5) p.dir = d;
-    if (s.n === 7) {                                             // 81번 약화 (0x44f98b)
-      if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, m.spi), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return; }
-      (m.fx ||= {})[4] = now + SK.duration(p, s) * 1000;
-      this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
-      return;
-    }
+    const db = SK.MOB_DEBUFF[s.n];
+    if (db) { this.castDebuff(p, m, s, sid, db, cost, now); return; }
     const dex = SK.hitStat(sid) === 'dex';
-    if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? this.fightDex(p, now) : p.spi, dex ? m.dex : m.spi), now)) {
+    if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? this.fightDex(p, now) : p.spi, dex ? this.mobDex(m, now) : this.mobSpi(m, now)), now)) {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
     }
     const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now, m);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
     const before = m.hp;
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
-    if (sid === 66 && m.hp > 0) (m.fx ||= {})[13] = now + SK.duration(p, s) * 1000;   // 몬스터 효과 13 (0x44de8c)
-    if (sid === 334 && m.hp > 0) (m.fx ||= {})[14] = now + 3000;   // 몬스터 효과 14, 3초 (0x44f014). 서버의 몬스터 행동에는 쓰이지 않는다
+    if (sid === 66 && m.hp > 0) this.mobEffect(m, 13, SK.duration(p, s), p, now);   // 몬스터 효과 13 (0x44de8c)
+    if (sid === 334 && m.hp > 0) this.mobEffect(m, 14, 3, p, now);   // 몬스터 효과 14, 3초 (0x44f014). 서버의 몬스터 행동에는 쓰이지 않는다
     const dr = SK.DRAIN[sid], dealt = before - Math.max(0, m.hp);
     if (dr && dealt > 0 && !p.dead) {                            // 흡수: 몬스터 체력이 줄어든 만큼의 비율 (0x44dcb3, 0x44deee, 0x44dfa8)
       if (dr.hp) p.hp = Math.min(p.maxHp, p.hp + Math.floor(dealt * dr.hp[0] / dr.hp[1]));
@@ -504,6 +535,7 @@ class World {
     // 명성 값이 양수인 몬스터는 명성이 양수인 주인공을, 음수인 몬스터는 음수인 주인공을 건드리지 않는다
     const f = m.info.fame || 0; if ((f > 0 && u.fame > 0) || (f < 0 && u.fame < 0)) return false;
     if (m.info.img === 87) return false;
+    if (this.fxOn(m, 47)) return false;                         // 몬스터 효과 47: 아무도 알아보지 못함 (0x47d7c0)
     // 위장(효과 1): 몬스터 정신력이 2 × 주인공 정신력 이하면 알아보지 못한다. 원작 값은 DB 정신력(+0x4364)과 효과 값(+0x432c, 이 기술은 0)
     // 효과 26 Invisibility (그림 0x9b 몬스터 제외, rm3944 NewCanRecognize 0x10003677)·35 Hide·19 숨기면 알아보지 못한다 (0x47d70a~0x47d743). 그림 0x62·0x61 몬스터는 이 셋을 건너뛴다
     const img = m.info.img;
@@ -523,13 +555,17 @@ class World {
   // 다음에 할 일을 고른다. 돌려주는 값: 0 없음, 1 배회, 2 쫓기, 3·5·6 공격, 4 유인된 쫓기 (CMopServer::FindNextAction 0x47cc60)
   // 원작에는 기술에 걸린 상태(혼란·은신·도발 등)에 따른 갈래가 더 있다. 기술이 아직 없어서 그 갈래는 옮기지 않았다.
   findNextAction(m) {
-    const info = m.info, R = this.fxOn(m, 13) ? 1 : m.maxRange, canMove = info.speed > 0;
+    // 몬스터에게 걸린 효과 (FindNextAction 0x47cd9e~0x47ce8b): 13·43 이면 사거리 1. 5·16·18·43 이면 공격 못 함.
+    // 거기에 12·13 이면 쫓지 못하고, 12 면 돌아다니지도 못함
+    const on = e => this.fxOn(m, e);
+    const info = m.info, R = on(13) || on(43) ? 1 : m.maxRange, canMove = info.speed > 0;
+    const canAtk = !on(5) && !on(16) && !on(18) && !on(43), canChase = canAtk && !on(12) && !on(13), canWander = canAtk && !on(12) && canMove;
     if (m.targetName) {       // 기억해 둔 대상이 있으면 먼저 본다
       let u = null; for (const q of this.players.values()) if (q.name === m.targetName) { u = q; break; }
       if (u && this.inMgmt(m, u)) {
         const rec = this.canRecognize(m, u);
-        if (G.dist(m, u) <= R && rec) return [3, u];
-        if (rec && canMove) return [2, u];
+        if (G.dist(m, u) <= R && rec && canAtk) return [3, u];
+        if (rec && canMove && canChase) return [2, u];
       }
       m.targetName = '';
     }
@@ -540,16 +576,16 @@ class World {
       if (info.img === IMG_WARPER) return [1, u];
       const d = G.dist(m, u), rec = this.canRecognize(m, u);
       const e = this.eventAt(u.x, u.y), lure = !!e && e[0] === EV_LURE;
-      if (lure && d <= Math.min(R, 10) && rec) return [6, u];
-      if (best < 5 && d <= 1 && rec) { best = 5; bu = u; continue; }
+      if (lure && d <= Math.min(R, 10) && rec && canAtk) return [6, u];
+      if (best < 5 && d <= 1 && rec && canAtk) { best = 5; bu = u; continue; }
       // 주인공 효과: 유인(21)이면 8칸 안에서 다가오고, 공포(20)면 4칸 안에서 (몬스터 정신력 ≤ 2 × 주인공 정신력일 때) 달아난다
-      const free13 = !this.fxOn(m, 13), notImmune = info.img !== 0x62;
+      const free13 = canChase && canWander, notImmune = info.img !== 0x62;
       if (best < 4 && notImmune && this.fxOn(u, 21) && d <= 8 && free13 && rec && canMove) { best = 4; bu = u; m.fear = false; continue; }
       if (best < 4 && notImmune && this.fxOn(u, 20) && m.spi <= 2 * u.base.spi && d <= 4 && free13 && rec && canMove) { best = 4; bu = u; m.fear = true; continue; }
-      if (best < 4 && lure && d <= 10 && rec && canMove) { best = 4; bu = u; m.fear = false; continue; }
-      if (best < 3 && d <= R && rec) { best = 3; bu = u; }
-      else if (best < 2 && d <= info.sight && rec && canMove) { best = 2; bu = u; }
-      else if (best < 1 && canMove) { best = 1; bu = u; }
+      if (best < 4 && lure && d <= 10 && rec && canMove && free13) { best = 4; bu = u; m.fear = false; continue; }
+      if (best < 3 && d <= R && rec && canAtk) { best = 3; bu = u; }
+      else if (best < 2 && d <= info.sight && rec && canChase && canWander) { best = 2; bu = u; }
+      else if (best < 1 && canWander) { best = 1; bu = u; }
     }
     return [best, bu];
   }
@@ -591,8 +627,9 @@ class World {
   // 열다섯에 둘은 목표 쪽으로, 여덟은 아무 방향으로 한 걸음, 다섯은 1초 쉰다 (DoNextAction 0x47c243, 0x47c413)
   roam(m, to, towardDelay) {
     const r = rnd(15);
-    if (r === 0 || r === 5) { this.moveToward(m, to, towardDelay); m.delay = T400; }
-    else if (r <= 9) this.moveDir(m, r, T400);
+    const t400 = T400 * (this.fxOn(m, 55) ? 2 : 1);              // 몬스터 효과 55: 대기 단위 두 배 (DoSkillEffect 0x47a0f0)
+    if (r === 0 || r === 5) { this.moveToward(m, to, towardDelay); m.delay = t400; }
+    else if (r <= 9) this.moveDir(m, r, t400);
     else m.delay = Math.floor(1000 / MOB_TICK);
   }
   // 공격. 두 공격 중 하나를 반반으로 고르고, 닿는 쪽으로 친다. 다음 행동까지는 그 공격의 간격만큼 기다린다 (CMopServer::DoAttack 0x47dd70)
@@ -609,7 +646,7 @@ class World {
   }
   // 몬스터 한 마리의 행동 (CMopServer::DoNextAction 0x47be90)
   mobAct(m, now) {
-    const info = m.info, [act, u] = this.findNextAction(m), step = info.speed * T200, canMove = info.speed > 0;
+    const info = m.info, [act, u] = this.findNextAction(m), t200 = T200 * (this.fxOn(m, 55) ? 2 : 1), step = info.speed * t200, canMove = info.speed > 0;
     // 패턴 2: 처음 본 대상을 기억해 두고 계속 그 대상을 쫓는다 (원작은 이때 외치는 말도 내보낸다)
     if (m.pattern === 2 && act >= 2 && !m.targetName && u) m.targetName = u.name;
     if (info.img === IMG_WARPER) {      // 3초 돌아다니고 근처로 순간이동하기를 세 번, 그다음 3초 멈춘다 (멈춘 뒤의 범위 기술은 아직 없다)
@@ -634,7 +671,7 @@ class World {
         if (m.pattern === 1) this.flee(m, u, step); else if (m.pattern === 6) this.roam(m, u, step); else this.moveToward(m, u, step); return;
       case 4: if (m.fear && this.fxOn(u, 20)) this.flee(m, u, step); else this.moveToward(m, u, step); return;   // 공포면 달아난다 (DoNextAction 0x47c13f)
       case 2: if (m.pattern === 1) this.flee(m, u, step); else if (m.pattern === 6) this.roam(m, u, step); else this.moveToward(m, u, step); return;
-      case 1: if (!IMG_STILL.includes(info.img)) this.roam(m, m.home, T400); return;
+      case 1: if (!IMG_STILL.includes(info.img)) this.roam(m, m.home, T400 * (this.fxOn(m, 55) ? 2 : 1)); return;
     }
   }
 
@@ -652,7 +689,7 @@ class World {
     //   주인공 공격 (DoAttackMop 0x46f4f0): 기본 10, CRIT15 무기면 15. 효과 34 Snipe 이고 총이면 + 50 (몬스터 그림 98 이면 + 10)
     //   몬스터 공격 (CMopServer::Attack 0x47eea0): 기본 10, 몬스터 그림 0x35·0x3b·0x3c 면 25
     //   방어하는 주인공이 효과 44 Holy Shield 면 민첩성 + ⌊민첩성/5⌋ (0x47f1f4~0x47f45a, 명중 판정에만)
-    const aDex = this.fightDex(a, now), dDex = this.fightDex(d, now);
+    const aDex = this.fightDex(a, now), dDex = d.mob ? this.mobDex(d, now) : this.fightDex(d, now);   // 맞는 몬스터는 GetDexterity (효과 54 면 0.7배)
     let cp;
     if (a.mob) cp = F.critPct(aDex, dDex, [0x35, 0x3b, 0x3c].includes(a.info.img) ? 25 : 10);
     else {
@@ -686,7 +723,15 @@ class World {
     }
     const before = d.hp;
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
-    if (!d.mob && d.hp < before) this.fxOff(d, 35);              // 효과 35 Hide: 체력이 줄면 풀린다 (0x439349)
+    if (!d.mob && d.hp < before) {
+      this.fxOff(d, 35);                                         // 효과 35 Hide: 체력이 줄면 풀린다 (0x439349)
+      // Voodoo (몬스터 효과 15): 시전자가 잃은 체력만큼 그 몬스터도 잃는다. 단 최대 체력의 1/10 아래로는 내려가지 않고, 이미 그 아래면 그대로 (ProcessVoodoo 0x4601f0)
+      const loss = before - d.hp;
+      for (const v of this.mobs.values()) if (v.voodoo === d.name && this.fxOn(v, 15, now)) {
+        const floor = Math.floor(v.maxHp / 10);
+        if (v.hp > floor) { v.hp = Math.max(floor, Math.min(v.hp, v.maxHp) - loss); this.near(v, { t: 'hp', id: v.id, hp: v.hp }); }
+      }
+    }
     if (!d.mob) { d.dp = Math.min(d.maxDp, (d.dp || 0) + dmg); this.game.sendStat(d); }   // 맞은 만큼 DP 가 찬다 (CMapServerClient::DecreaseHP 0x43935f)
     if (d.mob && !a.mob) { const dd = G.direction(d, a); if (dd !== 5) d.dir = dd; }   // 맞은 몬스터는 공격자를 본다 (DoSkillAttackMop 0x45f8d3)
     this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, ...extra });
