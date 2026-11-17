@@ -85,27 +85,34 @@ const hitStat = id => DEX_HIT.has(id) ? 'dex' : 'spi';
 //   27 (0x44dc74): X + ⌊X/2⌋ + T+0x30, 그리고 준 피해의 ⌊3/10⌋ 만큼 체력 회복
 //   29·44 (0x44dce2, 0x44dd55): 2X + T+0x30
 //   30 (0x44dcfb): 2X + ⌊X/2⌋ + T+0x30
-//   36·37 (0x44dd1a): Y = X + 10 × 장비 민첩성(T+0x98) 일 때 2Y + ⌊Y/2⌋ + T+0x30
+//   36·37 (0x44dd1a): Y = X + 10 × 기본 민첩성(USERDB+0x98 = 사용자 +0x4368, 장비를 뺀 값) 일 때 2Y + ⌊Y/2⌋ + T+0x30
 //   39 (0x44dd31): 3Y + T+0x30
 //   50 (0x44dd92): 28 × ⌊X/10⌋ + T+0x30
 //   66 (0x44de0b): 2X + ⌊2X/4⌋ + T+0x30, 살아 있으면 몬스터 효과 13: 지속 동안 몬스터의 공격 사거리가 1 (CMopServer::DoSkillEffect 0x4798c2, FindNextAction 0x47cfdb)
 //   68 (0x44de9d): 3X + ⌊X/8⌋ + T+0x30, 준 피해의 ⌊3/10⌋ 만큼 체력·마력·기력 회복
 //   69 (0x44df2e, rm3944 NewSingleAttack 0x1000318d): 3X + ⌊X/2⌋ + T+0x30
 //   76 (0x44df73): 마력 소모량 + 2 × T+0x34, 준 피해의 ⌊1/2⌋ 만큼 체력 회복
-// 88 이상은 아직 옮기지 않았다.
+// 88 이상 (rm3944 NewCheckForSingleAttack2 0x10003054 가 0x44dde1 에서 갈라 보낸다):
+//   306, 316, 373, 377: 기본(마력 소모량)으로 떨어진다 (0x44e782 → 0x44f02b, 0x44f023 → 0x44f02b)
+//   331 (0x44e78e): ⌊(X + 10 × 기본 민첩성) ÷ 2⌋ × 7 + T+0x30
+//   334 (0x44efb6): 4X + T+0x30. 맞은 몬스터가 살아 있으면 몬스터 효과 14 를 3초 (CMopServer::DoSkillEffect 0x479630 case 0xe)
+//   365 (rm3944 0x100030df → 69번 식 자리): 7X + T+0x30
+//   88, 89, 383 은 활·화살 식(무기 정보의 필요 레벨 구간마다 다른 식, 0x44dfc6·0x44e7e1·0x44f063), 385 는 rm3944 0x1000311a 의 식이라 아직 옮기지 않았다.
 const HALF = new Set([21, 32, 61]);
 const FORMULA = {
   26: X => X + Math.floor(X / 5), 27: X => X + Math.floor(X / 2), 29: X => 2 * X, 44: X => 2 * X, 30: X => 2 * X + Math.floor(X / 2),
   36: (X, Y) => 2 * Y + Math.floor(Y / 2), 37: (X, Y) => 2 * Y + Math.floor(Y / 2), 39: (X, Y) => 3 * Y,
+  331: (X, Y) => Math.floor(Y / 2) * 7, 334: X => 4 * X, 365: X => 7 * X,
   50: X => 28 * Math.floor(X / 10), 66: X => 2 * X + Math.floor(2 * X / 4), 68: X => 3 * X + Math.floor(X / 8), 69: X => 3 * X + Math.floor(X / 2),
 };
 // 준 피해(몬스터 체력이 실제로 준 만큼)에 따른 회복: [체력, 마력, 기력] 비율 분자/분모
 const DRAIN = { 27: { hp: [3, 10] }, 68: { hp: [3, 10], mp: [3, 10], sp: [3, 10] }, 76: { hp: [1, 2] } };
-const formulaKnown = id => id < 88;
+const PENDING = new Set([88, 89, 383, 385]);
+const formulaKnown = id => !PENDING.has(id);
 function attackValue(id, p, cost) {
   const X = p.strAtk + p.wAtk;
   if (HALF.has(id)) return Math.floor((X + cost) / 2);
-  if (FORMULA[id]) return FORMULA[id](X, X + 10 * (p.eqDex || 0));
+  if (FORMULA[id]) return FORMULA[id](X, X + 10 * (p.bDex || 0));   // USERDB+0x98 = 장비를 뺀 민첩성 (사용자 +0x4368)
   if (id === 76) return cost;
   return cost;
 }
@@ -136,15 +143,47 @@ const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 //                    이동 속도는 클라이언트가 바꾸는데 그 값은 아직 찾지 못해, 지금은 효과 표시만 된다
 //   n=13 (0x447c9a): 효과 10 (+0x1b |= 4) — Faster Reload. 총이 아니면 풀린다 (InitializeEquipmentEffect 0x437b40). 실제 장전 속도 변화는 클라이언트 쪽이며 아직 찾지 못했다
 //   n=14 (0x447ceb): 효과 11 (+0x1b |= 8) — Eye of the Hawk. 무기 사거리 + 2 (Main.dll 0x1001125b), 총이 아니면 풀린다 (0x437bd9)
-const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 6: 3, 9: 6, 10: 7, 11: 8, 12: 9, 13: 10, 14: 11, 27: 19, 28: 20, 29: 21 };
-const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.eqSpi || 0) / 100));
-const duration = (p, s) => Math.floor(p.spi / (s.n === 27 ? 5 : 20)) + s.p;
-// 효과 2가 붙는 무기 (분류, 번호) (CMopServer::GetAttack 0x47acff~0x47ad93)
-function isGun(e) {
-  if (!e) return false;
-  const k = e.k, i = e.i;
-  if (k === 1 && ((i >= 52 && i <= 63) || i === 137 || i === 138 || i === 240 || i === 241 || (i >= 190 && i <= 194) || (i >= 68 && i <= 72) || i === 145 || i === 146)) return true;
+//   그 밖의 자기 효과 (UseSkillAlone 의 표 0x448490/0x448518, rm3944 NewUseSkillAlone 0x100012eb~0x100016c8). 효과 번호 e 는
+//   사용자 효과 비트 (+0x4024 의 e 번째 비트, 몸 표시 CIS +0x1a 의 e 번째 비트)와 같다. 60 이상은 rm3944 가 따로 들고 있는 표
+//   ([0x100083d0], 사용자마다 0x60 바이트: +4.. 에 켜짐, CIS +0x10/+0x11 비트로 옮김 NewLoadSkillsToCIS 0x100029cc)에 있다.
+//   25→17 Eidolon, 30→22 Concentration, 31→23 Mind Shield, 32→26 Invisibility, 33→24 Red Halo, 45→33 Mind Barrier,
+//   46→32 Psychic Boost, 47→30 Evasion, 49→31 Scarecrow, 50→34 Snipe, 51→35 Hide, 55→44 Holy Shield, 56→45 Damned Armor,
+//   58→48 Berserker, 59→49 MadSpin, 60→50 Dysperse, 61→51 Chain Reaction, 63→52 Purity of Heart, 66→46 Rabbit's Foot,
+//   75→60 Master, 79→63 WindWalker, 80→64 Heaven's Advent, 81→67 Camouflage, 82→68 Fire Shield, 83→69 Focused Spirit,
+//   85→71 Desperation, 86→72 Diamond Skin, 88→73 Bull's Eye, 89→74 Quick Reload, 90→75 Godly Shield, 92→77 Destruction
+//   지속 시간의 나눗수: 대개 20, n=31·32·63 은 10 (shr 3), n=55·56 은 40 (shr 5), n=27 은 5
+const SELF_EFFECT = { 3: 1, 4: 0, 5: 2, 6: 3, 9: 6, 10: 7, 11: 8, 12: 9, 13: 10, 14: 11, 27: 19, 28: 20, 29: 21,
+  25: 17, 30: 22, 31: 23, 32: 26, 33: 24, 45: 33, 46: 32, 47: 30, 49: 31, 50: 34, 51: 35, 55: 44, 56: 45, 58: 48, 59: 49,
+  60: 50, 61: 51, 63: 52, 66: 46, 75: 60, 79: 63, 80: 64, 81: 67, 82: 68, 83: 69, 85: 71, 86: 72, 88: 73, 89: 74, 90: 75, 92: 77 };
+// 바뀌면 능력치를 다시 셈하는 효과: 48 Berserker, 69 Focused Spirit, 73 Bull's Eye, 75 Godly Shield, 30 Evasion (방어)
+const RECALC_FX = new Set([30, 48, 69, 73, 75]);
+const DUR_DIV = { 27: 5, 31: 10, 32: 10, 63: 10, 55: 40, 56: 40 };
+// 효과 8 의 값: 100 − min(50, 25 + ⌊기본 정신력 ÷ 100⌋). 기본 정신력은 USERDB+0x94 (= 사용자 +0x4364, 장비를 뺀 값)
+const guardValue = p => 100 - Math.min(50, 25 + Math.floor((p.bSpi || 0) / 100));
+const duration = (p, s) => Math.floor(p.spi / (DUR_DIV[s.n] || 20)) + s.p;
+// 무기 묶음 (원작 곳곳에 같은 번호 목록이 박혀 있다. 예: CMopServer::GetAttack 0x47acff~0x47ad93, InitializeEquipmentEffect 0x4379c6~)
+//   GUN: 분류 1 의 52~63, 137, 138, 240, 241, 190~194 / 분류 6 의 84, 114, 134, 154, 174, 194
+//   HEAVY: 분류 1 의 68~72, 145, 146 (중화기). 효과 2·22 는 GUN 과 HEAVY 모두, 효과 10·11·34·50 은 GUN 만
+//   CRIT15: 치명타 기본값이 10 이 아니라 15 인 무기 (DoAttackMop 0x46f5f8~): 분류 1 의 33~51, 125~135, 230, 231, 180~184 / 분류 6 의 83, 113, 133, 153, 173, 193 과 GUN, HEAVY
+//   SPIN: 효과 49 MadSpin 이 유지되는 무기 (0x437932): 분류 1 의 81~95, 140~143, 220, 221, 170~174 / 분류 6 의 82, 112, 132, 152, 172, 192
+const inR = (i, a, b) => i >= a && i <= b;
+function isGunOnly(e) {
+  if (!e) return false; const k = e.k, i = e.i;
+  if (k === 1) return inR(i, 52, 63) || i === 137 || i === 138 || i === 240 || i === 241 || inR(i, 190, 194);
   return k === 6 && [84, 114, 134, 154, 174, 194].includes(i);
+}
+const isHeavy = e => !!e && e.k === 1 && (inR(e.i, 68, 72) || e.i === 145 || e.i === 146);
+const isGun = e => isGunOnly(e) || isHeavy(e);
+function isCrit15(e) {
+  if (!e) return false; const k = e.k, i = e.i;
+  if (isGun(e)) return true;
+  if (k === 1) return inR(i, 33, 51) || inR(i, 125, 135) || i === 230 || i === 231 || inR(i, 180, 184);
+  return k === 6 && [83, 113, 133, 153, 173, 193].includes(i);
+}
+function isSpin(e) {
+  if (!e) return false; const k = e.k, i = e.i;
+  if (k === 1) return inR(i, 81, 95) || inR(i, 140, 143) || i === 220 || i === 221 || inR(i, 170, 174);
+  return k === 6 && [82, 112, 132, 152, 172, 192].includes(i);
 }
 // 몬스터에게 거는 약화(n=7, 81번): 명중하면(정신력 대 몬스터 정신력, GetAttackSuccessful) 몬스터 효과 4 (+0x1a |= 0x10),
 // 지속 ⌊정신력/20⌋ + p 초 (UseSkillAttackSingleMop 0x44f98b, CMopServer::DoSkillEffect 0x479771).
@@ -168,4 +207,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

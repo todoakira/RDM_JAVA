@@ -213,22 +213,84 @@ class World {
       if (e === 8) p.guard = SK.guardValue(p);
       if (e === 19 && this.fxOn(p, 19, now)) { this.fxOff(p, 19); this.near(p, { t: 'cast', id: p.id, sk: sid }); this.game.sendStat(p); return; }   // 숨기 풀기 (0x447dae)
       (p.fx ||= {})[e] = now + SK.duration(p, s) * 1000; (p.fxSk ||= {})[SK.SELF_EFFECT[s.n]] = sid;
+      if (e === 17) { p.fxPow17 = p.spi; p.sp = Math.min(F.SP_MAX, p.sp + 2000); }   // Eidolon: 값 = 정신력 합 (+0x4230), 기력 + 2000 (rm3944 NewEidolonFix 0x10002d6e)
+      if (e === 31) p.scarecrow = 0;                                                   // Scarecrow: 막은 횟수 (+0x4238) 를 0 으로 (0x42c1a4)
+      if (SK.RECALC_FX.has(e)) this.game.recalc(p, false);
       this.sendFx(p);
     }
     this.near(p, { t: 'cast', id: p.id, sk: sid });
     this.game.sendStat(p);
   }
   fxOn(o, e, now = Date.now()) { return !!(o.fx && o.fx[e] > now); }
-  fxOff(p, e) { if (p.fx && p.fx[e]) { delete p.fx[e]; this.sendFx(p); } }
+  fxOff(p, e) { if (p.fx && p.fx[e]) { delete p.fx[e]; if (SK.RECALC_FX.has(e)) { this.game.recalc(p, false); this.game.sendStat(p); } this.sendFx(p); } }
   sendFx(p) { const now = Date.now(); p.send({ t: 'fx', fx: Object.entries(p.fx || {}).filter(([, t]) => t > now).map(([e, t]) => [Number(e), Math.ceil((t - now) / 1000), (p.fxSk || {})[e] || 0]) }); }
-  // 몬스터가 받는 피해에 공격자 효과를 곱한다 (CMopServer::GetAttack 0x47acb0, rm3944 NewAttackBuffsFix)
-  mobDamage(a, dmg, now) {
-    if (this.fxOn(a, 0, now)) dmg += Math.floor(dmg / 5);
-    if (this.fxOn(a, 2, now) && SK.isGun(a.equip && a.equip[7])) dmg += Math.floor(dmg / 5);
+  // ---------- 싸움에 쓰이는 효과 ----------
+  // 효과가 더해진 민첩성: 기본 + 장비 + (효과 17·42: min(효과 값, 기본)) + (효과 22·42 이고 총: ⌊기본 × 15 ÷ 100⌋) + (효과 30: ⌊기본 ÷ 5⌋)
+  // (DoAttackMop 0x46f51a~, CMopServer::Attack 0x47eed2~, UseSkillAttackRange 0x45b9cf~). 몬스터는 그냥 민첩성
+  fightDex(o, now) {
+    if (o.mob) return o.dex;
+    const b = o.bDex || 0, on = e => this.fxOn(o, e, now);
+    let v = b + (o.eqDex || 0);
+    if (on(17) || on(42)) v += Math.min(o.fxPow17 || 0, b);
+    if ((on(22) || on(42)) && SK.isGun(o.equip && o.equip[7])) v += Math.floor(b * 15 / 100);
+    if (on(30)) v += Math.floor(b / 5);
+    return v;
+  }
+  // 몬스터가 받는 피해 (CMopServer::GetAttack 0x47acb0 과 rm3944 NewAttackBuffsFix·NewFshieldEffect).
+  //   공격자 효과 0·42·46 마다, 2(총·중화기)·25·68·77·32 마다 + ⌊피해/5⌋. 몬스터 효과 8 (효과 54 가 없을 때) 반으로, 몬스터 효과 33 이면 × 4/5. 최소 1
+  //   일반 공격(normal)이면 GetSkillAttack(0x42ebf0)이 한 번 더: 효과 0·42·46 중 하나라도 + /5, 2(총·중화기) + /5, 25 + /5, 그리고 몬스터 효과 8 이면 또 반 (DoAttackMop 0x46f99b)
+  mobDamage(a, dmg, now, d, normal) {
+    const on = e => this.fxOn(a, e, now), up = () => { dmg += Math.floor(dmg / 5); };
+    const gun = SK.isGun(a.equip && a.equip[7]), mfx = e => d && this.fxOn(d, e, now);
+    for (const e of [0, 42, 46]) if (on(e)) up();
+    if (on(2) && gun) up();
+    if (on(25)) up();
+    if (on(68)) up(); if (on(77)) up();
+    if (on(32)) up();
+    if (!mfx(54) && mfx(8)) dmg = Math.floor(dmg / 2);
+    if (mfx(33)) dmg = Math.floor(dmg * 4 / 5);
+    dmg = Math.max(1, dmg);
+    if (normal) {
+      if (on(0) || on(42) || on(46)) up();
+      if (on(2) && gun) up();
+      if (on(25)) up();
+      if (!mfx(54) && mfx(8)) dmg = Math.floor(dmg / 2);
+      dmg = Math.max(1, dmg);
+    }
+    return dmg;
+  }
+  // 주인공이 받는 피해 (CMapServerClient::GetAttack 0x4101f0, rm3944 NewEggEffect·NewWarcryEffect)
+  //   공격 몬스터의 효과 0·25·32 마다 + /5 → 방어(효과 30 이면 + 3 × ⌊방어/10⌋ 한 번 더, 효과 54 면 7 × ⌊방어/10⌋)를 빼고 최소 1
+  //   → 효과 54 가 없으면: 효과 64 면 × 25/100, 아니면 효과 8·42 면 × 값/100 → 효과 68 − /5, 70 − 30%, 71 − 40%, 72 − 40% → 효과 33 이면 × 4/5. 최소 1
+  userDamage(a, d, dmg, now) {
+    const on = e => this.fxOn(d, e, now), pct = (v, n) => v < 10000000 ? Math.floor(v * n / 100) : Math.floor(v / 100) * n;
+    if (a && a.mob) for (const e of [0, 25, 32]) if (this.fxOn(a, e, now)) dmg += Math.floor(dmg / 5);
+    let armor = d.armor || 0;
+    if (on(30)) armor += Math.floor(armor / 10) * 3;
+    if (on(54)) armor = Math.floor(armor / 10) * 7;
+    dmg = dmg > armor ? dmg - armor : 1;
+    if (!on(54)) {
+      if (on(64)) dmg = pct(dmg, 25);
+      else if (on(8) || on(42)) dmg = pct(dmg, d.guard || 100);
+      if (on(68)) dmg -= Math.floor(dmg / 5);
+      if (on(70)) dmg -= Math.floor(dmg / 100) * 30;
+      if (on(71)) dmg -= Math.floor(dmg / 100) * 40;
+      if (on(72)) dmg -= Math.floor(dmg / 100) * 40;
+      if (on(33)) dmg = dmg < 10000000 ? Math.floor(dmg * 4 / 5) : Math.floor(dmg / 5) * 4;
+    }
     return Math.max(1, dmg);
   }
-  // 명중률에 몬스터 약화(+25)를 더한다 (GetAttackSuccessful 0x45fc3a)
-  hitChance(a, d, base, now) { return Math.min(100, base + (d.mob && this.fxOn(d, 4, now) ? 25 : 0)); }
+  // 명중률 (GetAttackSuccessful 0x45fab0 뒤): 몬스터 효과 4 면 +25 (0x45fc3a, 최대 100), 그다음 rm3944 NewMasterEffect (0x100024d9):
+  //   공격자 효과 60·76 마다 +50 (최대 100), 공격자 효과 26 이면 최대 90, 방어자 효과 44 면 ⌊/4⌋ × 3, 67 이면 ⌊/4⌋ × 2
+  hitChance(a, d, base, now) {
+    let h = Math.min(100, base + (d.mob && this.fxOn(d, 4, now) ? 25 : 0));
+    if (this.fxOn(a, 60, now)) h = Math.min(100, h + 50);
+    if (this.fxOn(a, 76, now)) h = Math.min(100, h + 50);
+    if (this.fxOn(a, 26, now)) h = Math.min(90, h);
+    if (this.fxOn(d, 44, now)) h = Math.floor(h / 4) * 3;
+    if (this.fxOn(d, 67, now)) h = Math.floor(h / 4) * 2;
+    return h;
+  }
   // 기술 한 번 (UseSkill 0x45e3xx → UseSkillAttackSingleMop 0x44d6xx → DoSkillAttackMop 0x45f890)
   // 기술 값 치르기: 특수 기술은 DP 를 0 으로, 일반 기술은 마력을 줄인다 (0x44d825~0x44d846)
   payForSkill(p, s) {
@@ -253,7 +315,7 @@ class World {
         if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, m.spi), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
         dmg = SK.damage(cost, s.o);                                               // 일반: 공격 값 = 마력 소모량 (0x45d094)
       }
-      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now), now, { k: 2, sk: sid, area: 1 });
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now, m), now, { k: 2, sk: sid, area: 1 });
     }
   }
   castSkill(p, m, s, sid, now) {
@@ -261,7 +323,7 @@ class World {
     if (s.a === 1) {                                             // 특수 기술: 반드시 맞음 (0x44f81c)
       this.fxOff(p, 1); this.fxOff(p, 19);
       const d = G.direction(p, m); if (d !== 5) p.dir = d;
-      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o)), now), now, { k: 2, sk: sid });
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o)), now, m), now, { k: 2, sk: sid });
       return;
     }
     this.fxOff(p, 1); this.fxOff(p, 19);                                            // 공격 기술을 쓰면 위장이 풀린다 (0x44d873)
@@ -273,13 +335,14 @@ class World {
       return;
     }
     const dex = SK.hitStat(sid) === 'dex';
-    if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? p.dex : p.spi, dex ? m.dex : m.spi), now)) {
+    if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? this.fightDex(p, now) : p.spi, dex ? m.dex : m.spi), now)) {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
     }
-    const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
+    const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now, m);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
     const before = m.hp;
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
     if (sid === 66 && m.hp > 0) (m.fx ||= {})[13] = now + SK.duration(p, s) * 1000;   // 몬스터 효과 13 (0x44de8c)
+    if (sid === 334 && m.hp > 0) (m.fx ||= {})[14] = now + 3000;   // 몬스터 효과 14, 3초 (0x44f014). 서버의 몬스터 행동에는 쓰이지 않는다
     const dr = SK.DRAIN[sid], dealt = before - Math.max(0, m.hp);
     if (dr && dealt > 0 && !p.dead) {                            // 흡수: 몬스터 체력이 줄어든 만큼의 비율 (0x44dcb3, 0x44deee, 0x44dfa8)
       if (dr.hp) p.hp = Math.min(p.maxHp, p.hp + Math.floor(dealt * dr.hp[0] / dr.hp[1]));
@@ -442,7 +505,13 @@ class World {
     const f = m.info.fame || 0; if ((f > 0 && u.fame > 0) || (f < 0 && u.fame < 0)) return false;
     if (m.info.img === 87) return false;
     // 위장(효과 1): 몬스터 정신력이 2 × 주인공 정신력 이하면 알아보지 못한다. 원작 값은 DB 정신력(+0x4364)과 효과 값(+0x432c, 이 기술은 0)
-    if (this.fxOn(u, 1) && m.spi <= 2 * u.base.spi) return false;
+    // 효과 26 Invisibility (그림 0x9b 몬스터 제외, rm3944 NewCanRecognize 0x10003677)·35 Hide·19 숨기면 알아보지 못한다 (0x47d70a~0x47d743). 그림 0x62·0x61 몬스터는 이 셋을 건너뛴다
+    const img = m.info.img;
+    if (img !== 0x62 && img !== 0x61) {
+      if (img !== 0x9b && this.fxOn(u, 26)) return false;
+      if (this.fxOn(u, 35) || this.fxOn(u, 19)) return false;
+    }
+    if (this.fxOn(u, 1) && m.spi <= 2 * (u.bSpi ?? u.base.spi)) return false;
     return true;
   }
   // 몬스터 주변의 관리 영역: 가로 ±10칸, 세로 ±13칸 (CMapServerServer::SetManagementRect 0x468220)
@@ -579,25 +648,45 @@ class World {
   }
   hit(a, d, now, kind = 0) {
     const bul = this.attackBul(a, kind);
-    // 치명타면 반드시 맞고 피해 2배, 아니면 명중 판정
-    const crit = F.rand100() < F.critPct(a.dex, d.dex);
-    const defDex = d.mob ? d.dex : Math.floor(d.dex * F.PLAYER_DEX_DEFENCE);
-    if (!a.mob) { this.fxOff(a, 1); this.fxOff(a, 19); }                                // 공격하면 위장이 풀린다 (ProcessUserAttack 0x43a931)
-    if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(a.dex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp, bul }); return; }
-    // 주인공이 맞을 때는 장비의 방어 합만큼 빼고, 최소 1 (CMapServerClient::GetAttack 0x4599b0)
-    let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1) - (d.mob ? 0 : d.armor || 0));
-    if (!d.mob && this.fxOn(d, 8, now)) dmg = Math.max(1, Math.floor(dmg * d.guard / 100));   // 효과 8 (CMapServerClient::GetAttack 0x4102ce)
+    // 치명타면 반드시 맞고 피해 2배, 아니면 명중 판정. 민첩성은 효과를 더한 값 (fightDex)
+    //   주인공 공격 (DoAttackMop 0x46f4f0): 기본 10, CRIT15 무기면 15. 효과 34 Snipe 이고 총이면 + 50 (몬스터 그림 98 이면 + 10)
+    //   몬스터 공격 (CMopServer::Attack 0x47eea0): 기본 10, 몬스터 그림 0x35·0x3b·0x3c 면 25
+    //   방어하는 주인공이 효과 44 Holy Shield 면 민첩성 + ⌊민첩성/5⌋ (0x47f1f4~0x47f45a, 명중 판정에만)
+    const aDex = this.fightDex(a, now), dDex = this.fightDex(d, now);
+    let cp;
+    if (a.mob) cp = F.critPct(aDex, dDex, [0x35, 0x3b, 0x3c].includes(a.info.img) ? 25 : 10);
+    else {
+      const w = a.equip && a.equip[7];
+      cp = F.critPct(aDex, dDex, SK.isCrit15(w) ? 15 : 10, true);
+      if (this.fxOn(a, 34, now) && SK.isGunOnly(w)) cp += d.mob && d.info.img === 98 ? 10 : 50;
+      cp = Math.max(0, Math.min(100, cp));
+    }
+    const crit = F.rand100() < cp;
+    const defDex = !d.mob && this.fxOn(d, 44, now) ? dDex + Math.floor(dDex / 5) : dDex;
+    if (!a.mob) { this.fxOff(a, 1); this.fxOff(a, 19); this.fxOff(a, 35); }            // 공격하면 효과 1 위장·19·35 Hide 가 풀린다 (ProcessUserAttack 0x43a931, 0x43a958)
+    if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(aDex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp, bul }); return; }
+    let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1));
+    if (!d.mob) dmg = this.userDamage(a, d, dmg, now);
     if (a.mob && !d.mob && this.fxOn(d, 6, now)) {             // 효과 6: 체력 대신 마력 (CMopServer::Attack 0x47f58f)
       d.mp = Math.max(0, d.mp - (2 * dmg + Math.floor(dmg / 4))); d.hitAt = now;
       this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, k: kind, crit: crit ? 1 : 0, bul });
       if (!d.mp) this.fxOff(d, 6);
       this.game.sendStat(d); return;
     }
-    if (d.mob && !a.mob) dmg = this.mobDamage(a, dmg, now);
+    if (d.mob && !a.mob) dmg = this.mobDamage(a, dmg, now, d, true);
+    // 효과 45 Damned Armor: 몬스터에게 맞으면 그 피해의 절반을 몬스터에게 돌려준다 (그림 98 몬스터 제외, CMopServer::Attack 0x47f555~)
+    const reflect = a.mob && !d.mob && this.fxOn(d, 45, now) && a.info.img !== 98 ? Math.floor(dmg / 2) : 0;
     this.applyDamage(a, d, dmg, now, { k: kind, crit: crit ? 1 : 0, bul });
+    if (reflect && a.hp > 0 && this.mobs.has(a.id)) this.applyDamage(d, a, reflect, now, { k: 4, reflect: 1 });
   }
   applyDamage(a, d, dmg, now, extra) {
+    if (!d.mob && dmg > 0 && this.fxOn(d, 31, now)) {           // 효과 31 Scarecrow: 처음 세 번은 피해 0, 세 번째에 풀린다 (CMapServerClient::DecreaseHP 0x43922e)
+      if ((d.scarecrow || 0) < 3) { dmg = 0; d.scarecrow = (d.scarecrow || 0) + 1; }
+      if (d.scarecrow > 2) this.fxOff(d, 31);
+    }
+    const before = d.hp;
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
+    if (!d.mob && d.hp < before) this.fxOff(d, 35);              // 효과 35 Hide: 체력이 줄면 풀린다 (0x439349)
     if (!d.mob) { d.dp = Math.min(d.maxDp, (d.dp || 0) + dmg); this.game.sendStat(d); }   // 맞은 만큼 DP 가 찬다 (CMapServerClient::DecreaseHP 0x43935f)
     if (d.mob && !a.mob) { const dd = G.direction(d, a); if (dd !== 5) d.dir = dd; }   // 맞은 몬스터는 공격자를 본다 (DoSkillAttackMop 0x45f8d3)
     this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, ...extra });
@@ -642,7 +731,7 @@ class World {
           if (pa) { pa.pop(); p.path = pa; } else p.target = 0;
         }
       }
-      if (p.fx) { let ch = false; for (const e in p.fx) if (p.fx[e] <= now) { delete p.fx[e]; ch = true; } if (ch) this.sendFx(p); }   // 효과 시간 끝 (OnSkillEffectExpired)
+      if (p.fx) { let ch = false, rc = false; for (const e in p.fx) if (p.fx[e] <= now) { delete p.fx[e]; ch = true; if (SK.RECALC_FX.has(+e)) rc = true; } if (rc) { this.game.recalc(p, false); this.game.sendStat(p); } if (ch) this.sendFx(p); }   // 효과 시간 끝 (OnSkillEffectExpired)
       if (p.cast) {
         const m = this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
         if (!m || !s) p.cast = null;
@@ -668,6 +757,7 @@ class World {
       let running = p.run && p.sp > 0;
       if (running) { const c = F.runCost(p.dex); p.sp = p.sp > c ? p.sp - c : 0; p.regenAt = now + F.REGEN_MS; p.steps = 0; if (++p.spSent % 4 === 0 || !p.sp) this.game.sendStat(p); }
       else p.steps++;
+      this.fxOff(p, 34);                                          // 효과 34 Snipe: 움직이면 풀린다 (ProcessUserMoving 0x43da7a)
       const dir = G.direction(p, n), dur = stepMs(dir, running);
       this.release(p); if (dir !== 5) p.dir = dir; p.x = n.x; p.y = n.y; p.z = n.z; p.nextAt = now + dur; this.take(p);
       this.near(p, { t: 'step', id: p.id, x: n.x, y: n.y, z: n.z, dir: p.dir, dur, run: running ? 1 : 0, last: p.path.length ? 0 : 1 });
@@ -752,15 +842,38 @@ class Game {
       wAtk += Math.max(0, f.atk || 0); armor += Math.max(0, f.def || 0); (f.v || []).forEach((v, q) => { add[q] += v; });
       if (slot === 7 && f.range) range = f.range;
     });
-    STATS.forEach((k, q) => { p[k] = p.base[k] + add[q]; }); p.eqDex = add[STATS.indexOf('dex')]; p.eqSpi = add[STATS.indexOf('spi')];   // 장비 민첩성 합 (T+0x98)
-    // 공격력 = 근력에서 나온 값 + 무기 공격 합 (DoAttackMop 0x46f8a3)
-    p.maxHp = F.hpMax(p.pow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str); p.wAtk = wAtk; p.atk = p.strAtk + wAtk; p.minPct = F.minPct(p.str, p.dex);
+    // 장비를 뺀 능력치 (사용자 +0x4360~0x436c, InitializeEquipmentEffect 0x437825~0x43783f). 여기에 효과가 더해진다:
+    //   효과 69 Focused Spirit: 정신력 + ⌊(레벨 − 10) ÷ 18⌋ × 23 + 10 − 레벨 (rm3944 NewFocusEffect 0x10002b5c)
+    //   효과 75 Godly Shield: 기골 + 5000 (NewGshieldEffect 0x10002d36)
+    const now = Date.now(), on = e => !!(p.fx && p.fx[e] > now);
+    p.bStr = p.base.str; p.bDex = p.base.dex; p.bSpi = p.base.spi; p.bPow = p.base.pow;
+    if (on(69)) p.bSpi = Math.max(0, p.bSpi + Math.floor((p.level - 10) / 18) * 23 + 10 - p.level);
+    if (on(75)) p.bPow += 5000;
+    const eq = {}; STATS.forEach((k, q) => { eq[k] = add[q]; });
+    p.str = p.bStr + eq.str; p.dex = p.bDex + eq.dex; p.spi = p.bSpi + eq.spi; p.pow = p.bPow + eq.pow;
+    p.eqDex = eq.dex; p.eqSpi = eq.spi;
+    // 효과 48 Berserker: 체력 최대·방어·회복에는 기본 기골의 절반 (InitializeHPMax 0x4346d3), 근력 공격은 두 배 (InitializeAttack 0x4349ce)
+    const hpPow = (on(48) ? Math.floor(p.bPow / 2) : p.bPow) + eq.pow;
+    p.maxHp = F.hpMax(hpPow); p.maxMp = F.mpMax(p.spi); p.strAtk = F.attack(p.str) * (on(48) ? 2 : 1); p.wAtk = wAtk; p.atk = p.strAtk + wAtk;
+    p.minPct = F.minPct(p.str, p.dex);
+    if (on(73)) p.minPct = Math.max(p.minPct, 100);   // 효과 73 Bull's Eye: 최소 피해 비율 100 (NewBullseyeEffect 0x100025fd)
+    // 방어(장비 방어 합, +0x430c): 효과 30 Evasion 이면 + ⌊3 × 방어 ÷ 10⌋ (0x437779)
+    if (on(30)) armor += Math.floor(armor * 3 / 10);
     p.armor = armor; p.range = range;
-    if (p.fx && !SK.isGun(p.equip[7])) { let ch = false; for (const e of [10, 11]) if (p.fx[e]) { delete p.fx[e]; ch = true; } if (ch && p.world) p.world.sendFx(p); }   // 총이 아니면 효과 10·11 해제 (0x437b40)
-    p.maxDp = F.dpMax(p.pow); p.dp = Math.min(p.dp || 0, p.maxDp);
+    // 무기가 맞지 않으면 풀리는 효과 (InitializeEquipmentEffect 0x437932~0x437c73). 풀리면 메시지 0xa5
+    if (p.fx) {
+      const w = p.equip[7], drop = [];
+      if (!SK.isSpin(w)) drop.push(49);
+      if (!SK.isGun(w)) drop.push(2, 22);
+      if (!SK.isGunOnly(w)) drop.push(10, 11, 34, 50);
+      let ch = false; for (const e of drop) if (p.fx[e]) { delete p.fx[e]; ch = true; }
+      if (ch && p.world) { p.world.sendFx(p); p.send({ t: 'sys', code: 0xa5, args: [] }); }
+    }
+    p.maxDp = F.dpMax(hpPow); p.dp = Math.min(p.dp || 0, p.maxDp);
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
-  sendStat(p) { if (p.group) this.groups.hpChanged(p); p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
+  sendStat(p) { if (p.fx && p.fx[72] > Date.now()) p.sp = 0;   // 효과 72 Diamond Skin: 기력은 늘 0 (rm3944 NewDskinEffect 0x10002cfc, SendSPInfo 0x439f13)
+    if (p.group) this.groups.hpChanged(p); p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }

@@ -32,12 +32,11 @@ function hitPct(a, d) {
   return Math.min(100, roundEven(a / d * 150));
 }
 // 치명타 확률(%): 피해 2배, 반드시 명중. DoAttackMop (0x46f649), CMopServer::Attack (0x47f02c)
-function critPct(a, d) {
-  const t = a + d; if (!t) return 10;
-  const v = a > d ? 10 + fl(fl(50 * (a - d) / t) / 3) : 10 - fl(fl(50 * (d - a) / t) / 3);
-  return Math.max(0, Math.min(100, v));
-}
-// 피해 굴림: 공격력의 (최소비율~100)% 중 무작위. DoAttackMop (0x46f8d1), CMopServer::Attack (0x47f50a)
+function critPct(a, d, base = 10, raw = false) {
+  const t = a + d; if (!t) return base;
+  const v = a > d ? base + fl(fl(50 * (a - d) / t) / 3) : base - fl(fl(50 * (d - a) / t) / 3);
+  return raw ? v : Math.max(0, Math.min(100, v));
+}// 피해 굴림: 공격력의 (최소비율~100)% 중 무작위. DoAttackMop (0x46f8d1), CMopServer::Attack (0x47f50a)
 const rollDamage = (atk, min) => fl(atk * (fl(Math.random() * (101 - min)) + min) / 100);
 
 // 레벨별 필요 경험치 표. CMapServerServer 생성자 (0x4422f9)
@@ -68,7 +67,6 @@ const bonusTotal = lv => lv * 2 + fl(lv / 100);         // 해당 레벨까지�
 const EXP_CAP_DIV = 10;                                 // 한 마리로 얻는 경험치는 필요 경험치의 1/10까지. CMopServer::Dead (0x478fe7)
 const MAX_LEVEL = 1000;
 const MOB_STEP_MS = 200;                                // 몬스터 대기 단위. 실제로는 처리 주기 250ms 로 올림되어 쓰인다 (world.js 의 MOB_TICK, InitializeMopInstance 0x479479)
-const PLAYER_DEX_DEFENCE = 1.2;                         // 몬스터 공격을 피할 때 주인공 민첩성은 1.2배로 계산. CMopServer::Attack (0x47f448)
 
 // 강화형 몬스터(배치표의 패턴 5): 정신력 1.5배, 민첩성 3배, 기골 4배, 경험치 2.5배, 공격력 2배. CMopServer::LoadMop (0x4774ca)
 function mobStats(info, pattern) {
@@ -98,4 +96,4 @@ const expAfterDeath = exp => fl(exp * 5 / 10);
 const deathDropPct = lv => lv <= 15 ? 0 : Math.min(100, lv < 500 ? fl(lv / 25) : 20);
 const RESPAWN = { map: 21, x: 100, y: 100 };           // 부활 위치: 맵 21 (100,100). ResetUserData (0x43bf56)
 
-module.exports = { dpMax, INV_SLOTS, MONEY_MAX, weightMax, REGEN_MS, SP_MAX, spRegen, runCost, hpRegen, mpRegen, EV_MP_REST, expAfterDeath, deathDropPct, RESPAWN, hpMax, mpMax, attack, minPct, hitPct, critPct, rollDamage, rand100, expTable, classGain, BASE_STAT, bonusForLevelUp, bonusTotal, EXP_CAP_DIV, MAX_LEVEL, MOB_STEP_MS, PLAYER_DEX_DEFENCE, mobStats };
+module.exports = { dpMax, INV_SLOTS, MONEY_MAX, weightMax, REGEN_MS, SP_MAX, spRegen, runCost, hpRegen, mpRegen, EV_MP_REST, expAfterDeath, deathDropPct, RESPAWN, hpMax, mpMax, attack, minPct, hitPct, critPct, rollDamage, rand100, expTable, classGain, BASE_STAT, bonusForLevelUp, bonusTotal, EXP_CAP_DIV, MAX_LEVEL, MOB_STEP_MS, mobStats };
