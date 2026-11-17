@@ -464,6 +464,7 @@ const handlers = {
     else if (cmd === 'OpenWindow' && WIN[n]) UI.open && UI.open(WIN[n]);
   },
   // 선택지 (GetUserResponseByCode)
+  askrevive(m) { UI.msgBox(UI.M0(482).replace('%s', m.name), ['yes', 'no'], y => send({ t: 'revive', yes: y ? 1 : 0 })); },   // 0/0/482 (0x109/0x11)
   ask(m) { UI.ask(m.options, k => send({ t: 'evsel', ev: m.ev, k })); },
   cast(m) {
     const a = ents.get(m.id); if (a) { a.act = 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; }

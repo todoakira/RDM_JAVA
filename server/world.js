@@ -187,6 +187,13 @@ class World {
     const area = s.l >= 10000;
     const ok = area ? (s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF);
+    const u = id ? this.players.get(id) : null;
+    if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
+      const now = Date.now(); if (now < (p.skillAt || 0)) return;
+      const t = u || p;
+      if (t !== p && G.dist(p, t) > s.l) { p.send({ t: 'note', text: '너무 멉니다.' }); return; }
+      p.skillAt = now + SK.USE_MS; this.cureUser(p, t, s, sid, now); return;
+    }
     if (area && s.a === 0 && SK.RANGE_EFFECT_TYPES.has(s.n)) {   // 범위 효과 (UseSkillRangeEffect 0x453b00): 대상은 주인공이거나 없음
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       p.skillAt = now + SK.USE_MS; this.castRangeEffect(p, id ? this.players.get(id) : null, s, sid, now); return;
@@ -402,6 +409,35 @@ class World {
       }
       this.sendFx(u); this.game.sendStat(u); this.near(u, { t: 'hp', id: u.id, hp: u.hp });
     }
+  }
+  // 회복(n=1)·부활(n=44) (UseSkillUserCure 0x448700). 이벤트 0x16 자리에서는 회복 못 함 (메시지 0x7e)
+  //   회복: 쓰는 양 = min(⌊(대상 최대 체력 − 체력) / 2⌋, 시전자 마력). 시전자 마력 − 쓰는 양, 대상 체력 + 2 × 쓰는 양.
+  //         대상이 다른 사람이고 시전자 최대 마력 ≥ 1000 이면 보호막 + ⌊대상 최대 체력/100⌋ × min(50, ⌊정신력/1000⌋), 한도 50%
+  //   부활: 시전자가 지금 체력의 절반을 잃고, 대상이 죽어 있으면 받을지 묻는다 (SendAskRevivalPacket 0x43a6a0, 0x109/0x11)
+  cureUser(p, u, s, sid, now) {
+    if (s.n === 1) {
+      const e = this.eventAt(p.x, p.y); if (e && e[0] === 0x16) { p.send({ t: 'sys', code: 0x7e, args: [] }); return; }
+      if (u.dead) return;
+      const use = Math.min(Math.floor((u.maxHp - Math.min(u.hp, u.maxHp)) / 2), p.mp);
+      p.mp -= use; u.hp = Math.min(u.maxHp, u.hp + 2 * use);
+      if (u !== p && p.maxMp >= 1000) { const cap = Math.floor(u.maxHp / 100) * 50; if ((u.shield || 0) < cap) u.shield = Math.min(cap, (u.shield || 0) + Math.floor(u.maxHp / 100) * Math.min(50, Math.floor(p.spi / 1000))); }
+      this.game.sendStat(p); if (u !== p) this.game.sendStat(u);
+      this.near(u, { t: 'hp', id: u.id, hp: u.hp });
+    } else {
+      const half = Math.floor(p.hp / 2);
+      if (half) { p.hp -= half; this.game.sendStat(p); this.near(p, { t: 'hp', id: p.id, hp: p.hp }); }
+      if (u.dead) { u.revive = { from: p.name, hp: half }; u.send({ t: 'askrevive', name: p.name }); }
+    }
+    this.near(p, { t: 'cast', id: p.id, sk: sid, tid: u.id });
+  }
+  // 부활 대답 (ProcessResponseRevival 0x43d620): 받으면 그 자리에서 살아나 체력 + 받은 양, 거절하면 시전자에게 메시지 0x186
+  reviveAnswer(p, yes) {
+    const r = p.revive; if (!r) return; p.revive = null;
+    if (!yes) { for (const w of this.game.worlds.values()) for (const q of w.players.values()) if (q.name === r.from) q.send({ t: 'sys', code: 0x186, args: [p.name] }); return; }
+    if (!p.dead) return;
+    p.dead = false; p.hp = Math.min(p.maxHp, Math.max(1, r.hp));
+    const x = p.x, y = p.y; this.leave(p); this.enter(p, x, y);
+    this.game.sendStat(p);
   }
   // 나쁜 효과 지우기: 5·12·14·16·18 (UseSkillAlone 0x447b74 과 같은 묶음)
   cureBad(u) { if (u.fx) for (const e of [5, 12, 14, 16, 18]) delete u.fx[e]; }

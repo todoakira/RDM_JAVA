@@ -57,6 +57,7 @@ wss.on('connection', ws => {
     else if (m.t === 'attack') world.attackCmd(player, m.id, m.run);
     else if (m.t === 'evsel') world.script.choose(player, m.ev, m.k);                    // 이벤트 선택지
     else if (m.t === 'evc') world.script.client(player, String(m.name), m.arg);         // 클라이언트가 알리는 이벤트 조건
+    else if (m.t === 'revive') world.reviveAnswer(player, !!m.yes);
     else if (m.t === 'skill') { if (m.id) world.skillCmd(player, Number(m.sk), m.id, m.run); else world.selfSkillCmd(player, Number(m.sk)); }
     else if (m.t === 'gcreate') game.groups.create(player);
     else if (m.t === 'ginvite') game.groups.invite(player, m.name);

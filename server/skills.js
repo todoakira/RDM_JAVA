@@ -165,7 +165,7 @@ const MOB_DEBUFF = {
   7: { e: 4, hit: 'spi', div: 20, self: 4 }, 15: { e: 12, hit: 'spi', div: 20, self: 12 }, 16: { e: 5, hit: 'spi', div: 20, self: 5 },
   17: { e: 13, hit: 'spi', div: 20, self: 13 }, 21: { e: 15, hit: 'spi', div: 20, self: 0 }, 22: { e: 16, hit: 'spi', div: 40, self: 16 },
   37: { e: 16, hit: 'dex', div: 10, self: 16, dmg: true }, 38: { e: 55, hit: 'spi', div: 20, self: 55 }, 54: { e: 43, hit: 'spi', div: 50, self: 43 },
-  57: { e: 47, hit: 'dex', div: 40, self: 47 }, 65: { e: 54, hit: 'dex', div: 20, self: 54 }, 74: { e: 58, hit: 'spi', div: 0, self: 58 },
+  26: { e: 18, hit: 'spi', div: 20, self: 18 }, 57: { e: 47, hit: 'dex', div: 40, self: 47 }, 65: { e: 54, hit: 'dex', div: 20, self: 54 }, 74: { e: 58, hit: 'spi', div: 0, self: 58 },
 };
 // 범위 약화 (UseSkillAttackRange 의 몬스터 분기표 0x45e348/0x45e368): 반경 안 몬스터마다 되돌림 → 정신력 명중 → 효과. 피해는 없다.
 //   n=24 Dispel 은 명중하면 몬스터의 좋은·나쁜 효과를 모두 지운다 (CMopServer::OnGoodSkillExpired·OnBadSkillExpired, 0x45db5b)
