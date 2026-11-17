@@ -209,7 +209,7 @@ function isSpin(e) {
 // 사거리(l)가 10000 이상이면 범위 기술 (UseSkill 0x45ea0b). 효과 종류가 1, 8, 11, 25, 34, 53, 62, 64 면 범위 효과(UseSkillRangeEffect), 나머지는 범위 공격(UseSkillAttackRange 0x454600).
 // 범위 공격: R = l − 10000. 대상을 찍었으면 대상이 R 안에 있어야 하고(아니면 실패), 중심을 대상 자리로 옮기고 반경을 ⌊2R/3⌋ 로 줄인다(374번만 ⌊R/4⌋).
 // 대상이 없으면 시전자 자리를 중심으로 반경 R. 반경 안(거리 계산은 grid.dist)이면서 중심에서 막힘이 없는 몬스터 모두가 대상 (CMopManager::FirstInDistanceEntry, 0x45b92c NoObstacle).
-const RANGE_EFFECT_TYPES = new Set([1, 8, 11, 25, 34, 53, 62, 64]);
+const RANGE_EFFECT_TYPES = new Set([1, 8, 11, 25, 34, 53, 62, 64, 76, 77, 84, 91]);   // 76·77·84·91 은 rm3944 NewUseSkillRangeEffect
 function areaOf(sid, s, hasTarget) {
   const R = s.l - 10000;
   if (!hasTarget) return { R, rad: R };

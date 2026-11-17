@@ -187,6 +187,10 @@ class World {
     const area = s.l >= 10000;
     const ok = area ? s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF);
+    if (area && s.a === 0 && SK.RANGE_EFFECT_TYPES.has(s.n)) {   // 범위 효과 (UseSkillRangeEffect 0x453b00): 대상은 주인공이거나 없음
+      const now = Date.now(); if (now < (p.skillAt || 0)) return;
+      p.skillAt = now + SK.USE_MS; this.castRangeEffect(p, id ? this.players.get(id) : null, s, sid, now); return;
+    }
     if (!ok) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
     if (!m) {                                                   // 대상 없이 쓰는 범위 기술은 내 자리가 중심
       if (!area) return;
@@ -353,6 +357,50 @@ class World {
     if (e === 15) m.voodoo = caster ? caster.name : '';           // Voodoo: 시전자 이름 (+0x15b, CVoodooManager_Add)
     return true;
   }
+  // 범위 효과 (UseSkillRangeEffect 0x453b00, rm3944 NewUseSkillRangeEffect 0x10001740)
+  //   반경 R = l − 10000. 주인공을 찍었으면 그가 R 안에 있어야 하고(아니면 메시지 0x120), 중심을 그 자리로 옮기고 반경 ⌊2R/3⌋ (374번은 ⌊R/4⌋)
+  //   반경 안, 막힘 없고, 살아 있는 주인공 가운데 시전자가 그룹에 있으면 같은 그룹만 (+0x21b0). rm3944 효과(76·77·84)는 그룹이 없으면 자기만
+  castRangeEffect(p, target, s, sid, now) {
+    const ev = this.eventAt(p.x, p.y); if (ev && ev[0] === 0x16) { p.send({ t: 'sys', code: 0x7e, args: [] }); return; }
+    let rad = s.l - 10000, center = { x: p.x, y: p.y, z: p.z };
+    if (target && target !== p) {
+      if (G.dist(p, target) > rad) { p.send({ t: 'sys', code: 0x120, args: [] }); return; }
+      center = { x: target.x, y: target.y, z: target.z }; rad = sid === 374 ? Math.floor(rad / 4) : Math.trunc(rad * 2 / 3);
+    }
+    if (s.n === 53) {                                           // Starlight: 효과 56 이 걸린 동안은 다시 못 씀 (+0x852 & 0x100, 메시지 0x11e)
+      if (this.fxOn(p, 56, now)) { p.send({ t: 'sys', code: 0x11e, args: [] }); return; }
+      (p.fx ||= {})[56] = now + (Math.floor(p.spi / 50) + s.p) * 1000;
+    }
+    const cost = this.payForSkill(p, s); if (cost < 0) return;
+    this.near(p, { t: 'cast', id: p.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
+    const dur = Math.floor(p.spi / 20) + s.p, guard = 100 - Math.min(50, 25 + Math.floor(p.bSpi / 100));
+    const RM = { 76: 61, 77: 62, 84: 70, 91: 76 };
+    for (const u of [...this.players.values()]) {
+      if (u.dead || G.dist(center, u) > rad || !this.noObstacle(center, u)) continue;
+      const e2 = this.eventAt(u.x, u.y); if (e2 && e2[0] === 0x16) continue;
+      if (p.group && u.group !== p.group) continue;
+      if (s.n in RM && !p.group && s.n !== 91 && u !== p) continue;
+      const fx = (e, sec) => { (u.fx ||= {})[e] = now + sec * 1000; (u.fxSk ||= {})[e] = sid; };
+      switch (s.n) {
+        case 1: {                                               // 체력 + ⌊위력 × 마력 소모량 ÷ 100⌋, 정신력 1000 이상이면 보호막 (IncreaseHPShield 0x4391c0)
+          u.hp = Math.min(u.maxHp, u.hp + Math.floor(s.o * cost / 100));
+          if (p.spi >= 1000) { const cap = Math.floor(u.maxHp / 100) * 50; if ((u.shield || 0) < cap) u.shield = Math.min(cap, (u.shield || 0) + Math.floor(u.maxHp / 100) * Math.min(50, Math.floor(p.spi / 1000))); }
+          break;
+        }
+        case 8: this.cureBad(u); break;                         // 나쁜 효과 지우기 (OnBadSkillExpired 0x42e6f0)
+        case 11: fx(8, dur); u.guard = guard; break;            // 효과 8, 값은 시전자 기준
+        case 25: fx(17, dur); u.fxPow17 = p.bSpi; u.sp = 2000; u.dp = u.maxDp; break;   // 효과 17 (값 = 시전자 기본 정신력), 기력 2000, DP 가득
+        case 34: fx(25, dur); break;
+        case 53: fx(42, Math.floor(p.spi / 50) + s.p); u.guard = guard; u.fxPow17 = p.bSpi; this.cureBad(u); u.sp = 2000; u.dp = u.maxDp; break;
+        case 62: if (u !== p) { u.hp = u.maxHp; u.mp = u.maxMp; } break;   // Hope: 시전자 말고 모두 체력·마력 가득
+        case 64: this.fxOff(u, 3); fx(53, dur); break;          // Zephyrus: 효과 3 을 풀고 효과 53
+        default: if (s.n in RM) fx(RM[s.n], dur);
+      }
+      this.sendFx(u); this.game.sendStat(u); this.near(u, { t: 'hp', id: u.id, hp: u.hp });
+    }
+  }
+  // 나쁜 효과 지우기: 5·12·14·16·18 (UseSkillAlone 0x447b74 과 같은 묶음)
+  cureBad(u) { if (u.fx) for (const e of [5, 12, 14, 16, 18]) delete u.fx[e]; }
   castSkill(p, m, s, sid, now) {
     const cost = this.payForSkill(p, s); if (cost < 0) return;   // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
     if (s.a === 1) {                                             // 특수 기술: 반드시 맞음 (0x44f81c)
@@ -721,6 +769,9 @@ class World {
       if ((d.scarecrow || 0) < 3) { dmg = 0; d.scarecrow = (d.scarecrow || 0) + 1; }
       if (d.scarecrow > 2) this.fxOff(d, 31);
     }
+    if (!d.mob && d.shield && dmg > 0) {                         // 보호막 (+0x439c) 이 먼저 깎인다 (DecreaseHP 0x43925e)
+      if (d.shield < dmg) { dmg -= d.shield; d.shield = 0; } else { d.shield -= dmg; dmg = 0; }
+    }
     const before = d.hp;
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
     if (!d.mob && d.hp < before) {
@@ -800,7 +851,8 @@ class World {
       if (!this.canUser(n) || !this.free(n, p.id)) { p.path = []; continue; }
       // 달리면 걸음마다 기력이 들고 회복 시계가 처음부터 다시 돈다. 걸으면 걸음 수만 센다 (ProcessUserMoving 0x43da90~0x43dc35)
       let running = p.run && p.sp > 0;
-      if (running) { const c = F.runCost(p.dex); p.sp = p.sp > c ? p.sp - c : 0; p.regenAt = now + F.REGEN_MS; p.steps = 0; if (++p.spSent % 4 === 0 || !p.sp) this.game.sendStat(p); }
+      if (running && this.fxOn(p, 62, now)) { p.steps = 0; }      // 효과 62 Unlimited Stamina: 달려도 기력이 줄지 않는다 (rm3944 NewStaminaEffect 0x100025c4)
+      else if (running) { const c = F.runCost(p.dex); p.sp = p.sp > c ? p.sp - c : 0; p.regenAt = now + F.REGEN_MS; p.steps = 0; if (++p.spSent % 4 === 0 || !p.sp) this.game.sendStat(p); }
       else p.steps++;
       this.fxOff(p, 34);                                          // 효과 34 Snipe: 움직이면 풀린다 (ProcessUserMoving 0x43da7a)
       const dir = G.direction(p, n), dur = stepMs(dir, running);
