@@ -98,6 +98,12 @@ n = 20 (Dimensional Gate), 23 (Recall), 35 (Warp), 48 (Teleport) 은 이 표에�
 - 그림이 'E'·'N' 이고 기술이 있는 몬스터는 걸리는 대신 범위 기술로 반격한다 (몬스터 기술이 아직 없어 옮기지 않음).
 - 주인공 쪽: 효과 58 이면 기술 못 씀, 43 이면 특수 기술만 (ProcessUseSkill 0x43c44c). 방어자 효과 4·43 이면 상대 명중 + 25.
 
+## 범위 약화 (UseSkillAttackRange 몬스터 분기표 0x45e348 / 0x45e368)
+
+반경 안 몬스터마다 되돌림(그림 0x5a) → 정신력 명중 → 효과. 피해 없음.
+n=15 → 효과 12 (/20), 17 → 13 (/10), 22 → 16 (/20), 38 → 55 (/20), 54 → 43 (/20).
+n=24 Dispel: 명중하면 몬스터의 좋은·나쁜 효과를 모두 지움 (OnGoodSkillExpired 0x47bde0, OnBadSkillExpired 0x47bca0).
+
 ## 범위 효과 (UseSkillRangeEffect 0x453b00, rm3944 NewUseSkillRangeEffect 0x10001740)
 
 반경 안의 주인공(시전자가 그룹이면 같은 그룹만, 막힘 없음, 이벤트 0x16 자리 제외)에게. 시전자 자리가 이벤트 0x16 이면 메시지 0x7e.

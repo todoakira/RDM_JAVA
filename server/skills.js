@@ -167,6 +167,12 @@ const MOB_DEBUFF = {
   37: { e: 16, hit: 'dex', div: 10, self: 16, dmg: true }, 38: { e: 55, hit: 'spi', div: 20, self: 55 }, 54: { e: 43, hit: 'spi', div: 50, self: 43 },
   57: { e: 47, hit: 'dex', div: 40, self: 47 }, 65: { e: 54, hit: 'dex', div: 20, self: 54 }, 74: { e: 58, hit: 'spi', div: 0, self: 58 },
 };
+// 범위 약화 (UseSkillAttackRange 의 몬스터 분기표 0x45e348/0x45e368): 반경 안 몬스터마다 되돌림 → 정신력 명중 → 효과. 피해는 없다.
+//   n=24 Dispel 은 명중하면 몬스터의 좋은·나쁜 효과를 모두 지운다 (CMopServer::OnGoodSkillExpired·OnBadSkillExpired, 0x45db5b)
+const AREA_DEBUFF = {
+  15: { e: 12, hit: 'spi', div: 20, self: 12 }, 17: { e: 13, hit: 'spi', div: 10, self: 13 }, 22: { e: 16, hit: 'spi', div: 20, self: 16 },
+  24: { e: 0, hit: 'spi', div: 20, self: 0, dispel: true }, 38: { e: 55, hit: 'spi', div: 20, self: 55 }, 54: { e: 43, hit: 'spi', div: 20, self: 43 },
+};
 // 몬스터 쪽 막음 (CMopServer::InitializeMopInstance 0x4793b0~0x4793d9, DoSkillEffect 0x479630):
 //   +0x2cc: 배치 종류 5 (강화형) 또는 그림 0x50·0x54·0x57·0x61·0x62 → 약화가 걸리지 않음. 몬스터에게 효과 23 이 있어도 걸리지 않음
 //   +0x2d0: 그림 0x52·0x5d → 지속이 늘 5초.  +0x2d8: 그림 0x5a → 되돌림
@@ -223,4 +229,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

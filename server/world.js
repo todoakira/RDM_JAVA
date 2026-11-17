@@ -185,7 +185,7 @@ class World {
     const m = id ? this.mobs.get(id) : null, s = SK.get(sid);
     if (p.dead || !s || !this.skillReady(p, sid, s)) return;
     const area = s.l >= 10000;
-    const ok = area ? s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))
+    const ok = area ? (s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF);
     if (area && s.a === 0 && SK.RANGE_EFFECT_TYPES.has(s.n)) {   // 범위 효과 (UseSkillRangeEffect 0x453b00): 대상은 주인공이거나 없음
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
@@ -313,8 +313,10 @@ class World {
     this.fxOff(p, 1); this.fxOff(p, 19);                                            // 위장이 풀린다 (0x454956)
     if (target) { const d = G.direction(p, target); if (d !== 5) p.dir = d; }
     this.near(p, { t: 'cast', id: p.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
+    const adb = s.a === 0 ? SK.AREA_DEBUFF[s.n] : null;
     for (const m of [...this.mobs.values()]) {
       if (m.hp <= 0 || G.dist(center, m) > rad || !this.noObstacle(center, m)) continue;
+      if (adb) { this.debuffOne(p, m, s, sid, adb, now); continue; }
       let dmg;
       if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o);            // 특수: 반드시 맞음 (0x45d409)
       else {
@@ -328,7 +330,8 @@ class World {
   mobDex(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.dex * 0.7) : m.dex; }
   mobSpi(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.spi * 0.7) : m.spi; }
   // 몬스터 약화 기술 (skills.js 의 MOB_DEBUFF)
-  castDebuff(p, m, s, sid, db, cost, now) {
+  castDebuff(p, m, s, sid, db, cost, now) { this.debuffOne(p, m, s, sid, db, now, cost); }
+  debuffOne(p, m, s, sid, db, now, cost = 0) {
     const msp = this.mobSpi(m, now);
     if (SK.mobReflect(m)) {
       const r = Math.max(20, Math.min(80, Math.floor(Math.min(msp, 7000) * 3 / 350) + 20));
@@ -345,6 +348,7 @@ class World {
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(cost, s.o)), now, m), now, { k: 2, sk: sid });
       if (m.hp <= 0) return;
     } else this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
+    if (db.dispel) { m.fx = {}; m.voodoo = ''; return; }
     this.mobEffect(m, db.e, (db.div ? Math.floor(p.spi / db.div) : 0) + s.p, p, now);
   }
   // 몬스터에게 효과 걸기 (CMopServer::DoSkillEffect 0x479630). 막히면 false
