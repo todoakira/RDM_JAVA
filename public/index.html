@@ -6,7 +6,7 @@
 <title>레드문 JS</title>
 <link rel="icon" href="data:,">
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #eee; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; --uf: Gulim, GulimChe, 굴림, Dotum, "Malgun Gothic", sans-serif; font-family: var(--uf); font-size: 12px; color: #eee; }
   canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
   #hud { position: fixed; top: 8px; left: 10px; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; line-height: 1.5; }
   #hud b { color: #ffd27a; }
@@ -16,7 +16,7 @@
   /* 화면 대화 줄 (Main.dll 0x10010d2f): 550×350 판에 20줄, 줄 간격 17, 글꼴 높이 12. 판은 (5, 210) 에 붙여 마지막 줄 아래가 y 550.
      줄마다 100 장(50ms × 100 = 5초) 지나면 사라진다 (0x1001c120). 글은 어두운 테두리(0x0a0a0a)로 그린다 */
   #chat { position: fixed; width: 550px; height: 340px; --x: 5px; --y: 210px; overflow: hidden; pointer-events: none; z-index: 5; }
-  #log { position: absolute; left: 0; bottom: 0; width: 550px; font: 12px/17px Gulim, GulimChe, 굴림, sans-serif; color: #ffffff; pointer-events: none; }
+  #log { position: absolute; left: 0; bottom: 0; width: 550px; font: 12px/17px var(--uf); color: #ffffff; pointer-events: none; }
   #log > div { height: 17px; white-space: nowrap; overflow: hidden; text-shadow: 1px 0 #0a0a0a, -1px 0 #0a0a0a, 0 1px #0a0a0a, 0 -1px #0a0a0a; }
   /* 종류별 색 (0x1001c097 표, COLORREF 를 RGB 로): 일반 흰색, 외침 노랑, 귓속말 #0080ff, 그룹 초록, 군단 #f09c00, 시스템 빨강, 7번 #ffc800 */
   #log .sys { color: #ff0000; } #log .shout { color: #ffff00 !important; } #log .whisper { color: #0080ff !important; } #log .grp { color: #00ff00 !important; } #log .army { color: #f09c00; } #log .k7 { color: #ffc800; } #log .who { color: inherit !important; }
@@ -30,19 +30,19 @@
   #ls .sb { position: absolute; left: 250px; width: 300px; height: 24px; cursor: pointer; }
   #ls .sb:hover { background-position: 0 -24px; } #ls .sb:active { background-position: 0 -48px; }
   #ls .dlg { position: absolute; display: none; background-repeat: no-repeat; }
-  #ls .fld { position: absolute; height: 20px; padding: 0 4px; background: transparent; border: 0; outline: none; color: #e8e0b0; font: 13px sans-serif; }
+  #ls .fld { position: absolute; height: 20px; padding: 0 4px; background: transparent; border: 0; outline: none; color: #e8e0b0; font: 13px var(--uf); }
   #ls .okb, #ls .cab { position: absolute; width: 125px; height: 30px; cursor: pointer; background-position: 0 0; }
   #ls .okb { background-image: url(assets/int/32.png); } #ls .cab { background-image: url(assets/int/1.png); }
   #ls .okb:hover, #ls .cab:hover { background-position: 0 -30px; }
   #ls .body { position: absolute; width: 220px; height: 387px; background-repeat: no-repeat; background-position: 0 0; }
   #slots .slot { position: absolute; top: 31px; width: 220px; height: 387px; cursor: pointer; }
-  #slots .nm { position: absolute; left: 0; top: 339px; width: 218px; height: 46px; text-align: center; color: #e0c070; font: 13px sans-serif; line-height: 18px; padding-top: 5px; box-sizing: border-box; }
+  #slots .nm { position: absolute; left: 0; top: 339px; width: 218px; height: 46px; text-align: center; color: #e0c070; font: 13px var(--uf); line-height: 18px; padding-top: 5px; box-sizing: border-box; }
   #classes { position: absolute; left: 0; top: 0; }
   #classes .cf { position: absolute; width: 120px; height: 120px; cursor: pointer; background-repeat: no-repeat; background-position: 0 0; }
   #classes .cf.on, #classes .cf:hover { background-position: -120px 0; }
-  #ccDesc { position: absolute; left: 268px; top: 189px; width: 355px; height: 333px; padding: 6px; box-sizing: border-box; color: #e0c070; font: 13px sans-serif; line-height: 1.5; white-space: pre-line; overflow: hidden; }
-  #startpos { position: absolute; left: 270px; top: 527px; color: #aaa; font: 12px sans-serif; }
-  #msg { position: absolute; left: 0; right: 0; top: 584px; text-align: center; color: #e0c070; font: 13px sans-serif; }
+  #ccDesc { position: absolute; left: 268px; top: 189px; width: 355px; height: 333px; padding: 6px; box-sizing: border-box; color: #e0c070; font: 13px var(--uf); line-height: 1.5; white-space: pre-line; overflow: hidden; }
+  #startpos { position: absolute; left: 270px; top: 527px; color: #aaa; font: 12px var(--uf); }
+  #msg { position: absolute; left: 0; right: 0; top: 584px; text-align: center; color: #e0c070; font: 13px var(--uf); }
   /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
   #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
   .mb { position: absolute; top: 8px; height: 20px; cursor: pointer; background-position: 0 -20px; }   /* 단추 그림 세 칸: 보통 20~40, 강조 40~60, 눌림 0~20 */
@@ -76,7 +76,7 @@
   .clb { position: absolute; width: 21px; height: 21px; background: url(assets/int/52.png) 0 0; cursor: pointer; } .clb:hover { background-position: 0 -21px; }
   .pbtn { position: absolute; cursor: pointer; background-position: 0 0; } .pbtn:active { background-position: 0 100%; }
   .pxl { cursor: pointer; padding-left: 2px; } .pxl.on { background: rgba(255, 210, 122, .3); }
-  .xwin { position: absolute; box-sizing: border-box; border: 0; padding: 0 2px; background: transparent; color: #fff; font: 12px sans-serif; outline: none; }
+  .xwin { position: absolute; box-sizing: border-box; border: 0; padding: 0 2px; background: transparent; color: #fff; font: 12px var(--uf); outline: none; }
   .mbtn { position: absolute; height: 15px; cursor: pointer; } .mbtn:hover { background-position: 0 -15px !important; }
   .gslot { position: absolute; left: 0; width: 60px; height: 60px; background: url(assets/int/59.png); }
   .gslot .face { position: absolute; left: 5px; top: 5px; width: 50px; height: 50px; }

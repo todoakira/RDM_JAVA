@@ -4,7 +4,7 @@ const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 const CH = 16;                 // 바닥 캐시 한 덩어리의 크기(타일)
 const ANIM_MS = 50;            // 동작표 한 칸의 재생 시간
-const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+const FONT = 'Gulim, GulimChe, 굴림, Dotum, "Malgun Gothic", sans-serif';   // 원작 글꼴은 굴림 쪽 (도움말 창 글꼴 높이 -12, 대화 줄 0x1000de8c)
 
 let map = null, ws = null, myId = 0, safeStr = '', stat = null;
 let zoom = innerHeight >= 1300 ? 2 : 1, runToggle = false, shift = false;

@@ -21,7 +21,7 @@ const ArmyUI = (() => {
   function btn(d, img, x, y, w, h, fn, label) {
     const b = document.createElement('div'); b.className = 'pbtn';
     b.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;background-image:url(assets/int/${img}.png)`;
-    if (label) { b.textContent = label; b.style.cssText += ';color:#fff;font:12px sans-serif;line-height:' + h + 'px;text-align:center;text-shadow:0 0 2px #000'; }
+    if (label) { b.textContent = label; b.style.cssText += ';color:#fff;font:12px var(--uf);line-height:' + h + 'px;text-align:center;text-shadow:0 0 2px #000'; }
     b.onclick = fn; d.appendChild(b); return b;
   }
   function text(d, x, y, w, h, t, cls) { const s = document.createElement('div'); s.className = 'txt ' + (cls || ''); s.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;color:#fff`; s.textContent = t || ''; d.appendChild(s); return s; }
@@ -51,7 +51,7 @@ const ArmyUI = (() => {
       const q = input(d, 97, 21, 75, 16, 10);
       btn(d, 531, 186, 14, 35, 29, () => A({ a: 'reserves', like: q.value.trim() }));
       text(d, 26, 47, 94, 16, M0(0x192)); text(d, 120, 47, 42, 16, M0(0x193)); text(d, 162, 47, 58, 16, M0(0x194));
-      const l = document.createElement('div'); l.id = 'arResList'; l.style.cssText = 'position:absolute;left:26px;top:72px;width:194px;height:68px;overflow-y:auto;font:12px/17px sans-serif;color:#fff'; d.appendChild(l);
+      const l = document.createElement('div'); l.id = 'arResList'; l.style.cssText = 'position:absolute;left:26px;top:72px;width:194px;height:68px;overflow-y:auto;font:12px/17px var(--uf);color:#fff'; d.appendChild(l);
       btn(d, 553, 95, 154, 60, 20, () => hide(d));
     }
     const l = el('arResList'); l.innerHTML = '';
