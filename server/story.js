@@ -60,9 +60,13 @@ class Story {
   constructor(game) { this.game = game; }
   // 시스템 메시지 (SendMessagePacket 0x43fc10 → 패킷 0x123, 클라이언트는 Message.ctf 0/2 의 그 번호 줄을 보인다)
   msg(p, code, ...args) { p.send({ t: 'sys', code, args }); }
+  // 보조 퀘스트가 있으면 그것이 먼저다 (SendQuestInfo 0x4254e0: 보조 퀘스트 줄을 보내고 끝)
   sendInfo(p, open) {
-    p.send({ t: 'quest', lines: questInfo(p), items: (p.qitems || []).map(e => e && this.view(e)), open: open ? 1 : 0 });
+    const sub = this.game.subq && this.game.subq.lines(p);
+    p.send({ t: 'quest', lines: sub ? [sub.title, sub.text] : questInfo(p), time: sub ? sub.time : '', items: (p.qitems || []).map(e => e && this.view(e)), open: open ? 1 : 0 });
   }
+  // 이야기 퀘스트 창이 떠 있는가 (+0x451c: SendQuestInfo 가 이야기 퀘스트 줄을 보낼 때 1)
+  windowOpen(p) { return !(this.game.subq && this.game.subq.lines(p)) && questInfo(p)[0] !== 0; }
   view(e) { const f = this.game.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0 }; }
   mail(p, key) {
     const m = MAIL[key]; if (!m) return;

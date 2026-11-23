@@ -332,8 +332,10 @@ const UI = (() => {
   function setQuest(q) { quest = q; drawQuest(); if (q.open) openWin('winQuest'); }
   function drawQuest() {
     const box = el('winQuest'); if (!box || !quest) return;
-    el('qtitle').textContent = m7(quest.lines[0]);
-    el('qtext').textContent = m7(quest.lines[1]);
+    const tx = v => typeof v === 'string' ? v : m7(v);                 // 보조 퀘스트 줄은 서버가 채워 글로 보낸다
+    el('qtitle').textContent = tx(quest.lines[0]);
+    el('qtext').textContent = tx(quest.lines[1]);
+    el('qtime').textContent = quest.time || '';                        // 남은 분 ("%13u %s", 0/7/0xf4)
     const cs = el('qcells'); cs.innerHTML = '';
     (quest.items || []).forEach((it, k) => { const c = cell(it, 67 + k * 41, 159, false); if (it) c.title = it.name + (it.desc ? '\n' + it.desc : ''); cs.appendChild(c); });
   }

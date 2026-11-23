@@ -129,7 +129,15 @@ class Events {
       const w = words(a), cmd = w[0];
       if (cmd === 'Jmp') { if (Number(w[1]) > 0) jump += Number(w[1]); }   // 여러 번이면 더한다, 0 이하면 1 (0x42639b, 0x4280cc)
       else if (cmd === 'ChatOneByCode' || cmd === 'ChatAllByCode') {
-        const who = this.npcByRef(w[1], npc), text = line(w[2]); if (!text) continue;
+        let text = line(w[2]);
+        // 보조 퀘스트 특수 대사: 목표·보상을 정하고 %s 를 채운다 (0x88 0x8c 0x8d 0x8f 0x91 0x95 0x96)
+        if (cmd === 'ChatOneByCode' && p && this.w.game.subq.isSpecial(Number(w[2]))) {
+          const r = this.w.game.subq.chatText(p, Number(w[2]));
+          if (r && r.end) { jump += 100; continue; }                   // 0x95 에서 NPC 를 못 고르면 대본을 끝낸다
+          if (r === null) continue;
+          text = r;
+        }
+        const who = this.npcByRef(w[1], npc); if (!text) continue;
         const msg = { t: 'chat', id: who ? who.id : 0, name: who ? who.name : (w[1] || '').replace(/^\+/, '').replace(/_\d+$/, ''), text, npc: 1 };
         if (cmd === 'ChatOneByCode' && p) p.send(msg); else if (who) this.w.near(who, msg); else if (p) p.send(msg);
       } else if (cmd === 'GetUserResponseByCode' && p) {
@@ -143,8 +151,15 @@ class Events {
         const dst = this.w.game.world(Number(w[1]));
         if (dst) { const from = p.world; from.leave(p); dst.enter(p, Number(w[2]), Number(w[3])); }
       }
+      else if (cmd === 'BeginRandEvent' && p) {                      // 번호 중 하나를 골라, 그 이벤트의 지금 조건이 EventTriggered 면 진행 (DoEventIfProper)
+        const ids = w.slice(1).map(Number).filter(x => x >= 0); if (!ids.length) continue;
+        const j = ids[Math.floor(Math.random() * ids.length)];
+        if (SCRIPT[j] && (SCRIPT[j].map === this.w.mapId || SCRIPT[j].map === ANY_MAP) && firstWord(this.cond(j, this.stepOf(p, j))) === 'EventTriggered') { (p.evNpc ||= {})[j] = npc; this.run(p, j, this.stepOf(p, j)); }
+      }
+      else if (/^BeginSubQuest[123]$/.test(cmd) && p) this.w.game.subq.begin(p, Number(cmd.slice(-1)));
+      else if (cmd === 'StopSubQuestAndResume' && p) this.w.game.subq.stopAndResume(p);
       else if (p && this.w.game.story.action(p, cmd, w)) { /* 퀘스트 행동 */ }
-      // 그룹 만들기·해산, 보너스 초기화(InitBonus, 그 조건 WantToInitBonus 는 이 서버판에서 어디서도 걸리지 않는다), 보조 퀘스트(BeginSubQuest*)는 아직
+      // 그룹 만들기·해산, 보너스 초기화(InitBonus, 그 조건 WantToInitBonus 는 이 서버판에서 어디서도 걸리지 않는다)는 아직
     }
     return jump > 0 ? jump : 1;
   }

@@ -37,6 +37,7 @@ const G = require('./grid');
 const SK = require('./skills');
 const { Events } = require('./events');
 const EQUIP = require('./equip');
+const SUBQ = require('./subquest');
 const STORY = require('./story');
 const { Groups } = require('./group');
 const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
@@ -75,7 +76,7 @@ class World {
     for (const n of sv.npcs) {
       if (!(spriteOf(n.img) in game.chrIndex)) continue;
       const t = this.findFirstEmptyPlace(n.rect, q => this.canUser(q) && !this.occ.has(this.key(q))); if (!t) continue;
-      const npc = { id: game.nextId++, npc: 1, name: n.name, chr: spriteOf(n.img), x: t.x, y: t.y, z: t.z, dir: 2, event: n.event };
+      const npc = { id: game.nextId++, npc: 1, name: n.name, img: n.img, chr: spriteOf(n.img), x: t.x, y: t.y, z: t.z, dir: 2, event: n.event };
       this.npcs.push(npc); this.occ.set(this.key(t), npc.id);
     }
     let skipped = 0, seq = 0;
@@ -635,7 +636,14 @@ class World {
     p.talk = 0; p.path = [];
     // NPC의 이벤트 번호는 맵의 이벤트가 아니라 공용 표(EventInfo.rse)를 가리킨다 (CMapServerClient::ProcessEvent 0x41ee70)
     const e = this.game.gEvents[n.event], kind = e ? e[0] : 0;
+    this.game.subq.onNpc(p, n);                                         // 보조 퀘스트: 맡긴 NPC 에게 돌아왔는지, 전할 NPC 인지 (그 뒤에도 원래 일은 한다)
     if (this.storyNpc(p, n, kind, e)) return;
+    if (this.game.subq.tryStart(p, n, kind)) return;                    // 보조 퀘스트를 걸면 원래 일은 StopSubQuestAndResume 때 한다
+    this.npcAction(p, n);
+  }
+  // NPC 의 원래 일 (상점·병원·은행·교환소)
+  npcAction(p, n) {
+    const e = this.game.gEvents[n.event], kind = e ? e[0] : 0;
     if ((SHOP_KINDS.includes(kind) || kind === 27 || kind === 28) && this.game.shops[e[1]]) { this.game.openShop(p, e[1], n); return; }
     if (kind === 8 || kind === 81) { this.game.cure(p, n); return; }
     if (kind === 6 || kind === 80) { this.game.openBank(p, n); return; }
@@ -951,7 +959,7 @@ class World {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);
       this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
-      if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); }
+      if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); this.game.subq.onKill(a, d); }
     } else {
       if (d.trade) this.game.trades.cancel(d);
       d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
@@ -966,6 +974,7 @@ class World {
     if (!this.players.size) { this.mobTickAt = now + MOB_TICK; return; }
     this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
+      if (p.subq && p.subq.state) { this.game.subq.tick(p, now - (p.subqAt || now)); p.subqAt = now; } else p.subqAt = now;
       if (p.dead) continue;
       this.script.tickPlayer(p, now); if (p.world !== this) continue;
       // 자연 회복: 10초마다. 기력이 덜 찼으면 기력만, 가득 찼으면 체력, 그다음 마력
@@ -1048,7 +1057,7 @@ const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y,
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
+    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -1298,10 +1307,11 @@ class Game {
   }
   // 한 마리로 얻는 경험치는 필요 경험치의 1/10까지. 레벨이 오르면 경험치는 0부터 다시 시작한다
   // 경험치 얻기 (DoExperimentUp 0x438e70): 한 번에 필요 경험치의 1/10 까지, 남은 만큼까지. 실제로 얻은 양을 돌려준다
-  gainExp(p, exp) {
+  //  div: 한 번에 얻는 한계 = 필요 경험치 / div (몬스터 10, 보조 퀘스트 보상 1)
+  gainExp(p, exp, div = F.EXP_CAP_DIV) {
     if (p.level >= F.MAX_LEVEL) return 0;
     const need = F.expTable[p.level];
-    let gain = Math.min(exp, Math.max(1, Math.floor(need / F.EXP_CAP_DIV)));
+    let gain = Math.min(exp, Math.max(1, Math.floor(need / div)));
     if (p.exp < need) gain = Math.min(gain, need - p.exp);
     p.exp += gain; p.send({ t: 'exp', gain });
     if (p.exp >= need) {
@@ -1357,6 +1367,7 @@ class Game {
     p.money += gain; this.sendInv(p); this.sendStat(p);
   }
   // ---------- 아이템 ----------
+  storyWindowOpen(p) { return this.story.windowOpen(p); }
   // 분류 5의 0번은 돈이다. 원작에 화폐 단위 이름은 없고 그냥 '돈'이다 (DB 칸 Money). 시그너스에서 쓰는 돈은 따로 있다 (DB 칸 SigMoney, 아직 없음)
   itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : (this.items[k] && this.items[k][i]) || null; }
   sendInv(p) {
