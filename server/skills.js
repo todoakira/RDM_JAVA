@@ -182,6 +182,14 @@ const MOVING = {
   25: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X, 45: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X,
   323: (X, c) => 3 * Math.floor(X / 4) + 2 * c, 342: (X, c) => 2 * Math.floor(X / 4) + 2 * c, 362: X => Math.floor(X / 2) + 3 * X,
 };
+// 이동 기술 (UseSkillMove 0x447460 와 rm3944 NewMapFix6 0x10003882). 맵 번호 = 서버의 +0x32c4
+//   20 Dimensional Gate: 이 맵들에서만 (아니면 0x6c). 열 곳도 이 맵들이어야 함 (아니면 0x6d)
+//   23 Recall: 이 맵들에서는 못 씀 (0x72), 불려 올 사람이 이 맵들에 있으면 0x71
+//   48 Teleport: 이 맵들에서는 못 씀 (0xc3)
+const R = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+const GATE_MAPS = new Set([0, 1, 2, 3, 0x15, 0x1d, 0x24, 0x25, 0x26, 0x27, 0x47, 0x4f, 0x57, 0x5d, 0x5e, 0x5f, 0x60, ...R(0x89, 0x8d), 0x12c, 0x131]);
+const RECALL_NO = new Set([0x29, 0x2a, 0x44, 0x48, 0x4c, 0x4d, 0x4e, ...R(0x53, 0x56), ...R(0xb1, 0xb3), ...R(0x30, 0x43), ...R(0x6e, 0x83), ...R(0x58, 0x5c)]);
+const TELE_NO = new Set([0x29, 0x2a, 0x4e, 0x44, 0xb3, ...R(0x30, 0x43), ...R(0x6e, 0x83), ...R(0x58, 0x5c)]);
 // 몬스터 쪽 막음 (CMopServer::InitializeMopInstance 0x4793b0~0x4793d9, DoSkillEffect 0x479630):
 //   +0x2cc: 배치 종류 5 (강화형) 또는 그림 0x50·0x54·0x57·0x61·0x62 → 약화가 걸리지 않음. 몬스터에게 효과 23 이 있어도 걸리지 않음
 //   +0x2d0: 그림 0x52·0x5d → 지속이 늘 5초.  +0x2d8: 그림 0x5a → 되돌림
@@ -238,4 +246,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

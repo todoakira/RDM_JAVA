@@ -114,6 +114,18 @@ n = 20 (Dimensional Gate), 23 (Recall), 35 (Warp), 48 (Teleport) 은 이 표에�
 - 362 Lunar Blade: ⌊X/2⌋ + 3X (0x453824)
 - 382 Piercing Arrow: (⌊기본 민첩성/900⌋ + 1) × 무기 공격 × 3/2 + T+0x30 뒤에 활 레벨 갈래 (0x45308c~) — 아직
 
+## 이동 기술 (UseSkillMove 0x447460, rm3944 NewMapFix6 0x10003882)
+
+- 쓰면 서버는 맵만 보고 클라이언트에 입력 창을 열게 한다: 20 Gate → 0xff (글 0/0/185), 23 Recall → 0x101 (0/0/186), 48 Teleport → 0x107 (0/0/197).
+  못 쓰는 맵이면 0x6c / 0x72 / 0xc3. 맵 목록은 server/skills.js 의 GATE_MAPS, RECALL_NO, TELE_NO (서버 +0x3548 = 1, +0x31d0 = 0 인 보통 경우).
+- Gate (ProcessUseGateSkill 0x43c860): "맵 x y". 열 곳도 GATE_MAPS 여야 (0x6d), 같은 맵이면 20 칸 이상 (0x6f), 한 사람 하나 (AddGate, 0x70).
+  문 자리는 시전자 둘레 3×3 의 설 수 있고 이동 이벤트가 아닌 칸 (SelectGatePosition 0x43ccb0). 이동 이벤트(종류 1)로 생기고 기술 정보 p 밀리초 뒤에 사라짐 (+0x4480, OnTimer 0x43e8e6, RemoveGate).
+  원작은 맵 이름을 클라이언트가 번호로 바꿔 보낸다. 여기서는 번호 또는 변환된 맵 이름을 받는다.
+- Recall (ProcessUseRecallSkill 0x43ceb0): 이름으로 찾아 0x103 을 보내고 (0/0/187 로 묻기), 불려 올 사람의 맵이 RECALL_NO 면 0x71. 대답 (ProcessResponseRecall 0x43d580): 받으면 맵에 들어온 지 5초(+0x4348 ≥ 5000) 지났을 때 시전자 자리로, 거절하면 시전자에게 0x6e.
+- Teleport (ProcessTeleportationTo 0x43d150): 그 사람 자리로 (0x276 → SendChangeMapPacket).
+- Warp (효과 종류 35, ProcessUseSkill 0x43c47c): 클라이언트가 고른 자리로 바로 (ProcessUseWarpSkill 0x43d2f0). 맵에 들어온 지 5초가 지나야. 원작 서버는 거리를 보지 않는다.
+- 돌진 25·45 도 같은 함수로 시전자를 옮긴다 (UseSkill 0x45f1c3, FindWarpPIS: 설 수 없으면 시전자 쪽으로 한 칸씩 당김).
+
 ## 범위 약화 (UseSkillAttackRange 몬스터 분기표 0x45e348 / 0x45e368)
 
 반경 안 몬스터마다 되돌림(그림 0x5a) → 정신력 명중 → 효과. 피해 없음.

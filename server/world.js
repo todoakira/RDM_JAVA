@@ -69,7 +69,7 @@ class World {
     let safe = '';
     for (let i = 0; i < this.w * this.h; i++) { const e = this.ev && this.events[this.ev[i]]; safe += e && e[0] === EV_SAFE ? '1' : '0'; }
     this.safeStr = safe;
-    this.players = new Map(); this.mobs = new Map(); this.npcs = []; this.occ = new Map(); this.timers = []; this.ground = new Map();
+    this.players = new Map(); this.mobs = new Map(); this.npcs = []; this.occ = new Map(); this.timers = []; this.gates = new Map(); this.gateSeq = 0; this.ground = new Map();
     this.mobTickAt = Date.now() + MOB_TICK;
     for (const n of sv.npcs) {
       if (!(spriteOf(n.img) in game.chrIndex)) continue;
@@ -151,6 +151,7 @@ class World {
   enter(p, x, y) {
     const want = x === undefined ? { x: this.spawn[0], y: this.spawn[1], z: 1 } : { x, y, z: 1 };
     const t = this.nearUser(want, 10, true) || this.nearUser(want, 10) || this.nearUser({ x: this.spawn[0], y: this.spawn[1], z: 1 }, 40) || want;
+    p.enteredAt = Date.now();                                  // 맵에 들어온 뒤 시간 (+0x4348, OnTimer 가 늘린다)
     p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.cast = null; p.nextAt = 0;
     this.players.set(p.id, p); this.take(p);
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
@@ -207,10 +208,85 @@ class World {
     p.cast = { sid, id }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0;
   }
   // 자기에게 쓰는 기술 (사거리 0)
+  // ---------- 이동 기술 ----------
+  // 쓰면 서버는 맵만 보고 입력 창을 열게 한다 (UseSkillMove 0x447460: 0xff Gate, 0x101 Recall, 0x107 Teleport). 창 글은 0/0/185, 186, 197
+  moveSkillAsk(p, s) {
+    const id = this.mapId;
+    if (s.n === 20 && !SK.GATE_MAPS.has(id)) return p.send({ t: 'sys', code: 0x6c, args: [] });
+    if (s.n === 23 && SK.RECALL_NO.has(id)) return p.send({ t: 'sys', code: 0x72, args: [] });
+    if (s.n === 48 && SK.TELE_NO.has(id)) return p.send({ t: 'sys', code: 0xc3, args: [] });
+    p.send({ t: 'mvask', kind: s.n });
+  }
+  skillOf(p, n) { for (const id of SK.list(p)) { const s = SK.get(id); if (s && s.a === 0 && s.n === n) return [id, s]; } return [0, null]; }
+  // 입력 창의 대답 (ProcessUseGateSkill 0x43c860, ProcessUseRecallSkill 0x43ceb0, ProcessTeleportationTo 0x43d150)
+  moveSkillAnswer(p, n, text) {
+    if (p.dead) return;
+    const [sid, s] = this.skillOf(p, n); if (!s) return;
+    const now = Date.now(); text = String(text || '').trim();
+    if (n === 20) {                                             // Gate: "맵 x y". 같은 맵이면 20 칸 이상 떨어져야 (0x6f), 한 사람 하나 (0x70)
+      const [mn, xs, ys] = text.split(/\s+/), x = parseInt(xs, 10), y = parseInt(ys, 10);
+      let to = /^\d+$/.test(mn || '') ? +mn : -1;
+      if (to < 0) for (const [mid, w] of this.game.worlds) if (w.map && w.map.name === mn) to = mid;
+      const tw = to >= 0 && this.game.world(to);
+      if (!tw || !SK.GATE_MAPS.has(to) || !(x > 0 && y > 0) || !tw.canUser({ x, y, z: 1 })) return p.send({ t: 'sys', code: 0x6d, args: [] });
+      if (to === this.mapId && G.dist(p, { x, y, z: 1 }) < 20) return p.send({ t: 'sys', code: 0x6f, args: [] });
+      if ([...this.gates.values()].some(g => g.owner === p.name)) return p.send({ t: 'sys', code: 0x70, args: [] });
+      const at = this.gatePosition(p); if (!at) return;
+      if (this.payForSkill(p, s) < 0) return;
+      // 문은 이동 이벤트(종류 1)로 그 칸에 생기고, 기술 정보 p 밀리초 뒤에 사라진다 (AddGate 0x468470, OnTimer 0x43e8e6 → RemoveGate)
+      const gid = 'g' + (++this.gateSeq);
+      this.gates.set(gid, { id: gid, owner: p.name, x: at.x, y: at.y, z: 1, to, tx: x, ty: y, until: now + s.p });
+      this.near(p, { t: 'cast', id: p.id, sk: sid, x: at.x, y: at.y, z: 1 });
+      this.near(p, { t: 'gate', id: gid, x: at.x, y: at.y, on: 1 });
+      return;
+    }
+    const u = this.game.findOnline(text); if (!u || u === p) return;
+    if (n === 23) {                                             // Recall: 불려 올 사람에게 묻는다 (0x103 → 0/0/187)
+      if (SK.RECALL_NO.has(u.world.mapId)) return p.send({ t: 'sys', code: 0x71, args: [u.name] });
+      if (this.payForSkill(p, s) < 0) return;
+      u.recall = { from: p.name, map: this.mapId, x: p.x, y: p.y };
+      u.send({ t: 'askrecall', name: p.name });
+      this.near(p, { t: 'cast', id: p.id, sk: sid, tid: p.id });
+    } else if (n === 48) {                                      // Teleport: 그 사람 자리로 (0x276 → SendChangeMapPacket)
+      if (SK.TELE_NO.has(u.world.mapId)) return p.send({ t: 'sys', code: 0xc3, args: [] });
+      if (this.payForSkill(p, s) < 0) return;
+      this.game.gotoMap(p, u.world.mapId, u.x, u.y);
+    }
+  }
+  // Recall 대답 (ProcessResponseRecall 0x43d580): 받으면 맵에 들어온 지 5초가 지났을 때만 옮긴다. 거절하면 시전자에게 0x6e
+  recallAnswer(p, yes) {
+    const r = p.recall; if (!r) return; p.recall = null;
+    if (!yes) { const c = this.game.findOnline(r.from); if (c) c.send({ t: 'sys', code: 0x6e, args: [p.name] }); return; }
+    if (Date.now() - (p.enteredAt || 0) >= 5000) this.game.gotoMap(p, r.map, r.x, r.y);
+  }
+  // 문 자리 (SelectGatePosition 0x43ccb0): 시전자 둘레 3×3 칸(z=1)에서 설 수 있고 이동 이벤트(종류 1)가 아닌 칸
+  gatePosition(p) {
+    let at = null;
+    for (let y = p.y - 1; y <= p.y + 1; y++) for (let x = p.x + 1; x >= p.x - 1; x--) {
+      if (x === p.x && y === p.y) continue;
+      const c = { x, y, z: 1 }; if (!this.canUser(c)) continue;
+      const e = this.eventAt(x, y); if (e && e[0] === 1) continue;
+      if ([...this.gates.values()].some(g => g.x === x && g.y === y)) continue;
+      at = c;
+    }
+    return at;
+  }
+  // Warp (효과 종류 35): 고른 자리로 바로 (ProcessUseSkill 0x43c47c → ProcessUseWarpSkill 0x43d2f0). 맵에 들어온 지 5초가 지나야
+  warpCmd(p, sid, x, y, z) {
+    const s = SK.get(sid); if (p.dead || !s || s.n !== 35 || !SK.list(p).includes(sid)) return;
+    if (Date.now() - (p.enteredAt || 0) < 5000) return;
+    const to = { x: x | 0, y: y | 0, z: z ? 1 : 0 };
+    if (!this.canUser(to) || !this.free(to, p.id)) return;
+    if (this.payForSkill(p, s) < 0) return;
+    this.near(p, { t: 'cast', id: p.id, sk: sid, tid: p.id });
+    this.release(p); p.dir = G.direction(p, to) === 5 ? 2 : G.direction(p, to); p.x = to.x; p.y = to.y; p.z = to.z; p.path = []; this.take(p);
+    this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir: p.dir });
+  }
   selfSkillCmd(p, sid) {
     const s = SK.get(sid), now = Date.now();
     if (s && s.l >= 10000) { this.skillCmd(p, sid, 0); return; }   // 범위 기술을 대상 없이
     if (p.dead || !s || !SK.list(p).includes(sid)) return;
+    if (s.a === 0 && s.l === 0 && [20, 23, 48].includes(s.n)) { this.moveSkillAsk(p, s); return; }
     if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
     if (now < (p.skillAt || 0)) return;
     const cost = SK.mpCost(s, p.maxMp);
@@ -866,6 +942,7 @@ class World {
   // 50ms마다 호출
   tick(now) {
     for (let i = this.timers.length - 1; i >= 0; i--) if (now >= this.timers[i].at) { const t = this.timers.splice(i, 1)[0]; t.fn(); }
+    for (const g of [...this.gates.values()]) if (now >= g.until) { this.gates.delete(g.id); this.broadcast({ t: 'gate', id: g.id, on: 0 }); }
     if (!this.players.size) { this.mobTickAt = now + MOB_TICK; return; }
     this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
@@ -922,6 +999,9 @@ class World {
       this.release(p); if (dir !== 5) p.dir = dir; p.x = n.x; p.y = n.y; p.z = n.z; p.nextAt = now + dur; this.take(p);
       this.near(p, { t: 'step', id: p.id, x: n.x, y: n.y, z: n.z, dir: p.dir, dur, run: running ? 1 : 0, last: p.path.length ? 0 : 1 });
       this.script.moved(p); if (p.world !== this) continue;
+      // Dimensional Gate 가 연 문 (동적 이벤트 종류 1)
+      const gt = [...this.gates.values()].find(g => g.x === n.x && g.y === n.y);
+      if (gt) { this.game.gotoMap(p, gt.to, gt.tx, gt.ty); continue; }
       // 맵 이동 지점을 밟으면 다른 맵으로 넘어간다
       const e = this.eventAt(n.x, n.y);
       if (e && e[0] === EV_WARP) {

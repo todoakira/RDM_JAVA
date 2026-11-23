@@ -302,6 +302,8 @@ Shop (250,90), Bank (268,169), Post (150,140), PostItem (200,130), Choose (164,3
 | 92 → 77 | 90 Destruction | 몬스터에게 주는 피해 + /5 |
 | 31·33·59·60·61·63·79·89 | 55·85 Mind Shield, 65 Red Halo, 48 MadSpin, 58 Dysperse, 59 Chain Reaction, 361 Purity of Heart, 363 WindWalker, 353 Quick Reload | 효과는 걸리지만 하는 일은 몬스터 기술·주인공끼리 싸움·클라이언트 쪽이라 아직 없음 (MadSpin 은 맞는 무기가 아니면 풀림) |
 
+이동 기술: Dimensional Gate(맵 x y 입력, 10초 동안 문), Recall(이름 입력, 상대에게 묻기), Teleport(이름 입력), Warp(오른쪽 단추로 자리 고르기), 돌진 5종, 회복·부활이 동작합니다. 문 그림은 아직 찾지 못해 보이지 않습니다.
+
 싸움 민첩성: 치명타와 명중 판정의 민첩성은 기본 + 장비에 위 효과를 더한 값입니다. 치명타 기본값은 10, 몇몇 근접·총 무기는 15, 몬스터는 그림 0x35·0x3b·0x3c 면 25.
 몬스터에게 주는 일반 공격 피해에는 원작대로 효과 배수(GetAttack)와 GetSkillAttack 이 두 번 적용됩니다.
 

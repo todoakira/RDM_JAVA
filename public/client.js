@@ -316,7 +316,14 @@ cv.addEventListener('pointerdown', e => {
   const m = mobAt(e.clientX / zoom + camX, e.clientY / zoom + camY);
   // 오른쪽 단추: 고른 기술을 그 몬스터에게 쓴다. 왼쪽 단추: 일반 공격
   if (e.button === 2) {
-    if (skillSel && UI.isSelfSkill(skillSel)) useSelfSkill(skillSel);
+    if (skillSel && UI.skN(skillSel) === 35 && !m) {           // Warp: 누른 자리로 (ProcessUseSkill 0x43c47c)
+      const wx = e.clientX / zoom + camX, wy = e.clientY / zoom + camY;
+      const x0 = Math.round(wx / map.tw), y0 = Math.round(wy / map.th), x1 = Math.floor(wx / map.tw), y1 = Math.floor(wy / map.th);
+      const d0 = Math.abs(wx - x0 * map.tw) / 2 + Math.abs(wy - y0 * map.th), d1 = Math.abs(wx - (x1 + .5) * map.tw) / 2 + Math.abs(wy - (y1 + .5) * map.th);
+      const [x, y, z] = d0 < d1 ? [x0, y0, 0] : [x1, y1, 1];
+      send({ t: 'skill', sk: skillSel, x, y, z });
+    }
+    else if (skillSel && UI.isSelfSkill(skillSel)) useSelfSkill(skillSel);
     else if (!m && skillSel && UI.isAreaSkill(skillSel)) useSelfSkill(skillSel);     // 범위 기술을 빈 곳에: 내 자리가 중심
     else if (m && skillSel) { targetId = m.id; send({ t: 'skill', sk: skillSel, id: m.id, run: runToggle !== shift }); }
     return;
@@ -464,6 +471,10 @@ const handlers = {
     else if (cmd === 'OpenWindow' && WIN[n]) UI.open && UI.open(WIN[n]);
   },
   // 선택지 (GetUserResponseByCode)
+  // 이동 기술 입력 창 (서버 0xff / 0x101 / 0x107 → 0/0/185 Gate, 186 Recall, 197 Teleport)
+  mvask(m) { const code = { 20: 185, 23: 186, 48: 197 }[m.kind]; UI.msgBox(UI.M0(code), ['ok', 'cancel'], (y, v) => { if (y && v) send({ t: 'mvskill', kind: m.kind, text: v }); }, true); },
+  askrecall(m) { UI.msgBox(UI.M0(187).replace('%s', m.name), ['yes', 'no'], y => send({ t: 'recall', yes: y ? 1 : 0 })); },   // 0/0/187
+  gate() {},
   askrevive(m) { UI.msgBox(UI.M0(482).replace('%s', m.name), ['yes', 'no'], y => send({ t: 'revive', yes: y ? 1 : 0 })); },   // 0/0/482 (0x109/0x11)
   ask(m) { UI.ask(m.options, k => send({ t: 'evsel', ev: m.ev, k })); },
   cast(m) {
