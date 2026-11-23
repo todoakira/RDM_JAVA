@@ -161,6 +161,36 @@ function drawEnt(e, now) {
 }
 // 사람 이름 색: 명성 단계 (클라이언트 Main.dll 0x10031ff0 의 표, COLORREF → CSS). 0 과 그 밖은 흰색
 const FAME_COLOR = { '-5': '#9b0505', '-4': '#af3737', '-3': '#c36969', '-2': '#d79b9b', '-1': '#ebcdcd', 1: '#cdcdeb', 2: '#9b9bd7', 3: '#6969c3', 4: '#3737af', 5: '#05059b' };
+// 머리 위 말풍선 (Main.dll 0x10001db0 만들기, 0x10001d40 그리기, 그림 balloon 27×24 를 아홉 조각으로 0x10001900~0x10001a20)
+//  - 한 줄 25 바이트(0x10001f26, 한글은 2 바이트)로 나누고 10 줄까지.
+//  - 넓이 = 글자 폭 + 가장 긴 줄 폭 + 10, 높이 = 11×줄 수 + 27 (꼬리 11 포함).
+//  - 글은 (8, 7+12i) 에 쓴다. 자리는 기준점에서 (−넓이/2, −25 − 11×줄 수).
+//  - 조각: 모서리·가장자리 6×6 칸 (0,0)~(19,19), 꼬리 (20,12)~(26,23).
+//  - 50 장(2.5초) 보인다 (0x10030a0d). 캐릭터 깃발 4 가 켜진 것은 100 장인데, 그 깃발 뜻은 확인하지 못했다.
+const SAY_MS = 50 * 50;
+const balloonImg = new Image(); balloonImg.src = 'assets/int/161.png';
+const bytesKr = ch => ch.charCodeAt(0) > 0x7f ? 2 : 1;
+function wrapSay(t) {
+  const out = []; let cur = '', n = 0;
+  for (const ch of t) { const b = bytesKr(ch); if (n + b > 25) { out.push(cur); cur = ''; n = 0; if (out.length >= 10) break; } cur += ch; n += b; }
+  if (cur && out.length < 10) out.push(cur);
+  return out;
+}
+function drawBalloon(lines, color, ax, ay) {
+  ctx.font = `12px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  const cw = ctx.measureText('a').width, L = lines.length;
+  const W = Math.round(cw + Math.max(...lines.map(l => ctx.measureText(l).width)) + 10), H = 11 * L + 16;
+  const x0 = Math.round(ax - W / 2), y0 = Math.round(ay - 25 - 11 * L);
+  if (balloonImg.complete && balloonImg.naturalWidth) {
+    const S = (sx, sy, sw, sh, dx, dy, dw, dh) => ctx.drawImage(balloonImg, sx, sy, sw, sh, dx, dy, dw, dh);
+    S(0, 0, 6, 6, x0, y0, 6, 6); S(6, 0, 6, 6, x0 + 6, y0, W - 13, 6); S(12, 0, 7, 6, x0 + W - 7, y0, 7, 6);
+    S(0, 6, 6, 6, x0, y0 + 6, 6, H - 13); S(6, 6, 6, 6, x0 + 6, y0 + 6, W - 13, H - 13); S(12, 6, 7, 6, x0 + W - 7, y0 + 6, 7, H - 13);
+    S(0, 12, 6, 7, x0, y0 + H - 7, 6, 7); S(6, 12, 6, 7, x0 + 6, y0 + H - 7, W - 13, 7); S(12, 12, 7, 7, x0 + W - 7, y0 + H - 7, 7, 7);
+    S(20, 12, 6, 11, Math.round(ax - 3), y0 + H - 1, 6, 11);
+  } else { ctx.fillStyle = '#000'; ctx.fillRect(x0, y0, W, H); }
+  ctx.fillStyle = color; lines.forEach((l, i) => ctx.fillText(l, x0 + 8, y0 + 7 + 12 * i));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+}
 function outlined(text, x, y, color) { ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(text, x, y); ctx.fillStyle = color; ctx.fillText(text, x, y); }
 function drawLabels(e, now) {
   if (e.deadAt && e.mob) return;
@@ -174,12 +204,7 @@ function drawLabels(e, now) {
     ctx.fillStyle = '#000'; ctx.fillRect(x - 21, y + 5, 42, 5);
     ctx.fillStyle = e.mob ? '#d33' : '#3c3'; ctx.fillRect(x - 20, y + 6, 40 * e.hp / e.maxHp, 3);
   }
-  if (e.say && now < e.sayUntil) {
-    ctx.font = `12px ${FONT}`;
-    const w = Math.min(220, ctx.measureText(e.say).width) + 12;
-    ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(x - w / 2, y - 34, w, 20);
-    ctx.fillStyle = '#fff'; ctx.fillText(e.say, x, y - 20, 220);
-  }
+  if (e.say && now < e.sayUntil) drawBalloon(e.sayLines || (e.sayLines = wrapSay(e.say)), e.sayColor || '#fff', x, y - 12);
 }
 // 화면 좌표에 있는 몬스터 찾기
 function mobAt(wx, wy, npc) {
@@ -579,7 +604,7 @@ const handlers = {
   chat(m) {
     // 거부한 사람의 귓속말은 보이지 않고, 서버에 알려 보낸 사람에게 0/0/159 가 간다 (원작 서버 ProcessWhisperFailed 0x474030)
     if (m.kind === 'whisper' && m.name !== myName() && (ignoreAll || ignored.has(m.name))) { send({ t: 'whisperfail', from: m.name }); return; }
-    const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayUntil = performance.now() + 5000; }
+    const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayLines = null; p.sayColor = m.kind === 'shout' ? '#ffff00' : m.group ? '#00ff00' : m.kind === 'army' ? '#f09900' : '#fff'; p.sayUntil = performance.now() + SAY_MS; }
     const tag = m.group ? '[그룹] ' : m.kind === 'army' ? '[군단] ' : m.kind === 'shout' ? '[외침] ' : m.kind === 'whisper' ? (m.name === myName() ? `[→${m.to}] ` : '[귓속말] ') : '';
     log(`<span class="who">${esc(tag)}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : m.kind || undefined);
   },
