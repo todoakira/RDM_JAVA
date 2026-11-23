@@ -41,6 +41,7 @@ const SUBQ = require('./subquest');
 const SHIP = require('./spaceship');
 const PKM = require('./pk');
 const BOARD = require('./board');
+const ACC = require('./account');
 const STORY = require('./story');
 const { Groups } = require('./group');
 const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
@@ -1127,7 +1128,7 @@ class Pills {
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.pk = new PKM.PK(this); this.board = new BOARD.Board(this); this.pills = new Pills(); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
+    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.pk = new PKM.PK(this); this.board = new BOARD.Board(this); this.accounts = new ACC.Accounts(this); this.pills = new Pills(); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)

@@ -562,9 +562,25 @@ document.addEventListener('mousedown', e => {
   chatMode = chatMode === b.dataset.mode ? '' : b.dataset.mode; for (const c of document.querySelectorAll('#chatbar .cb')) c.classList.toggle('on', c.dataset.mode === chatMode);
 });
 const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
-function connect(name, pw, chr, beginner) {
+// 로그인 → 캐릭터 세 칸 → 고르기 (원작 로그인 서버 svIP.exe, 글은 Message 0/1). 고르기 화면의 원작 그림 배치는 아직이다
+const FACE = [113, 114, 115, 116, 118, 117, 121, 119, 120];
+let slotList = [], mkSlot = -1;
+function showChars(list) {
+  slotList = list; $('step1').style.display = 'none'; $('step2').style.display = 'block'; $('mk').style.display = 'none';
+  $('selhead').textContent = (UI.msg && UI.msg(0, 1, 4)) || 'Select your character.';
+  $('slots').innerHTML = list.map((c, i) => c
+    ? `<div style="width:150px"><img src="assets/int/${FACE[c.chr] || 113}.png" style="width:90px;height:90px;border:2px solid #733"><div>${esc(c.name)}</div><div style="color:#aaa;font-size:12px">${CLASS_KR[c.chr] || ''} Lv.${c.level}</div><button type="button" data-sel="${i}">선택</button><button type="button" data-del="${i}" style="background:#333">지우기</button></div>`
+    : `<div style="width:150px"><div style="width:90px;height:90px;margin:auto;border:2px dashed #444"></div><div style="color:#777">빈 칸</div><button type="button" data-new="${i}">새 캐릭터</button></div>`).join('');
+  $('slots').querySelectorAll('[data-sel]').forEach(b => b.onclick = () => { $('msg').textContent = '접속 중...'; send({ t: 'select', slot: Number(b.dataset.sel) }); });
+  $('slots').querySelectorAll('[data-new]').forEach(b => b.onclick = () => { mkSlot = Number(b.dataset.new); $('mk').style.display = 'block'; $('cn').focus(); });
+  $('slots').querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const c = slotList[Number(b.dataset.del)]; const pw = prompt(`${c.name} 을(를) 지웁니다. 계정 비밀번호를 넣어 주세요.`); if (pw) send({ t: 'delchar', slot: Number(b.dataset.del), pw });
+  });
+}
+function connect(id, pw, create) {
+  if (ws && ws.readyState <= 1) { ws.onclose = null; ws.close(); }
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => send({ t: 'join', name, pw, chr, beginner });
+  ws.onopen = () => send({ t: 'login', id, pw, create: create ? 1 : 0 });
   let ready = null;
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
@@ -583,6 +599,8 @@ function connect(name, pw, chr, beginner) {
       return;
     }
     if (m.t === 'error') { $('msg').textContent = m.text; ws.onclose = null; ws.close(); return; }
+    if (m.t === 'chars') { $('msg').textContent = ''; showChars(m.list); return; }
+    if (m.t === 'lerr') { let t = (UI.msg && UI.msg(0, 1, m.code)) || '오류'; for (const a of m.args || []) t = t.replace(/%[ud]/, a); $('msg').textContent = t; return; }
     if (ready) await ready;
     if (handlers[m.t] && (myId || m.t === 'stat' || m.t === 'inv')) handlers[m.t](m);
   };
@@ -596,7 +614,11 @@ $('classes').innerHTML = CLASS_KR.map((n, i) => `<label><input type="radio" name
 $('restart').addEventListener('click', () => send({ t: 'restart' }));
 $('lf').addEventListener('submit', e => {
   e.preventDefault();
-  const name = $('nm').value.trim(); if (!name) return;
-  $('msg').textContent = '접속 중...'; const fd = new FormData($('lf')); connect(name, $('pw').value, Number(fd.get('chr')), fd.get('beginner') === '1');
+  if ($('step1').style.display === 'none') return;
+  const id = $('nm').value.trim(); if (!id) return;
+  $('msg').textContent = '접속 중...'; connect(id, $('pw').value, false);
 });
+$('newid').addEventListener('click', () => { const id = $('nm').value.trim(); if (!id) return; $('msg').textContent = '접속 중...'; connect(id, $('pw').value, true); });
+$('mkok').addEventListener('click', () => { const fd = new FormData($('lf')); send({ t: 'newchar', slot: mkSlot, name: $('cn').value.trim(), chr: Number(fd.get('chr')), beginner: fd.get('beginner') === '1' }); });
+$('mkno').addEventListener('click', () => { $('mk').style.display = 'none'; });
 requestAnimationFrame(frame);

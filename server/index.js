@@ -27,7 +27,8 @@ const game = new Game();
 const wss = new WebSocketServer({ server, maxPayload: 2048 });
 
 wss.on('connection', ws => {
-  let player = null, msgCount = 0, windowStart = Date.now();
+  let player = null, acct = null, msgCount = 0, windowStart = Date.now();
+  const pending = {};   // 이번 연결에서 만든 새 캐릭터의 직업·시작 위치
   const send = m => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
   ws.on('message', raw => {
     // 과도한 전송 차단: 1초에 20개까지
@@ -37,17 +38,26 @@ wss.on('connection', ws => {
     let m; try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m !== 'object') return;
     if (!player) {
-      if (m.t !== 'join') return;
-      const name = String(m.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, CFG.maxName);
-      if (!name) { send({ t: 'error', text: '이름을 입력해 주세요.' }); return; }
-      if (game.isOnline(name)) { send({ t: 'error', text: '같은 이름으로 이미 접속 중입니다.' }); return; }
-      const a = game.auth(name, m.pw);
-      if (a.error) { send({ t: 'error', text: a.error }); return; }
-      // 이름 규칙은 원작 로그인 서버와 같다: 14바이트(한글 7자)까지, 작은따옴표 금지 (svIP.exe CIPClient::ProcessNewCharacterID 0x404a10)
-      if (a.created && ([...name].reduce((n, c) => n + (c.charCodeAt(0) > 127 ? 2 : 1), 0) > 14 || name.includes("'"))) { send({ t: 'error', text: '이름은 한글 7자(영문 14자)까지이고 작은따옴표를 쓸 수 없습니다.' }); return; }
-      player = game.join(name, send, a.auth, a.created && Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1, !!m.beginner); game.save(player);
+      // 로그인 → 캐릭터 세 칸 → 고르기 (server/account.js, 원작 svIP.exe CIPClient)
+      const A = game.accounts, err = (code, args) => send({ t: 'lerr', code, args: args || [] });
+      if (m.t === 'login') {
+        const r = A.login(m.id, m.pw, !!m.create); if (r.code !== undefined) { err(r.code); return; }
+        acct = r.id; send({ t: 'chars', list: A.list(acct) }); return;
+      }
+      if (!acct) return;
+      if (m.t === 'newchar') {
+        const r = A.newChar(acct, m.slot | 0, m.name); if (r.code !== undefined) { err(r.code); return; }
+        pending[A.db[acct].chars[r.slot]] = { chr: Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1, beginner: !!m.beginner };
+        send({ t: 'chars', list: A.list(acct) }); return;
+      }
+      if (m.t === 'delchar') { const r = A.delChar(acct, m.slot | 0, m.pw); if (r.code !== undefined) { err(r.code, r.args); return; } send({ t: 'chars', list: A.list(acct) }); return; }
+      if (m.t !== 'select') return;
+      const name = A.db[acct] && A.db[acct].chars[m.slot | 0]; if (!name) return;
+      if (game.isOnline(name)) { err(8); return; }
+      const fresh = !A.oldSave(name), pd = pending[name] || { chr: 1, beginner: true };
+      player = game.join(name, send, A.db[acct].auth, fresh ? pd.chr : 1, fresh && pd.beginner); game.save(player);
       game.mail.login(player); game.army.sendBadge(player); game.sendQuickSkill(player); game.story.sendInfo(player, false); game.story.checkAndStart(player);
-      console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
+      console.log(`[입장] ${name} (#${player.id}) 계정 ${acct}, 접속자 ${game.online}명`);
       return;
     }
     const world = player.world;
