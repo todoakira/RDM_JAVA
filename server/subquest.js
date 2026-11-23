@@ -150,7 +150,7 @@ class SubQuest {
     const s = this.sq(p);
     if (n.subqAt && now >= n.subqAt && now - n.subqAt < NPC_COOLDOWN_MS) return false;
     if (rnd(100) !== 99) return false;
-    if (s.state || this.game.storyWindowOpen(p) || !randomNpc(p)) return false;
+    if (s.state || p.pkPen > 0 || this.game.storyWindowOpen(p) || !randomNpc(p)) return false;   // PK 벌칙(+0x4158) 중이면 안 건다
     s.giver = { name: n.name, img: n.img, map: p.world.mapId };
     s.resume = n.id;
     n.subqAt = now;

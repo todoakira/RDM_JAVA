@@ -43,6 +43,8 @@ const ready = {
   recollect: p => has(p, 0x800) && !has(p, 0x1000),
   spaceship: p => has(p, 0x4000) && !has(p, 0x8000),
 };
+// 첩자·고고학자·지리학자·카삼 1~4·에스퍼·첩보대장 준비 확인은 PK 벌칙(+0x4158) 중이면 아니다 (0x438372~0x438692)
+for (const k of ['spy', 'gogo', 'sahara', 'kasam1', 'esper', 'kasam2', 'kasam3', 'captain', 'kasam4']) { const f = ready[k]; ready[k] = p => !(p.pkPen > 0) && f(p); }
 
 // 퀘스트 정보 창 두 줄 (SendQuestInfo 0x4254e0). 번호는 Message.ctf 0/7
 function questInfo(p) {

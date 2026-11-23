@@ -39,6 +39,7 @@ const { Events } = require('./events');
 const EQUIP = require('./equip');
 const SUBQ = require('./subquest');
 const SHIP = require('./spaceship');
+const PKM = require('./pk');
 const STORY = require('./story');
 const { Groups } = require('./group');
 const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
@@ -164,18 +165,20 @@ class World {
     this.game.sendStat(p); this.game.sendInv(p);
     this.broadcast({ t: 'add', p: pubP(p) }, p.id);
     this.game.groups.moved(p);
+    const K = this.game.pk; K.enterNotice(p, this); K.legalNotice(p); if (p.pkState || p.pkPen > 0) K.send(p);   // PK 안내 (0x162 등), 남은 정당방위 (0xce)
   }
   leave(p) { if (p.trade) this.game.trades.cancel(p); this.release(p); p.evAt = {}; if (this.players.delete(p.id)) this.broadcast({ t: 'del', id: p.id }); }
 
   moveTo(p, x, y, z, run) {
-    if (p.dead || !Number.isInteger(x) || !Number.isInteger(y)) return;
+    if (p.dead || !Number.isInteger(x) || !Number.isInteger(y) || this.fxOn(p, 39)) return;   // 효과 39 (PK 벌칙): 움직일 수 없다 (ProcessUserMoving 0x43da05)
     const t = this.nearUser({ x, y, z: z ? 1 : 0 }); if (!t) return;
     const pa = this.findPath(p, t); if (!pa) return;
     p.path = pa; p.run = !!run; p.target = 0; p.cast = null; p.pick = 0; p.talk = 0;
   }
   attackCmd(p, id, run) {
-    const m = this.mobs.get(id);
-    if (p.dead || !m) return;
+    // 사람도 노릴 수 있다 (PK, server/pk.js). 효과 39 면 공격할 수 없다 (ProcessUserAttack 0x43a7a2)
+    const m = this.mobs.get(id) || (id !== p.id ? this.players.get(id) : null);
+    if (p.dead || !m || this.fxOn(p, 39)) return;
     p.target = id; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0; p.cast = null;
   }
   // 기술 쓰기: 지금은 몬스터 한 마리를 노리는 공격 기술(효과 종류 0)만 된다.
@@ -189,7 +192,7 @@ class World {
   }
   skillCmd(p, sid, id, run) {
     const m = id ? this.mobs.get(id) : null, s = SK.get(sid);
-    if (p.dead || !s || !this.skillReady(p, sid, s)) return;
+    if (p.dead || !s || this.fxOn(p, 39) || !this.skillReady(p, sid, s)) return;   // 효과 39: 기술도 못 쓴다 (ProcessUseSkill 0x43c357)
     const area = s.l >= 10000;
     const ok = area ? ((s.n === 0 || s.n === 78) && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
@@ -652,6 +655,7 @@ class World {
     if (kind === 8 || kind === 81) { this.game.cure(p, n); return; }
     if (kind === 6 || kind === 80) { this.game.openBank(p, n); return; }
     if (kind === 20) { this.game.openExchange(p, e[1] || 0, n); return; }
+    if (kind === 43) { this.game.pk.jailor(p); return; }                // 교도관
     const what = EVENT_NAMES[kind];
     p.send({ t: 'chat', id: 0, name: n.name, text: what ? `(${what}: 아직 구현되지 않았습니다)` : '...' });
   }
@@ -981,11 +985,12 @@ class World {
       if (d.item) this.dropItem(d, d.item);
       this.respawnLater(d);
       if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); this.game.subq.onKill(a, d); }
-    } else this.killPlayer(d, false);
+    } else this.killPlayer(d, false, a);
   }
   // 사람이 죽음 (CMapServerClient::Dead)
-  killPlayer(d, announce = true) {
+  killPlayer(d, announce = true, killer = null) {
     if (announce) this.broadcast({ t: 'die', id: d.id });
+    this.game.pk.killed(d, killer);                                    // 벌칙 (Dead 0x43b2ab)
     if (d.trade) this.game.trades.cancel(d);
     d.hp = 0; d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
     this.game.deathPenalty(d);
@@ -999,7 +1004,9 @@ class World {
     if (!this.players.size) { this.mobTickAt = now + MOB_TICK; return; }
     this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
-      if (p.subq && p.subq.state) { this.game.subq.tick(p, now - (p.subqAt || now)); p.subqAt = now; } else p.subqAt = now;
+      const dt = now - (p.subqAt || now); p.subqAt = now;
+      if (p.subq && p.subq.state) this.game.subq.tick(p, dt);
+      this.game.pk.tick(p, now, dt);                                     // PK 모드 켜기, 정당방위, 벌칙 시간
       if (p.dead) continue;
       this.script.tickPlayer(p, now); if (p.world !== this) continue;
       // 자연 회복: 10초마다. 기력이 덜 찼으면 기력만, 가득 찼으면 체력, 그다음 마력
@@ -1010,11 +1017,20 @@ class World {
         else if (p.mp < p.maxMp) { const e = this.eventAt(p.x, p.y); p.mp = Math.min(p.maxMp, p.mp + F.mpRegen(p.maxMp, !!e && e[0] === F.EV_MP_REST)); this.game.sendStat(p); }
       }
       if (p.target) {
-        const m = this.mobs.get(p.target);
-        if (!m) p.target = 0;
+        const m = this.mobs.get(p.target) || this.players.get(p.target);
+        if (!m || (!m.mob && m.dead)) p.target = 0;
         else if (G.dist(p, m) <= p.range + (this.fxOn(p, 11, now) && SK.isGun(p.equip[7]) ? 2 : 0)) {   // 효과 11: 총을 들었을 때 사거리 + 2
           p.path = [];
-          if (now >= p.atkAt && now >= p.nextAt) { const d = G.direction(p, m); if (d !== 5) p.dir = d; p.atkAt = now + this.game.attackMs(p); this.hit(p, m, now); }
+          if (now >= p.atkAt && now >= p.nextAt) {
+            const d = G.direction(p, m); if (d !== 5) p.dir = d; p.atkAt = now + this.game.attackMs(p);
+            if (m.mob) this.hit(p, m, now);
+            else {                                                            // 사람: PK 조건 (DoAttack 0x469dd0)
+              const r = this.game.pk.attack(p, m);
+              if (r === 'skip') p.target = 0;
+              else if (r) this.hit(p, m, now);
+              else this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 0, miss: 1, hp: m.hp });
+            }
+          }
         } else if (now >= p.repathAt) {
           p.repathAt = now + 400;
           const pa = this.findPath(p, m, 1500);
@@ -1101,7 +1117,7 @@ class Pills {
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.pills = new Pills(); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
+    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.pk = new PKM.PK(this); this.pills = new Pills(); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -1192,7 +1208,7 @@ class Game {
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
-      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -1218,7 +1234,7 @@ class Game {
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
-      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'pkCount', 'pkPen', 'pkDecay', 'legal']) if (d[k] !== undefined) p[k] = d[k];
       if (d.sigBank) p.sigBank = d.sigBank;
       if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);

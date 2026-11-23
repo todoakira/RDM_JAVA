@@ -55,6 +55,8 @@ wss.on('connection', ws => {
     if (player.trade && ['use', 'unequip', 'qput', 'qget', 'quse', 'buy', 'sell', 'pickup', 'bankput', 'bankget', 'bankmoney', 'exchsell', 'exchbuy', 'talk'].includes(m.t)) { game.story.msg(player, 0xa0); return; }
     if (m.t === 'move') world.moveTo(player, m.x, m.y, m.z, m.run);
     else if (m.t === 'attack') world.attackCmd(player, m.id, m.run);
+    else if (m.t === 'pkmode') game.pk.change(player, !!m.on);         // TAB (ProcessChangePKMode)
+    else if (m.t === 'jail') game.pk.moveJail(player, !!m.leave);      // 교도관 (ProcessMoveJail)
     else if (m.t === 'evsel') world.script.choose(player, m.ev, m.k);                    // 이벤트 선택지
     else if (m.t === 'evc') world.script.client(player, String(m.name), m.arg);         // 클라이언트가 알리는 이벤트 조건
     else if (m.t === 'revive') world.reviveAnswer(player, !!m.yes);

@@ -15,6 +15,7 @@ const chunks = new Map();
 const floaters = [];           // 떠오르는 피해 숫자
 const ground = new Map();      // 바닥에 떨어진 아이템
 const icoSets = new Map();     // 아이템 아이콘 묶음 (분류 -> {def, img})
+let myPk = 0;
 let objBuckets = null, marker = null, redrawTiles = false, hoverId = 0, hoverItem = 0, targetId = 0, mouse = null, inv = { money: 0, items: [] };
 
 // ---------- 자료 불러오기 ----------
@@ -167,7 +168,8 @@ function drawLabels(e, now) {
 function mobAt(wx, wy, npc) {
   let best = null;
   for (const e of ents.values()) {
-    if (npc ? !e.npc : (!e.mob || e.deadAt)) continue;
+    // PK 모드가 켜져 있으면 다른 사람도 고를 수 있다
+    if (npc ? !e.npc : (e.npc || e.deadAt || (!e.mob && (myPk !== 2 || e.id === myId || e.dead)))) continue;
     if (Math.abs(wx - e.px) <= 20 && wy >= e.py - 80 && wy <= e.py + 10 && (!best || e.py > best.py)) best = e;
   }
   return best;
@@ -359,6 +361,8 @@ addEventListener('keydown', e => {
   } else if (!typing && myId && /^F([1-9]|1[0-2])$/.test(e.key) && (send({ t: 'evc', name: 'Key', arg: 111 + Number(e.key.slice(1)) }), !/^F[1-8]$/.test(e.key))) {
     e.preventDefault();   // F9~F12: 이벤트 조건 Key 도 알린다 (원작 키 코드 112 = F1)
     if (e.key === 'F9') ArmyUI.open();   // [F9] Army Window (1/1/77)
+  } else if (!typing && myId && e.key === 'Tab') {
+    e.preventDefault(); send({ t: 'pkmode', on: myPk ? 0 : 1 });   // [TAB] PK 모드 켜기·끄기 (원작 도움말 1/1/10~11)
   } else if (!typing && myId && /^F[1-8]$/.test(e.key)) {
     // 원작 도움말: [F1] 상태 창, [F2] 캐릭터 창, [F3] 아이템 창, [F4] 장비 창, [F5] 기술 창 (Message.ctf 1/1/52~65)
     e.preventDefault(); UI.menu(['gauge', 'winChr', 'winInv', 'winEq', 'skill', 'group', 'winHist', 'quick'][Number(e.key.slice(1)) - 1]);   // [F6] 그룹, [F7] 대화 기록, [F8] 빠른 창 (1/1/52~75)
@@ -485,6 +489,14 @@ const handlers = {
     else if (a) addBullet(no, null, a);                                                              // 자기 기술
   },
   fx(m) { UI.fx(m.fx); },
+  // PK 모드 (패킷 0x3f7): 켜는 중이면 0/0/208, 켜지면 71, 꺼지면 72
+  pkmode(m) { const was = myPk; myPk = m.on ? 2 : m.arming ? 1 : 0; if (myPk !== was) log(esc(UI.M0(myPk === 2 ? 71 : myPk === 1 ? 208 : 72)), 'sys'); },
+  pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
+  // 교도관 (0x1d9 / 0x1db): 감옥 밖이면 0/0/214, 안이면 남은 분이 있으면 215 아니면 216
+  jail(m) {
+    const t = m.inJail ? (m.min ? UI.M0(215).replace('%u', m.min) : UI.M0(216)) : UI.M0(214);
+    UI.msgBox(t, ['yes', 'no'], y => { if (y) send({ t: 'jail', leave: m.inJail ? 1 : 0 }); });
+  },
   shop(m) { UI.shop(m); },
   shopclose() { UI.closeShop(); },
   exch(m) { UI.exch(m); },
