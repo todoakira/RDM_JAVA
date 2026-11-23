@@ -438,6 +438,50 @@ class World {
       }
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now, m), now, { k: 2, sk: sid, area: 1 });
     }
+    this.areaUsers(p, center, rad, s, sid, cost, now);
+  }
+  // 범위 기술이 사람을 치는 쪽 (UseSkillAttackRange 의 사람 고리 0x454a00~0x45b7b9).
+  //   반경 안, 막힘 없고, 살아 있는 다른 사람마다: skillGate(같은 그룹 빼기) → 정당방위 → 효과 24 되돌림 → 종류별 처리
+  //   특수 기술: 반드시 맞고 ⌊레벨²/6⌋ + 50. 고유 식 기술: 민첩성 명중, 식 값 + T+0x30. 그 밖: 정신력 명중, 마력 소모량 + T+0x34
+  //   약화 (AREA_USER_DEBUFF): 정신력 명중 뒤 효과. 되돌려지거나 효과 24 인 대상에게 빗나가면 시전자에게 (0x459ae5~0x45a852)
+  areaUsers(p, center, rad, s, sid, cost, now) {
+    const PK = this.game.pk, adb = s.a === 0 ? SK.AREA_USER_DEBUFF[s.n] : null;
+    if (s.a === 0 && !adb && s.n !== 0 && s.n !== 78) return;
+    for (const u of [...this.players.values()]) {
+      if (u === p || u.dead || G.dist(center, u) > rad || !this.noObstacle(center, u)) continue;
+      if (!PK.skillGate(p, u, true)) continue;
+      PK.skillSide(p, u);
+      let reflect = false;
+      if (this.fxOn(u, 24, now) && !(u.pkPen > 0)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(u.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
+      const v44 = x => this.fxOn(u, 44, now) ? x + Math.floor(x / 5) : x;
+      const miss = () => this.near(p, { t: 'atk', id: p.id, tid: u.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: u.hp, area: 1 });
+      let av, t = u;
+      if (s.a === 1) { av = SK.specialAttack(p.level); if (reflect) t = p; }
+      else {
+        const dexHit = !adb && (sid in SK.AREA_FORMULA || sid === 42);
+        const ok = F.rand100() <= this.hitChance(p, u, F.hitPct(dexHit ? this.fightDex(p, now) : p.spi, v44(dexHit ? this.fightDex(u, now) : (u.spi || 0))), now);
+        if (!ok && !this.fxOn(u, 24, now)) { miss(); continue; }
+        if (!ok || reflect) t = p;
+        if (adb) {
+          this.near(p, { t: 'cast', id: p.id, sk: sid, tid: t.id });
+          const m = this.mapId, short = (m >= 0x84 && m <= 0x88) || (m >= 0xb4 && m <= 0xbc);
+          this.userEffect(t, adb.e, short && !adb.no5 ? 5 : Math.floor(p.spi / adb.div) + s.p, now, p);
+          continue;
+        }
+        if (sid === 42) { const v = p.atk + Math.floor((p.atkExtra || 0) / 3); av = F.rand100() < F.critPct(this.fightDex(p, now), this.fightDex(u, now), 10) ? 2 * v : v; }
+        else if (dexHit) av = SK.AREA_FORMULA[sid](p.atk, p) + (p.atkExtra || 0);
+        else av = cost + (p.skSpi || 0);
+      }
+      const raw = (av > 1000000 ? Math.floor(av / 100) * s.o : Math.floor(av * s.o / 100)) + (p.skDmg || 0);
+      const dmg = this.userDamage(p, t, Math.max(1, raw), now);
+      if (this.fxOn(t, 6, now)) {
+        t.mp = Math.max(0, t.mp - (2 * dmg + Math.floor(dmg / 4)));
+        this.near(p, { t: 'atk', id: p.id, tid: t.id, dir: p.dir, k: 2, sk: sid, dmg, hp: t.hp, area: 1 });
+        if (!t.mp) this.fxOff(t, 6);
+        this.game.sendStat(t); continue;
+      }
+      this.applyDamage(p, t, dmg, now, { k: 2, sk: sid, area: 1 });
+    }
   }
   // 돌진 (UseSkillMovingAttack 0x451410): 대상 쪽으로 한 칸씩 (STAFFGetNextPIS) 가서 대상 너머 한 칸을 도착점으로 삼는다 (거리 ≤ l, 설 수 있고 빈 칸).
   //   출발점과 도착점 사이 칸의 몬스터를 친 뒤 시전자를 도착점으로 옮긴다. 도착점을 정하는 쪽은 원작에서 클라이언트라 여기서는 이렇게 고른다

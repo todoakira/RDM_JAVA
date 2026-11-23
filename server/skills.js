@@ -198,6 +198,10 @@ const USER_DEBUFF = {
 // 사람 효과를 막는 것 (CMapServerClient::DoSkillEffect 0x42b2d0 의 분기 0x42ca74): 대상 효과 23·52·76·77 이면 막힘,
 //   43 을 뺀 나머지는 효과 42 도 막고, 5·12·16·18·55·58 은 효과 7 도 막는다 (+0x435c 검사는 무엇인지 몰라 뺐다)
 const USER_BLOCK7 = new Set([5, 12, 16, 18, 55, 58]);
+// 범위 기술이 사람에게 거는 약화 (UseSkillAttackRange 의 사람 분기 0x45a9c6~0x45b5e8). 모두 정신력 명중
+const AREA_USER_DEBUFF = {
+  15: { e: 12, div: 20 }, 17: { e: 13, div: 10 }, 22: { e: 16, div: 20 }, 38: { e: 55, div: 20 }, 54: { e: 43, div: 20, no5: true },
+};
 // 범위 약화 (UseSkillAttackRange 의 몬스터 분기표 0x45e348/0x45e368): 반경 안 몬스터마다 되돌림 → 정신력 명중 → 효과. 피해는 없다.
 //   n=24 Dispel 은 명중하면 몬스터의 좋은·나쁜 효과를 모두 지운다 (CMopServer::OnGoodSkillExpired·OnBadSkillExpired, 0x45db5b)
 const AREA_DEBUFF = {
@@ -289,4 +293,4 @@ const areaFormulaKnown = id => true;
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { USER_DEBUFF, USER_BLOCK7, BOW_DIV, bowValue, AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { AREA_USER_DEBUFF, USER_DEBUFF, USER_BLOCK7, BOW_DIV, bowValue, AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

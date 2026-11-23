@@ -89,18 +89,28 @@ class PK {
   // 기술로 사람을 칠 수 있는지 (CMapServerServer::UseSkill 0x45ef69~0x45f171). 안 되면 기술을 아예 쓰지 않는다 (마력도 그대로)
   //   두 사람 모두 안전 칸·PK 금지 자리가 아니고 싸움터 여부가 같음, 둘 다 싸움터가 아니면 두 레벨 모두 15 초과,
   //   감옥(78) 아님, 시전자 효과 19 아님. 시전자 PK 모드 켜짐 (원작의 인자 param_4 를 PK 모드로 보았다: 확인 못 함). 전쟁·동맹 예외는 아직
-  skillGate(a, d) {
+  //   대상이 PK 벌칙 중(+0x4158, USERDB 기준 +0x980)이면 칸·레벨 검사를 건너뛴다. 벌칙 중인 사람은 벌칙 중인 사람만 칠 수 있다.
+  //   시전자 효과 19 검사도 대상이 벌칙 중이면 건너뛴다 (0x45f01e, 범위 0x454c55). area 면 같은 그룹은 빼고 (0x454b1f)
+  //   GM 벌칙(+0x4214)은 우리 판에 없어서 0 으로 본다
+  skillGate(a, d, area) {
     const w = a.world;
     if (d.dead || d.world !== w || d === a) return false;
-    const offA = this.pkOff(w, a.x, a.y), offD = this.pkOff(w, d.x, d.y), fA = this.fight(w, a.x, a.y), fD = this.fight(w, d.x, d.y);
-    if (this.safe(w, a.x, a.y) || this.safe(w, d.x, d.y) || offA || offD || fA !== fD) return false;
-    if ((!fA || !fD) && (a.level <= MIN_LEVEL || d.level <= MIN_LEVEL)) return false;
-    if (w.mapId === JAIL || w.fxOn(a, 19)) return false;
+    if (area && a.group && a.group === d.group) return false;
+    if (w.mapId === JAIL) return false;
+    const outlaw = (d.pkPen || 0) > 0;
+    if (!outlaw) {
+      const offA = this.pkOff(w, a.x, a.y), offD = this.pkOff(w, d.x, d.y), fA = this.fight(w, a.x, a.y), fD = this.fight(w, d.x, d.y);
+      if (this.safe(w, a.x, a.y) || this.safe(w, d.x, d.y) || offA || offD || fA !== fD) return false;
+      if ((!fA || !fD) && (a.level <= MIN_LEVEL || d.level <= MIN_LEVEL)) return false;
+      if (w.fxOn(a, 19)) return false;
+    }
+    if ((a.pkPen || 0) > 0 && !outlaw) return false;
     return this.isOn(a);
   }
   // 기술을 치른 뒤 (UseSkillAttackSingleUser 0x448b4e~0x448be0): 싸움터가 아니고 정당방위가 없으면 대상이 정당방위를 얻고 PK 모드가 켜진다
   skillSide(a, d) {
     const w = a.world;
+    if ((d.pkPen || 0) > 0) return;
     if (!this.fight(w, a.x, a.y) && !this.fight(w, d.x, d.y) && !this.isLegal(a, d)) { this.setLegal(d, a); if (!this.isOn(d)) this.force(d); }
   }
 
