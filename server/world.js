@@ -1150,6 +1150,77 @@ class World {
     }
     this.near(m, { t: 'cast', id: m.id, sk: sid, tid: refl ? m.id : u.id });
   }
+  // 몬스터의 특수 행동 (CMopServer::DoSpecialAction 0x47c650). DoNextAction 이 FindNextAction 바로 뒤에 부르고, 1 이면 그 차례는 끝이다.
+  //   몬스터가 효과 5·16·18·43 이 아니고 첫 기술이 있어야 한다. 모습마다:
+  //   59: 체력이 절반 이하이고 고치기 횟수가 남았으면 DoCure (0x47db30): 최대 체력의 위력 % 만큼 채운다. 범위 기술이면 반경 안 다른 몬스터도
+  //   70: 효과 8 이 없고 체력 절반 이하면 스스로 효과 8 (정신력/30 초), 기술간격1 만큼 쉰다
+  //   79: 대상이 있으면 (act>1) 아직 안 훔쳤고 체력 51% 미만이며 첫 기술 사거리 안이면 DoItemStealSkill, 체력 26% 미만이면 DoUseItem
+  //   80: 자폭 (DoExplosionAttack 0x47a460): 대상이 없으면 단계를 0 으로. 체력 51% 미만이면 단계 −1~−3, 아니면(단계 100 이 아니면) 1~4.
+  //       첫 기술 반경(l−10000) 안이면 |단계|(+3) × 65000 을 공격 값으로 범위 기술을 쓴다. 맞아서 체력이 50% 넘으면 단계 100 (DecreaseHP 0x478416)
+  //   84 의 불러오기, 82 의 동료 회복, 93 의 범위 효과는 몬스터 짝(+0x2e0)을 만드는 LoadMop 부분과 함께 아직이다
+  mobSpecial(m, u, act, now) {
+    const info = m.info, img = info.img;
+    if (!info.skill || this.fxOn(m, 5, now) || this.fxOn(m, 16, now) || this.fxOn(m, 18, now) || this.fxOn(m, 43, now)) return false;
+    const s1 = SK.get(info.skill); if (!s1) return false;
+    const pct = () => m.hp < 20000001 ? Math.floor(m.hp * 100 / m.maxHp) : Math.floor(m.hp / Math.floor(m.maxHp / 100));
+    const inReach = l => u && G.dist(m, u) + (m.z !== u.z ? 1 : 0) <= l;
+    if (img === 59) {
+      if (m.hp > Math.floor(m.maxHp / 2) || !(m.healCnt > 0)) return false;
+      m.healCnt--;
+      const heal = o => { o.hp = Math.min(o.maxHp, o.hp + Math.floor(s1.o * o.maxHp / 100)); this.near(o, { t: 'hp', id: o.id, hp: o.hp }); };
+      heal(m);
+      if (s1.l > 10000) for (const o of this.mobs.values()) if (o !== m && o.hp > 0 && G.dist(m, o) <= s1.l - 10000) heal(o);
+      this.near(m, { t: 'cast', id: m.id, sk: info.skill, tid: m.id });
+      return true;
+    }
+    if (img === 70) {
+      if (this.fxOn(m, 8, now) || m.hp > Math.floor(m.maxHp / 2)) return false;
+      this.mobEffect(m, 8, Math.floor(m.spi / 30), null, now);
+      m.delay = Math.ceil((info.skillMs || 0) / MOB_TICK); return true;
+    }
+    if (img === 79) {
+      if (act <= 1) return false;
+      if (!m.stole && pct() < 51 && inReach(s1.l)) return this.mobStealPotions(m, u);
+      if (pct() < 26) return this.mobUsePotion(m);
+      return false;
+    }
+    if (img === 80) {
+      if (act < 2) { if (m.boom) m.boom = 0; return false; }
+      const R = s1.l - 10000;
+      if (pct() < 51) { if (!inReach(R)) return false; m.boom = (m.boom || 0) >= 0 ? -1 : Math.max(-3, m.boom - 1); }
+      else if ((m.boom || 0) !== 100) { if (!inReach(R)) return false; m.boom = (m.boom || 0) < 1 ? 1 : Math.min(4, m.boom + 1); }
+      else return false;
+      const lv = m.boom < 0 ? -m.boom + 3 : m.boom;
+      const saved = m.atk; m.atk = lv * 65000; this.mobSkillArea(m, u, s1, info.skill, now); m.atk = saved;
+      return true;
+    }
+    return false;
+  }
+  // 물약 훔치기 (DoItemStealSkill 0x47a2e0): 대상 빠른 창 8칸 가운데 분류 4 이고 10개 이상인 것마다 ⌊n/10⌋ 을 빼앗는다.
+  //   번호 21 미만이거나 34·35 면 몬스터 소지품(같은 칸)에 넣는다. 하나라도 빼앗으면 그림 0x2f, 대상에게 글 0xa8, 다시는 안 훔친다
+  mobStealPotions(m, u) {
+    let any = false; m.items ||= [];
+    (u.quick || []).forEach((e, i) => {
+      if (i >= 8 || !e || e.k !== 4 || e.n <= 9) return;
+      const take = Math.floor(e.n / 10); e.n -= take; any = true;
+      if (e.i < 21 || e.i === 34 || e.i === 35) m.items[i] = { k: 4, i: e.i, n: take };
+    });
+    if (!any) return false;
+    this.near(m, { t: 'cast', id: m.id, sk: m.info.skill, tid: u.id, fx: 0x2f });
+    this.game.story.msg(u, 0xa8); this.game.sendInv(u); m.stole = true;
+    return true;
+  }
+  // 물약 쓰기 (DoUseItem 0x47a230): 소지품 첫 물약으로 체력을 채운다 (값이 1899999026 이면 최대 체력의 절반). 다 쓰면 칸을 비운다
+  mobUsePotion(m) {
+    const list = m.items || [];
+    for (let i = 0; i < 8; i++) {
+      const e = list[i], it = e && e.n > 0 && this.game.itemInfo(e.k, e.i); if (!it) continue;
+      const add = it.hp === 1899999026 ? Math.floor(m.maxHp / 2) : it.hp;
+      m.hp = Math.min(m.maxHp, m.hp + add); if (--e.n === 0) list[i] = null;
+      this.near(m, { t: 'hp', id: m.id, hp: m.hp }); return true;
+    }
+    return false;
+  }
   // 몬스터의 훔치기 (UseSkill 0x480c2c~, 0x480e5c~): 종류 67 은 빠른 창(8칸, 가방 3)에서, 39 는 장비(14칸, 가방 2)에서 무작위 칸을 고른다.
   //   빈 칸이면 아래로, 그다음 위로 찾는다 (빠른 창은 분류 6 을 건너뛴다). 빠른 창은 절반(1 이하면 1)을, 장비는 통째로 몬스터 자리에 떨어뜨린다 (DropItem)
   mobSteal(m, u, bag) {
@@ -1241,6 +1312,7 @@ class World {
       else { m.warpCnt = 0; m.warpState = 0; m.delay = Math.ceil((info.skillMs || 0) / MOB_TICK); }
       return;
     }
+    if (this.mobSpecial(m, u, act, now)) return;
     switch (act) {
       case 6: if (this.mobAttack(m, u, now) || !canMove) return;
         if (m.pattern === 1) this.flee(m, u, step); else this.moveToward(m, u, step); return;
@@ -1309,6 +1381,7 @@ class World {
     }
     const before = d.hp;
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
+    if (d.mob && d.hp > 0 && Math.floor(d.hp * 100 / d.maxHp) > 50) d.boom = 100;   // 맞고도 체력이 50% 넘으면 자폭 단계 100 (CMopServer::DecreaseHP 0x478416)
     if (!d.mob && d.hp < before) {
       this.fxOff(d, 35);                                         // 효과 35 Hide: 체력이 줄면 풀린다 (0x439349)
       // Voodoo (몬스터 효과 15): 시전자가 잃은 체력만큼 그 몬스터도 잃는다. 단 최대 체력의 1/10 아래로는 내려가지 않고, 이미 그 아래면 그대로 (ProcessVoodoo 0x4601f0)
