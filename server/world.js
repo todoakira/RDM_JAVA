@@ -38,6 +38,7 @@ const SK = require('./skills');
 const { Events } = require('./events');
 const EQUIP = require('./equip');
 const SUBQ = require('./subquest');
+const SHIP = require('./spaceship');
 const STORY = require('./story');
 const { Groups } = require('./group');
 const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
@@ -80,12 +81,14 @@ class World {
       this.npcs.push(npc); this.occ.set(this.key(t), npc.id);
     }
     let skipped = 0, seq = 0;
+    // 몬스터 다시 나기 (CMopServer +0xd8 의 +0x3c): 우주선 맵 88~92 는 꺼진 채 시작한다 (CMopServer::CMopServer 0x476bf1)
+    this.regenOn = !(mapId >= 88 && mapId <= 92); this.pendingSpawn = [];
     for (const s of sv.spawns) {
       const info = game.mopInfo[s.kind];
       // 몬스터 이름표 "+이름_n": n 은 이 맵에서 불러온 순서 (CMopServer::LoadMop 0x4772f3, "+%s_%u"). 대본의 KillMonster 가 이것으로 고른다
       const sids = []; for (let i = 0; i < s.count; i++) sids.push(`+${s.name}_${seq++}`);
       if (!info || !(spriteOf(info.img) in game.chrIndex)) { skipped += s.count; continue; }   // 그림이 없는 몬스터는 내보내지 않는다
-      for (const sid of sids) this.spawnMob(s, sid);
+      for (const sid of sids) { if (this.regenOn) this.spawnMob(s, sid); else this.pendingSpawn.push([s, sid]); }
     }
     if (skipped) console.log(`  맵 ${mapId}: 그림이 없는 몬스터 ${skipped}마리 제외`);
   }
@@ -702,6 +705,23 @@ class World {
   }
 
   // ---------- 몬스터 ----------
+  // 죽은 몬스터는 배치표의 시간 뒤에 다시 난다. 다시 나기가 꺼져 있으면 켜질 때까지 기다린다
+  respawnLater(d) {
+    this.after(d.s.regen * 1000, () => {
+      if (!this.regenOn) { this.pendingSpawn.push([d.s, d.sid]); return; }
+      const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) });
+    });
+  }
+  // SetMopRegen 0x47ab40
+  setRegen(on) {
+    this.regenOn = !!on; if (!on) return;
+    const list = this.pendingSpawn; this.pendingSpawn = [];
+    for (const [s, sid] of list) { const n = this.spawnMob(s, sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); }
+  }
+  // ClearAllMop 0x476f60: 모두 없앤다 (경험치·아이템 없이)
+  clearMobs() {
+    for (const m of [...this.mobs.values()]) { this.release(m); this.mobs.delete(m.id); this.broadcast({ t: 'die', id: m.id }); this.respawnLater(m); }
+  }
   // 배치표의 영역 좌표를 그대로 써서 자리를 고른다 (CMopServer::LoadMop 0x4773ac)
   spawnMob(s, sid) {
     const info = this.game.mopInfo[s.kind];
@@ -958,7 +978,7 @@ class World {
     if (d.mob) {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);
-      this.after(d.s.regen * 1000, () => { const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) }); });
+      this.respawnLater(d);
       if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); this.game.subq.onKill(a, d); }
     } else {
       if (d.trade) this.game.trades.cancel(d);
@@ -971,6 +991,7 @@ class World {
   tick(now) {
     for (let i = this.timers.length - 1; i >= 0; i--) if (now >= this.timers[i].at) { const t = this.timers.splice(i, 1)[0]; t.fn(); }
     for (const g of [...this.gates.values()]) if (now >= g.until) { this.gates.delete(g.id); this.broadcast({ t: 'gate', id: g.id, on: 0 }); }
+    this.game.ship.tick(this, now);                                     // 우주선 퀘스트 주기 (맵 87~92)
     if (!this.players.size) { this.mobTickAt = now + MOB_TICK; return; }
     this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
@@ -1034,9 +1055,14 @@ class World {
       // 맵 이동 지점을 밟으면 다른 맵으로 넘어간다
       const e = this.eventAt(n.x, n.y);
       if (e && e[0] === EV_WARP) {
-        if (!this.storyGate(p, e[1])) { p.path = []; continue; }
-        const w = this.game.world(e[1]);
-        if (w) { this.leave(p); w.enter(p, e[2], e[3]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
+        // 목적지가 여럿이면 GetTickCount() % 개수 로 하나 (ProcessEvent 0x41f2a0)
+        const k = Math.floor((e.length - 1) / 4), j = k > 1 ? now % k : 0, to = e[1 + j * 4], pos = [e[2 + j * 4], e[3 + j * 4]];
+        if (!this.storyGate(p, to)) { p.path = []; continue; }
+        const g = this.game.ship.gate(p, to, pos);
+        if (g === false) { p.path = []; continue; }
+        if (g === 'done') continue;
+        const w = this.game.world(to);
+        if (w) { this.leave(p); w.enter(p, pos[0], pos[1]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
       }
     }
     // 몬스터: 250ms마다 한 번씩 세고, 센 수가 대기 값에 이르면 행동한다 (CMopServer::ProcessDoSomethingMop 0x47aff7)
@@ -1057,7 +1083,7 @@ const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y,
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
+    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
