@@ -47,7 +47,8 @@ function parseLst(buf) {
 function parseRmd(buf) {
   const r = new Reader(buf);
   r.str(); r.i32(); r.i32(); r.i32();
-  const name = r.strKr(); r.i32(); r.i32(); r.bytes();
+  // 이름 뒤 두 값: 움직임 장 수, 한 장에 든 칸 수 (Main.dll 0x100363e0: 칸 번호 + 칸 수 × 움직임 표 값)
+  const name = r.strKr(), frameCount = r.i32(), stride = r.i32(); r.bytes();
   const n = r.i32();
   const ents = [];
   for (let k = 0; k < n; k++) {
@@ -76,7 +77,7 @@ function parseRmd(buf) {
     const cnt = r.i32();
     for (let k = 0; k < cnt && r.left >= 5; k++) { const no = r.i32(), fr = r.u8(); if (no) sounds[k] = [no, fr]; }
   }
-  return { name, ents, seqs, sounds };
+  return { name, ents, seqs, sounds, frameCount, stride };
 }
 
 // RLE: 16비트(RGB565) 줄길이 압축 그림 묶음

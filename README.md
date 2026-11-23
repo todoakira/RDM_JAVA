@@ -576,3 +576,6 @@ Ghidra 로 `svMapServer.exe` 를 풀어 읽었습니다 (DoEventServerAction 0x4
   - 메뉴 Help 와 로그인 화면 Help 단추로 원작 도움말 창(Message 1/1, 1/0)을 연다.
   - 원작에는 설정 창이 없고 대화 명령으로 설정한다: `` `대화 ``(chatview), `` `음악 ``(music), `` `효과음 ``(sound).
   - 자세히는 docs/help_setup_notes.md
+- **움직이는 오브젝트**:
+  - 원작 오브젝트 파일의 움직임 표대로 맵 위 물체(포털, 불, 깃발 등)가 움직인다. 표는 원작처럼 거꾸로 읽는다.
+  - 자세히는 docs/anim_obj_notes.md

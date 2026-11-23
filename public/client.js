@@ -71,7 +71,21 @@ async function loadAssets(mapId) {
     if (!objBuckets.has(k)) objBuckets.set(k, []);
     objBuckets.get(k).push(o);
   }
+  // 움직이는 오브젝트: 장마다 겹 목록이 따로 있다. 그릴 때 화면장 수로 장을 고른다 (Main.dll 0x100363e0)
+  const an = map.animObjs || [];
+  for (let i = 0; i < an.length; i += 3) {
+    const x = an[i], y = an[i + 1], A = map.objAnims[an[i + 2]];
+    for (const v of Object.keys(A.frames)) for (const di of A.frames[v]) {
+      const d = map.objDefs[di];
+      const o = { d, x: x * map.tw + d[5], y: y * map.th + d[6], key: y * map.th + d[7], anim: A, v: Number(v) };
+      const k = ((y / CH) | 0) * 1000 + ((x / CH) | 0);
+      if (!objBuckets.has(k)) objBuckets.set(k, []);
+      objBuckets.get(k).push(o);
+    }
+  }
 }
+// 화면장 수: 원작은 화면을 한 장 그릴 때마다 (50ms) 하나 올린다 (0x10036784). 표는 거꾸로 읽힌다: 표[(길이 − 수 % 길이) % 길이]
+const animVal = (A, now) => { const n = Math.floor(now / ANIM_MS), L = A.seq.length; return A.seq[(L - n % L) % L]; };
 
 // ---------- 바닥: 덩어리 단위로 미리 그려 두고 재사용 ----------
 function chunk(cx, cy) {
@@ -208,6 +222,7 @@ function frame() {
       const b = objBuckets.get(cy * 1000 + cx); if (!b) continue;
       for (const o of b) {
         if (o.x > camX + vw || o.y > camY + vh || o.x + o.d[3] < camX || o.y + o.d[4] < camY) continue;
+        if (o.anim && animVal(o.anim, now) !== o.v) continue;
         list.push(o);
       }
     }

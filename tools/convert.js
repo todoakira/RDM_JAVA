@@ -95,7 +95,7 @@ function convertMap(no, lists) {
     const d = [id, x1 - im.ox, y1 - im.oy, x2 - x1, y2 - y1, L.dx + x1 - L.sx1, L.dy + y1 - L.sy1]; d.black = im.black; return d;
   }
   const tileDefs = [], tileKey = new Map(), objDefs = [], objKey = new Map();
-  const ground = new Array(m.w * m.h).fill(-1), objs = [];
+  const ground = new Array(m.w * m.h).fill(-1), objs = [], objAnims = [], animObjs = [];
   let col = '';
   for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
     const t = m.tiles[y * m.w + x];
@@ -109,7 +109,22 @@ function convertMap(no, lists) {
       }
       ground[y * m.w + x] = tileKey.get(k);
     }
-    if (t.objFile) {
+    // 움직이는 오브젝트 (Main.dll 0x100363e0): 파일에 움직임 표(pump)가 있고 장 수가 1 이 아니면,
+    // 그릴 칸 = 놓인 칸 + 한 장 칸 수 × 표[(길이 − 화면장 수 % 길이) % 길이]. 장마다 겹 목록을 따로 만든다
+    const af = t.objFile && rmd('Obj', t.objFile);
+    if (af && af.seqs.length && af.seqs[0].length && af.frameCount !== 1 && af.stride > 0) {
+      const k = 'a' + t.objFile + ':' + t.objIdx;
+      if (!objKey.has(k)) {
+        const vals = [...new Set(af.seqs[0])], frames = {};
+        for (const v of vals) {
+          const list = [];
+          for (const L of af.ents[t.objIdx + af.stride * v] || []) { const d = layerDef('Obj', L); if (d) list.push(objDefs.push([...d, -L.ey, d.black ? 1 : 0, L.z]) - 1); }
+          frames[v] = list;
+        }
+        objKey.set(k, objAnims.push({ seq: af.seqs[0].slice(0, af.seqs[0].length & 0xff), frames }) - 1);
+      }
+      animObjs.push(x, y, objKey.get(k));
+    } else if (t.objFile) {
       const k = t.objFile + ':' + t.objIdx;
       if (!objKey.has(k)) {
         const ent = rmd('Obj', t.objFile)?.ents[t.objIdx];
@@ -130,7 +145,7 @@ function convertMap(no, lists) {
   }
   mk(path.join(OUT, 'maps'));
   fs.writeFileSync(path.join(OUT, 'maps', no + '.json'), JSON.stringify({
-    id: no, name: m.name, w: m.w, h: m.h, tw: 48, th: 24, spawn, tileDefs, ground, objDefs, objs, col,
+    id: no, name: m.name, w: m.w, h: m.h, tw: 48, th: 24, spawn, tileDefs, ground, objDefs, objs, objAnims, animObjs, col,
     rects: m.rects.filter(q => q.id > 0 && q.x1 >= 0 && q.y1 >= 0 && q.x2 > q.x1 && q.y2 > q.y1 && q.x2 <= m.w * 48 && q.y2 <= m.h * 24).map(q => [q.id, q.x1, q.y1, q.x2, q.y2]),   // 클릭 영역 (tools/map_rects.js 참고)
   }));
   return { id: no, name: m.name, w: m.w, h: m.h };
