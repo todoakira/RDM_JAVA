@@ -1025,17 +1025,161 @@ class World {
     else if (r <= 9) this.moveDir(m, r, t400);
     else m.delay = Math.floor(1000 / MOB_TICK);
   }
-  // 공격. 두 공격 중 하나를 반반으로 고르고, 닿는 쪽으로 친다. 다음 행동까지는 그 공격의 간격만큼 기다린다 (CMopServer::DoAttack 0x47dd70)
-  // 기술을 가진 몬스터는 원작에서 기술을 섞어 쓴다. 기술이 아직 없어서 일반 공격만 한다.
+  // 공격 (CMopServer::DoAttack 0x47dd70). r = 0~19 무작위로 갈래를 고른다:
+  //   1 = 첫 공격 우선, 2 = 둘째 공격 우선, 4 = 둘째 기술, s1 = 첫 기술, 5 = 모습 84 의 동료 고치기.
+  //   기술이 없거나 모습 79·80 이거나 몬스터 효과 58 이면 r>9 ? 2 : 1. 기술 둘 다 있으면 모습(61·84·93·98·그 밖)마다 표가 다르다 (0x47de3a~0x47dfe0).
+  //   둘째 기술만: r<8 → 1, r<12 → 4, 그 밖 2. 첫 기술만: r<9 → 1, r>10 → 2, r 9·10 이면 첫 기술 종류로 (1·11 → 1, 68 → 체력 65% 넘으면 1, 39 → 대상 장비가 있으면) (0x47e5d6~)
+  //   다음 행동까지 기다리는 시간은 쓴 쪽의 간격 (일반 = 간격1·2, 첫 기술 = 기술간격1, 둘째 기술 = 기술간격2)
   mobAttack(m, u, now) {
     const info = m.info, d = G.dist(m, u), r1 = info.range, r2 = info.range2 || 0;
-    if (d > r1 && d > r2) return false;
     if (d > 1 && this.fxOn(m, 13, now)) return false;           // 효과 13: 공격 사거리 1 (FindNextAction 0x47cffd)
-    const second = rnd(20) > 9 ? d <= r2 : d > r1;
-    m.delay = Math.ceil((second ? info.interval2 : info.interval) / MOB_TICK);
+    const s1 = info.skill ? SK.get(info.skill) : null, s2 = info.skill2 ? SK.get(info.skill2) : null;
+    const f58 = this.fxOn(m, 58, now), img = info.img, r = rnd(20);
+    const wait = ms => { m.delay = Math.ceil((ms || 0) / MOB_TICK); };
+    const normal = second => { wait(second ? info.interval2 : info.interval); const dir = G.direction(m, u); if (dir !== 5) m.dir = dir; this.hit(m, u, now, second ? 1 : 0); return true; };
+    const reach = s => { let l = s.l; const area = l >= 10000; if (area) l -= 10000; return { l, area }; };
+    const useSk = (s, sid, ms) => { const { area } = reach(s); if (area) this.mobSkillArea(m, u, s, sid, now); else this.mobSkill(m, u, s, sid, now); wait(ms); return true; };
+    // 둘째 기술 (0x47eb22): 사거리 밖이면 하지 않는다
+    const use2 = () => { if (!s2) return false; const { l } = reach(s2); if (d > l) return false; useSk(s2, info.skill2, info.skillMs2); m.lastSkillAt = now; return true; };
+    // 일반 공격이 안 닿을 때의 둘째 기술 (0x47e8ec 와 그 앞): 모습 74 면 안 쓰고, 첫 기술이 없으면 네 번에 한 번은 쉰다
+    const fallback2 = areaAware => {
+      if (img === 74 || !s2) return false;
+      if (!s1 && rnd(4) === 0) return false;
+      if (!areaAware) { if (d > s2.l) return false; this.mobSkill(m, u, s2, info.skill2, now); wait(info.skillMs2); return true; }
+      return use2();
+    };
+    const use1 = () => {                                        // 첫 기술 (0x47e7d7)
+      const { l } = reach(s1);
+      if (d > l && l !== 0) return fallback2(true);
+      if ((s1.n === 42 && this.fxOn(u, 27, now)) || (s1.n === 38 && (this.fxOn(u, 14, now) || this.fxOn(u, 43, now)))) return fallback2(true);
+      return useSk(s1, info.skill, info.skillMs);
+    };
+    let mode;
+    if ((!info.skill && !info.skill2) || img === 79 || img === 80 || f58) mode = r > 9 ? 2 : 1;
+    else if (info.skill2) {
+      const k1 = () => (s1 && (s1.n === 1 || s1.n === 11)) ? 1 : 's1';
+      if (!info.skill) mode = r < 8 ? 1 : r < 12 ? 4 : 2;
+      else if (img === 61) mode = r < 3 ? 1 : r < 6 ? 2 : r <= 8 ? k1() : 4;
+      else if (img === 84) return this.mobCureAlly(m, s2, info.skillMs2, now);
+      else if (img === 93) mode = r < 3 ? 1 : r <= 5 ? 2 : 4;
+      else if (img === 98) mode = r < 3 ? 1 : r <= 4 ? 2 : r <= 14 ? 's1' : 4;
+      else if (r < 7) mode = 1;
+      else if (r < 10) mode = k1();
+      else if (r < 13) mode = img === 74 && m.lastSkillAt && now - m.lastSkillAt < 20000 ? 1 : 4;
+      else mode = 2;
+    } else {
+      if (r < 9) mode = 1;
+      else if (r > 10 || !s1) mode = 2;
+      else if (s1.n === 1 || s1.n === 11) mode = 1;
+      else if (s1.n === 68) mode = Math.floor(m.hp * 100 / m.maxHp) > 65 ? 1 : 's1';
+      else if (s1.n === 39) mode = u.equip && Object.values(u.equip).some(Boolean) ? 's1' : 1;
+      else mode = 's1';
+    }
+    if (mode === 4) return use2();
+    if (mode === 's1') return use1();
+    // 1·2: 둘 다 안 닿으면 몬스터 효과 58 이면 끝, 아니면 다섯에 넷은 쉰다 (GetTickCount % 5)
+    if (d > r1 && d > r2) { if (f58 || rnd(5) !== 0) return false; }
+    if (mode === 1) {
+      if (d <= r1) return normal(false);
+      if (d > r2) return fallback2(false);
+      return normal(true);
+    }
+    if (d <= r2) return normal(true);
+    if (d <= r1) return normal(false);
+    return fallback2(true);
+  }
+  // 모습 84 (0x47ecb6): 둘째 기술 사거리 안의 다른 몬스터 가운데 다쳤거나 혼란 상태인 것을 찾아 나쁜 효과를 풀고 체력을 채운다. 없으면 아무것도 안 한다
+  mobCureAlly(m, s2, ms, now) {
+    const l = s2.l >= 10000 ? s2.l - 10000 : s2.l;
+    for (const o of this.mobs.values()) {
+      if (o === m || o.hp <= 0 || G.dist(m, o) > l) continue;
+      if (o.hp === o.maxHp && !this.fxOn(o, 16, now) && !this.fxOn(o, 12, now)) continue;
+      if (o.fx) for (const e of [5, 12, 14, 16, 18]) delete o.fx[e];
+      o.hp = o.maxHp;
+      const dir = G.direction(m, o); if (dir !== 5) m.dir = dir;
+      this.near(m, { t: 'cast', id: m.id, sk: m.info.skill2, tid: o.id }); this.near(m, { t: 'hp', id: o.id, hp: o.hp });
+      m.delay = Math.ceil((ms || 0) / MOB_TICK); return true;
+    }
+    return false;
+  }
+  // 몬스터가 사람 한 명에게 쓰는 기술 (CMopServer::UseSkill 0x480790)
+  //   사거리가 있으면 명중 판정: 기술 18·207 은 몬스터 민첩성 대 사람 기본 민첩성, 그 밖은 정신력 대 기본 정신력.
+  //   사람이 효과 24 면 빗나가도 되돌려지고, 맞아도 ⌊min(정신력,7000)×3/350⌋+20 (20~80)% 로 되돌려진다 (0x48087f~0x4809e4)
+  //   효과 종류: 2 → 사람 효과 5 (몬스터 정신력/30 초), 17 → 13 (/150), 38 → 14 (/30), 42 → 27 (/30), 68 → 58 (p 초)
+  //   18·19·67 → 피해: 18 은 몬스터 공격력, 19 는 t=⌊⌊정신력/15⌋×정신력/10⌋+50 에서 ⌊t/40⌋+⌊t/5⌋, 67 은 0. 위력 % 를 곱해 사람 쪽 GetAttack
+  //   41 → 몬스터가 효과 26 (정신력/30, 모습 74 는 10초) 을 얻고 다섯 걸음 달아난다. 되돌려지면 몬스터에게 걸린다
+  //   67·39 의 아이템 훔치기와 빗나갔을 때 사람 효과 45 의 반격(몬스터 효과 55)은 아직이다
+  mobSkill(m, u, s, sid, now) {
     const dir = G.direction(m, u); if (dir !== 5) m.dir = dir;
-    this.hit(m, u, now, second ? 1 : 0);
-    return true;
+    let hit = true, refl = false;
+    if (s.l > 0) {
+      const dex = sid === 18 || sid === 207;
+      hit = F.rand100() <= this.hitChance(m, u, F.hitPct(dex ? m.dex : m.spi, dex ? (u.bDex || 0) : (u.bSpi || 0)), now);
+      if (this.fxOn(u, 24, now)) {
+        if (!hit) { hit = true; refl = true; }
+        else { const c = Math.max(20, Math.min(80, Math.floor(Math.min(u.spi || 0, 7000) * 3 / 350) + 20)); if (F.rand100() < c) refl = true; }
+      }
+    }
+    if (!hit) { this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, miss: 1, hp: u.hp }); return; }
+    const spi = m.spi;
+    switch (s.n) {
+      case 2: refl ? this.mobEffect(m, 5, Math.floor(spi / 30), null, now) : this.userEffect(u, 5, Math.floor(spi / 30), now); break;
+      case 17: refl ? this.mobEffect(m, 13, Math.floor(spi / 150), null, now) : this.userEffect(u, 13, Math.floor(spi / 150), now); break;
+      case 38: if (!refl) this.userEffect(u, 14, Math.floor(spi / 30), now); break;
+      case 42: if (!refl) this.userEffect(u, 27, Math.floor(spi / 30), now); break;
+      case 68: refl ? this.mobEffect(m, 58, s.p, null, now) : this.userEffect(u, 58, s.p, now); break;
+      case 41: {
+        this.mobEffect(m, 26, m.info.img === 74 ? 10 : Math.floor(spi / 30), null, now);
+        for (let i = 0; i < 5; i++) { let dd = rnd(8); dd = dd === 0 ? 8 : dd === 5 ? 9 : dd; this.npcMove(m, dd, null, false); }
+        break;
+      }
+      case 18: case 19: case 67: {
+        let v = 0;
+        if (s.n === 18) v = m.atk;
+        else if (s.n === 19) { const t = Math.floor(Math.floor(spi / 15) * spi / 10) + 50; v = Math.floor(t / 40) + Math.floor(t / 5); }
+        if (refl) { this.applyDamage(u, m, this.mobDamage(u, Math.max(1, SK.damage(v, s.o, 0)), now, m), now, { k: 2, sk: sid }); break; }
+        const dmg = this.userDamage(m, u, Math.floor(s.o * v / 100), now);
+        if (this.fxOn(u, 6, now)) { u.mp = Math.max(0, u.mp - (2 * dmg + Math.floor(dmg / 4))); if (!u.mp) this.fxOff(u, 6); this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, dmg, hp: u.hp }); this.game.sendStat(u); break; }
+        this.applyDamage(m, u, dmg, now, { k: 2, sk: sid }); return;
+      }
+    }
+    this.near(m, { t: 'cast', id: m.id, sk: sid, tid: refl ? m.id : u.id });
+  }
+  // 몬스터의 범위 기술 (CMopServer::UseSkillRange 0x4813c0). 반경 = l − 10000. 중심은 몬스터 자리 (기술 212·213·216 만 대상 자리, 212 는 반경 − 1)
+  //   반경 안 살아 있는 사람마다: 막힘이 없고 효과 19(숨기)가 아니어야 한다 (종류 73 은 막힘·숨기 무시, 0x4815ef~0x481618)
+  //   명중: 종류 43 은 20%, 그 밖은 몬스터 정신력 대 사람 기본 정신력. 효과 24 되돌림은 한 명 판과 같고, 모습 78 은 늘 맞고 되돌림 없음, 모습 98 은 되돌림 없음
+  //   값 = 몬스터 공격력, 피해 = 위력 % (값 500만 이상이면 ÷100 먼저) → 사람 쪽 GetAttack. 종류 43 은 사람 효과 16 도, 71 은 27, 73 은 효과 19·35·26 을 먼저 푼다
+  //   되돌려지면 사람이 몬스터를 친다 (DoSkillAttackMop). 종류 70(지속 피해)·72(마력)·모습 98 의 스스로 회복은 아직이다
+  mobSkillArea(m, target, s, sid, now) {
+    let rad = s.l - 10000, center = { x: m.x, y: m.y, z: m.z };
+    if (sid === 212) { rad = Math.max(1, s.l - 10001); center = { x: target.x, y: target.y, z: target.z }; }
+    else if (sid === 213 || sid === 216) center = { x: target.x, y: target.y, z: target.z };
+    if (!G.same(center, m)) { const dir = G.direction(m, center); if (dir !== 5) m.dir = dir; }
+    this.near(m, { t: 'cast', id: m.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
+    const img = m.info.img, k = s.n, v = m.atk;
+    for (const u of [...this.players.values()]) {
+      if (u.dead || G.dist(center, u) > rad) continue;
+      if (k !== 73 && (!this.noObstacle(center, u) || this.fxOn(u, 19, now))) continue;
+      let hit = k === 43 ? F.rand100() <= 20 : F.rand100() <= this.hitChance(m, u, F.hitPct(m.spi, u.bSpi || 0), now), refl = false;
+      if (this.fxOn(u, 24, now)) {
+        if (!hit) { hit = true; refl = true; }
+        else { const c = Math.max(20, Math.min(80, Math.floor(Math.min(u.spi || 0, 7000) * 3 / 350) + 20)); if (F.rand100() < c) refl = true; }
+      }
+      if (img === 78) { hit = true; refl = false; } else if (img === 98) refl = false;
+      if (!hit) { this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, miss: 1, hp: u.hp, area: 1 }); continue; }
+      if (refl) {
+        if (k === 43) { this.mobEffect(m, 16, Math.floor(m.spi / 150), null, now); this.fxOff(m, 26); }
+        this.applyDamage(u, m, this.mobDamage(u, Math.max(1, SK.damage(v, s.o, 0)), now, m), now, { k: 2, sk: sid, area: 1 });
+        if (m.hp <= 0) return; continue;
+      }
+      if (k === 43) this.userEffect(u, 16, Math.floor(m.spi / 150), now);
+      else if (k === 71) this.userEffect(u, 27, Math.floor(m.spi / 30), now);
+      const raw = v < 5000000 ? Math.floor(s.o * v / 100) : Math.floor(v / 100) * s.o;
+      const dmg = this.userDamage(m, u, raw, now);
+      if (k === 73) { this.fxOff(u, 19); this.fxOff(u, 35); this.fxOff(u, 26); }
+      if (this.fxOn(u, 6, now)) { u.mp = Math.max(0, u.mp - (2 * dmg + Math.floor(dmg / 4))); if (!u.mp) this.fxOff(u, 6); this.game.sendStat(u); continue; }
+      this.applyDamage(m, u, dmg, now, { k: 2, sk: sid, area: 1 });
+    }
   }
   // 몬스터 한 마리의 행동 (CMopServer::DoNextAction 0x47be90)
   mobAct(m, now) {
