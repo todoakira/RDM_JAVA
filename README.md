@@ -585,3 +585,5 @@ Ghidra 로 `svMapServer.exe` 를 풀어 읽었습니다 (DoEventServerAction 0x4
 - **접속 화면 (원작 그림)**:
   - 첫 화면(n-if-ch-ba)과 원작 단추, 로그인·새 ID 창, 캐릭터 고르기(if-co-ba 동그라미 세 개), 캐릭터 만들기(if-cc-ba)를 원작 그림과 좌표로 다시 만들었다.
   - 원작에 없는 안내 글은 F12 로 켠다. 자세히는 docs/login_ui_notes.md
+
+- 글자 자료는 한국 서비스 클라이언트의 Message.ctf (한국어) 를 기본으로 쓴다. 없는 번호만 영어판(assets/messages_en.json)으로 채운다. docs/korean_client_notes.md
