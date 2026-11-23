@@ -86,6 +86,24 @@ class PK {
     return ok;
   }
 
+  // 기술로 사람을 칠 수 있는지 (CMapServerServer::UseSkill 0x45ef69~0x45f171). 안 되면 기술을 아예 쓰지 않는다 (마력도 그대로)
+  //   두 사람 모두 안전 칸·PK 금지 자리가 아니고 싸움터 여부가 같음, 둘 다 싸움터가 아니면 두 레벨 모두 15 초과,
+  //   감옥(78) 아님, 시전자 효과 19 아님. 시전자 PK 모드 켜짐 (원작의 인자 param_4 를 PK 모드로 보았다: 확인 못 함). 전쟁·동맹 예외는 아직
+  skillGate(a, d) {
+    const w = a.world;
+    if (d.dead || d.world !== w || d === a) return false;
+    const offA = this.pkOff(w, a.x, a.y), offD = this.pkOff(w, d.x, d.y), fA = this.fight(w, a.x, a.y), fD = this.fight(w, d.x, d.y);
+    if (this.safe(w, a.x, a.y) || this.safe(w, d.x, d.y) || offA || offD || fA !== fD) return false;
+    if ((!fA || !fD) && (a.level <= MIN_LEVEL || d.level <= MIN_LEVEL)) return false;
+    if (w.mapId === JAIL || w.fxOn(a, 19)) return false;
+    return this.isOn(a);
+  }
+  // 기술을 치른 뒤 (UseSkillAttackSingleUser 0x448b4e~0x448be0): 싸움터가 아니고 정당방위가 없으면 대상이 정당방위를 얻고 PK 모드가 켜진다
+  skillSide(a, d) {
+    const w = a.world;
+    if (!this.fight(w, a.x, a.y) && !this.fight(w, d.x, d.y) && !this.isLegal(a, d)) { this.setLegal(d, a); if (!this.isOn(d)) this.force(d); }
+  }
+
   // ---------- 죽음과 벌칙 ----------
   killed(victim, killer) {
     if (!killer || killer.mob || killer === victim) return;

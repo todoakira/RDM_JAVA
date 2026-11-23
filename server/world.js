@@ -199,6 +199,9 @@ class World {
     const ok = area ? ((s.n === 0 || s.n === 78) && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
     const u = id ? this.players.get(id) : null;
+    if (!area && u && u !== p && s.l > 0 && s.n === 0 && (s.a === 1 || SK.formulaKnown(sid))) {   // 사람에게 공격 기술 (PK)
+      p.cast = { sid, id, user: 1 }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0; return;
+    }
     if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       const t = u || p;
@@ -361,9 +364,18 @@ class World {
   // 주인공이 받는 피해 (CMapServerClient::GetAttack 0x4101f0, rm3944 NewEggEffect·NewWarcryEffect)
   //   공격 몬스터의 효과 0·25·32 마다 + /5 → 방어(효과 30 이면 + 3 × ⌊방어/10⌋ 한 번 더, 효과 54 면 7 × ⌊방어/10⌋)를 빼고 최소 1
   //   → 효과 54 가 없으면: 효과 64 면 × 25/100, 아니면 효과 8·42 면 × 값/100 → 효과 68 − /5, 70 − 30%, 71 − 40%, 72 − 40% → 효과 33 이면 × 4/5. 최소 1
+  //   사람이 때리면 (GetAttack 0x40ffd0: 일반 공격 DoAttackUser 0x4701b1, 기술 DoSkillAttackUser 0x45f634) 공격자 쪽이 다르다:
+  //   rm3944 NewAttackBuffsFix 0x10003c32 로 효과 0·42·46 마다, 효과 2 이고 총·중화기, 25, 32 마다 + /5, 그리고 NewFshieldEffect 로 68·77 마다 + /5
   userDamage(a, d, dmg, now) {
     const on = e => this.fxOn(d, e, now), pct = (v, n) => v < 10000000 ? Math.floor(v * n / 100) : Math.floor(v / 100) * n;
     if (a && a.mob) for (const e of [0, 25, 32]) if (this.fxOn(a, e, now)) dmg += Math.floor(dmg / 5);
+    if (a && !a.mob) {
+      const ao = e => this.fxOn(a, e, now), up = () => { dmg += Math.floor(dmg / 5); };
+      for (const e of [0, 42, 46]) if (ao(e)) up();
+      if (ao(2) && SK.isGun(a.equip && a.equip[7])) up();
+      if (ao(25)) up(); if (ao(32)) up();
+      if (ao(68)) up(); if (ao(77)) up();
+    }
     let armor = d.armor || 0;
     if (on(30)) armor += Math.floor(armor / 10) * 3;
     if (on(54)) armor = Math.floor(armor / 10) * 7;
@@ -591,6 +603,41 @@ class World {
       if (dr.sp) p.sp = Math.min(F.SP_MAX, p.sp + Math.floor(dealt * dr.sp[0] / dr.sp[1]));
       this.game.sendStat(p);
     }
+  }
+  // 사람에게 쓰는 한 대상 공격 기술 (UseSkillAttackSingleUser 0x448940, 효과 종류 0 만). 몬스터 판(castSkill)과 다른 점:
+  //   - 대상이 효과 24 면: 되돌림 확률 ⌊min(정신력,7000) × 3 ÷ 350⌋ + 20 (20~80, 0x4489cc~0x448aa0). 되돌려지거나 빗나가면 시전자가 대신 맞는다 (0x449740~0x449797, 특수 기술 0x44b464)
+  //   - 명중: 민첩성 기술은 양쪽 fightDex, 정신력 기술은 양쪽 기본+장비 정신력. 대상 효과 44 면 대상 값 + /5 (0x448cc5~0x449718)
+  //   - 피해: 공격 값이 100만 이하면 × 위력 ÷ 100, 넘으면 ÷ 100 × 위력, + T+0x38 → 사람 쪽 GetAttack (DoSkillAttackUser 0x45f5d0)
+  //   - 맞는 사람이 효과 6 이면 체력 대신 마력이 2v + v/4 줄고, 마력이 다 떨어지면 효과 6 이 풀린다 (0x45f63d~0x45f671)
+  castSkillUser(p, d, s, sid, now) {
+    const PK = this.game.pk;
+    if (!PK.skillGate(p, d)) return;
+    const cost = this.payForSkill(p, s); if (cost < 0) return;
+    PK.skillSide(p, d);
+    const dir = G.direction(p, d); if (dir !== 5) p.dir = dir;
+    this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);
+    let reflect = false;
+    if (this.fxOn(d, 24, now)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(d.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
+    let av;
+    if (s.a === 1) av = SK.specialAttack(p.level);
+    else {
+      const dex = SK.hitStat(sid) === 'dex';
+      const v44 = x => this.fxOn(d, 44, now) ? x + Math.floor(x / 5) : x;
+      const hitOk = F.rand100() <= this.hitChance(p, d, F.hitPct(dex ? this.fightDex(p, now) : p.spi, v44(dex ? this.fightDex(d, now) : (d.spi || 0))), now);
+      if (!hitOk && !this.fxOn(d, 24, now)) { this.near(p, { t: 'atk', id: p.id, tid: d.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: d.hp }); return; }
+      if (!hitOk) reflect = true;
+      av = sid in SK.BOW_DIV || sid === 385 ? SK.bowValue(sid, p, this.fightDex(p, now), this.weaponInfo(p)) + (p.atkExtra || 0) : SK.attackValue(sid, p, cost);
+    }
+    const t = reflect ? p : d;
+    const raw = (av > 1000000 ? Math.floor(av / 100) * s.o : Math.floor(av * s.o / 100)) + (p.skDmg || 0);
+    const dmg = this.userDamage(p, t, Math.max(1, raw), now);
+    if (this.fxOn(t, 6, now)) {
+      t.mp = Math.max(0, t.mp - (2 * dmg + Math.floor(dmg / 4)));
+      this.near(p, { t: 'atk', id: p.id, tid: t.id, dir: p.dir, k: 2, sk: sid, dmg, hp: t.hp });
+      if (!t.mp) this.fxOff(t, 6);
+      this.game.sendStat(t); return;
+    }
+    this.applyDamage(p, t, dmg, now, { k: 2, sk: sid });
   }
   // 이야기 퀘스트가 걸린 NPC (CMapServerClient::ProcessEvent 0x41ee70 의 종류 27·28·29·41·44). 처리했으면 true
   storyNpc(p, n, kind, e) {
@@ -1042,13 +1089,14 @@ class World {
       }
       if (p.fx) { let ch = false, rc = false; for (const e in p.fx) if (p.fx[e] <= now) { delete p.fx[e]; ch = true; if (SK.RECALC_FX.has(+e)) rc = true; } if (rc) { this.game.recalc(p, false); this.game.sendStat(p); } if (ch) this.sendFx(p); }   // 효과 시간 끝 (OnSkillEffectExpired)
       if (p.cast) {
-        const m = this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
-        if (!m || !s) p.cast = null;
+        const m = p.cast.user ? this.players.get(p.cast.id) : this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
+        if (!m || !s || (p.cast.user && m.dead)) p.cast = null;
         else if (s.l >= 10000 ? G.dist(p, m) <= s.l - 10000 : G.dist(p, m) <= s.l && this.noObstacle(p, m)) {
           p.path = [];
           if (now >= (p.skillAt || 0) && now >= p.nextAt) {
-            const sid = p.cast.sid; p.cast = null; p.skillAt = now + SK.USE_MS;
-            if (s.l >= 10000) this.castArea(p, m, s, sid, now); else this.castSkill(p, m, s, sid, now);
+            const sid = p.cast.sid, toUser = !!p.cast.user; p.cast = null; p.skillAt = now + SK.USE_MS;
+            if (toUser) this.castSkillUser(p, m, s, sid, now);
+            else if (s.l >= 10000) this.castArea(p, m, s, sid, now); else this.castSkill(p, m, s, sid, now);
           }
         } else if (now >= p.repathAt) {
           p.repathAt = now + 400;
