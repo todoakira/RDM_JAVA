@@ -61,7 +61,8 @@ class Mail {
   inform(p, ev) {
     const e = this.game.gEvents[ev]; if (!e || p.dead) return;
     if (e[0] === EV_MAILBOX && this.near(p)) p.send({ t: 'mailopen' });
-    else if (e[0] === 11) this.game.army.openComputer(p);            // ProcessEvent case 0xb: 군단 컴퓨터
+    else if (e[0] === 11) this.game.army.openComputer(p);
+    else if (e[0] === 2) this.game.board.open(p, e[1]);              // 게시판 (ProcessEvent case 2 → SendOpenBulletinPacket)            // ProcessEvent case 0xb: 군단 컴퓨터
   }
   // 서버가 보내는 우편 (RMS_SENDMAIL): 받는 사람이 접속해 있으면 알린다
   deliver(to, from, title, text) {

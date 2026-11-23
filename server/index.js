@@ -62,6 +62,7 @@ wss.on('connection', ws => {
     else if (m.t === 'revive') world.reviveAnswer(player, !!m.yes);
     else if (m.t === 'mvskill') world.moveSkillAnswer(player, Number(m.kind), m.text);
     else if (m.t === 'recall') world.recallAnswer(player, !!m.yes);
+    else if (m.t === 'board') game.board.handle(player, m);
     else if (m.t === 'regskill') game.registerSkill(player, m.kind | 0, Number(m.id));   // 빠른 창 기술 칸 (ProcessRegisterSkill)
     else if (m.t === 'skill' && m.x !== undefined) world.warpCmd(player, Number(m.sk), Number(m.x), Number(m.y), Number(m.z));
     else if (m.t === 'skill') { if (m.id) world.skillCmd(player, Number(m.sk), m.id, m.run); else world.selfSkillCmd(player, Number(m.sk)); }

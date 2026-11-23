@@ -515,6 +515,7 @@ const handlers = {
   pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
   ftier(m) { const e = ents.get(m.id); if (e) e.ft = m.v; },
   wave(m) { Sound.play(m.id); },
+  board(m) { BoardUI.handle(m); },
   qskill(m) { qsk[m.slot] = m.id || 0; if (typeof UI !== 'undefined') UI.skills(); },   // SendSetUserSkill(3, 칸, 기술)
   whisperfail(m) { log(esc(UI.M0(159).replace('%s', m.name)), 'sys'); },   // 0/0/159 "%s refuses to hear your whisper."                                       // 서버가 내는 소리 (AllPlayWave 0x473380: snd<번호>)
   // 교도관 (0x1d9 / 0x1db): 감옥 밖이면 0/0/214, 안이면 남은 분이 있으면 215 아니면 216
