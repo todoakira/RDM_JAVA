@@ -74,6 +74,7 @@ wss.on('connection', ws => {
     else if (m.t === 'quse') game.quickUse(player, m.q | 0);
     else if (m.t === 'shout') world.shout(player, m.text);
     else if (m.t === 'whisper') world.whisper(player, m.to, m.text);
+    else if (m.t === 'whisperfail') { const q = game.findOnline(String(m.from || '')); if (q && q !== player) q.send({ t: 'whisperfail', name: player.name }); }   // 받는 쪽이 거부함 (ProcessWhisperFailed)
     else if (m.t === 'tradeask') game.trades.ask(player, m.name);
     else if (m.t === 'tradeans') game.trades.answer(player, String(m.from || ''), !!m.ok);
     else if (m.t === 'tradeadd') game.trades.add(player, String(m.where || ''), m.slot | 0, m.n);

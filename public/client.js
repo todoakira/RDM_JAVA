@@ -16,6 +16,7 @@ const floaters = [];           // 떠오르는 피해 숫자
 const ground = new Map();      // 바닥에 떨어진 아이템
 const icoSets = new Map();     // 아이템 아이콘 묶음 (분류 -> {def, img})
 let myPk = 0;
+const ignored = new Set(); let ignoreAll = false;   // 귓속말 거부 목록 (클라이언트가 가진다)
 let objBuckets = null, marker = null, redrawTiles = false, hoverId = 0, hoverItem = 0, targetId = 0, mouse = null, inv = { money: 0, items: [] };
 
 // ---------- 자료 불러오기 ----------
@@ -350,6 +351,16 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && myId) {
     if (document.activeElement === $('say')) {
       const text = $('say').value.trim();
+      // 귓속말 거부 (원작 도움말 1/1/38~39): `ex 는 모두, `ex 이름 은 그 사람. 같은 명령을 다시 하면 푼다
+      const ex = /^`ex(?:\s+(\S+))?$/i.exec(text);
+      if (ex) {
+        const who = ex[1];
+        if (!who) { ignoreAll = !ignoreAll; log(esc(ignoreAll ? UI.M0(161).replace('%s', 'All') : '귓속말 거부를 풀었습니다.'), 'sys'); }
+        else if (who === myName()) log(esc(UI.M0(160)), 'sys');                                         // 0/0/160 자기 자신은 거부할 수 없다
+        else if (ignored.has(who)) { ignored.delete(who); log(esc(`${who} 의 귓속말 거부를 풀었습니다.`), 'sys'); }
+        else { ignored.add(who); log(esc(UI.M0(161).replace('%s', who)), 'sys'); }                          // 0/0/161
+        $('say').value = ''; $('say').blur(); $('chatbar').style.display = 'none'; e.preventDefault(); return;
+      }
       const gm = /^@(.+)$/.exec(text);   // 그룹 대화: 글 앞에 '@' 또는 입력줄의 Group 단추 (원작 도움말 Message.ctf 1/1/41~42)
       const sm = /^!(.+)$/.exec(text);   // 외치기: '!' 또는 Shout 단추 (1/1/32~33)
       if (gm || (chatMode === 'grp' && text)) send({ t: 'gchat', text: gm ? gm[1] : text });
@@ -495,7 +506,8 @@ const handlers = {
   pkmode(m) { const was = myPk; myPk = m.on ? 2 : m.arming ? 1 : 0; if (myPk !== was) log(esc(UI.M0(myPk === 2 ? 71 : myPk === 1 ? 208 : 72)), 'sys'); },
   pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
   ftier(m) { const e = ents.get(m.id); if (e) e.ft = m.v; },
-  wave(m) { Sound.play(m.id); },                                       // 서버가 내는 소리 (AllPlayWave 0x473380: snd<번호>)
+  wave(m) { Sound.play(m.id); },
+  whisperfail(m) { log(esc(UI.M0(159).replace('%s', m.name)), 'sys'); },   // 0/0/159 "%s refuses to hear your whisper."                                       // 서버가 내는 소리 (AllPlayWave 0x473380: snd<번호>)
   // 교도관 (0x1d9 / 0x1db): 감옥 밖이면 0/0/214, 안이면 남은 분이 있으면 215 아니면 216
   jail(m) {
     const t = m.inJail ? (m.min ? UI.M0(215).replace('%u', m.min) : UI.M0(216)) : UI.M0(214);
@@ -515,6 +527,8 @@ const handlers = {
     if (m.id === myId) log(`레벨 ${m.level}이 되었습니다.`, 'sys');
   },
   chat(m) {
+    // 거부한 사람의 귓속말은 보이지 않고, 서버에 알려 보낸 사람에게 0/0/159 가 간다 (원작 서버 ProcessWhisperFailed 0x474030)
+    if (m.kind === 'whisper' && m.name !== myName() && (ignoreAll || ignored.has(m.name))) { send({ t: 'whisperfail', from: m.name }); return; }
     const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayUntil = performance.now() + 5000; }
     const tag = m.group ? '[그룹] ' : m.kind === 'army' ? '[군단] ' : m.kind === 'shout' ? '[외침] ' : m.kind === 'whisper' ? (m.name === myName() ? `[→${m.to}] ` : '[귓속말] ') : '';
     log(`<span class="who">${esc(tag)}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : m.kind || undefined);
