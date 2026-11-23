@@ -24,7 +24,7 @@ const UI = (() => {
     else if (act === 'group') groupMenu();
     else if (act === 'quit') location.reload();
     else if (act === 'quick') toggle('winQuick');
-    else if (act === 'army') ArmyUI.open(); else if (act === 'help') log('아직 구현되지 않은 창입니다.', 'sys');
+    else if (act === 'army') ArmyUI.open(); else if (act === 'help') openHelp(1);
     else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
   function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block' || a === 'quick' && el('winQuick').style.display === 'block'); } }
@@ -259,6 +259,28 @@ const UI = (() => {
     }
   }
 
+  // ---------- 도움말 창 (Main.dll 0x10081900 만들기, 0x10082410 글 채우기) ----------
+  // 글은 Message 그룹 1: 0 = 로그인 도움말, 1 = 게임 도움말. 0번 줄이 제목, 1번부터 ':EOF' 줄 앞까지가 본문.
+  // 창 위치는 원작에서 찾지 못해 화면 가운데에 둔다. 글 색은 COLORREF 로 읽었다 (본문 0x91d7ff, 제목 0xffff)
+  let helpTop = 0, helpLines = [];
+  function openHelp(sec) {
+    const g = msgs && msgs[1] && msgs[1][sec]; if (!g) return;
+    el('helptitle').textContent = g[0] || ''; helpLines = [];
+    for (let i = 1; g[i] !== undefined && g[i] !== ':EOF'; i++) helpLines.push(g[i]);
+    helpTop = 0; drawHelp(); const w = el('winHelp'); w.style.display = 'block'; marks();
+  }
+  const HELP_ROWS = 12;
+  function drawHelp() {
+    helpTop = Math.max(0, Math.min(helpTop, helpLines.length - HELP_ROWS));
+    el('helptext').textContent = helpLines.slice(helpTop, helpTop + HELP_ROWS).join('\n');
+    const span = Math.max(1, helpLines.length - HELP_ROWS); el('helpth').style.top = (17 + Math.round((192 - 17 - 8) * helpTop / span)) + 'px';
+  }
+  document.addEventListener('click', e => {
+    const t = e.target; if (!t || !t.id) return;
+    if (t.id === 'helpcl') el('winHelp').style.display = 'none';
+    else if (t.id === 'helpup') { helpTop--; drawHelp(); } else if (t.id === 'helpdn') { helpTop++; drawHelp(); }
+  });
+  document.addEventListener('wheel', e => { if (el('winHelp') && el('winHelp').style.display === 'block' && e.target.closest && e.target.closest('#winHelp')) { helpTop += e.deltaY > 0 ? 3 : -3; drawHelp(); } });
   // ---------- 이벤트 대본 ----------
   const WINID = id => id === 'skill' ? 'winSk' : id;
   function closeWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display === 'block') toggle(id); }
@@ -434,5 +456,5 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

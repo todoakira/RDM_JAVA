@@ -362,6 +362,7 @@ addEventListener('keydown', e => {
         else { ignored.add(who); log(esc(UI.M0(161).replace('%s', who)), 'sys'); }                          // 0/0/161
         $('say').value = ''; $('say').blur(); $('chatbar').style.display = 'none'; e.preventDefault(); return;
       }
+      if (/^`(대화|chatview|음악|music|효과음|sound)(\s|$)/i.test(text) && setupCommand(text)) { $('say').value = ''; $('say').blur(); $('chatbar').style.display = 'none'; e.preventDefault(); return; }
       const gm = /^@(.+)$/.exec(text);   // 그룹 대화: 글 앞에 '@' 또는 입력줄의 Group 단추 (원작 도움말 Message.ctf 1/1/41~42)
       const sm = /^!(.+)$/.exec(text);   // 외치기: '!' 또는 Shout 단추 (1/1/32~33)
       if (gm || (chatMode === 'grp' && text)) send({ t: 'gchat', text: gm ? gm[1] : text });
@@ -417,8 +418,26 @@ function drawSkills() {
   if (skillSel && !list.includes(skillSel)) skillSel = 0;
   if (typeof UI !== 'undefined') UI.skills();
 }
-function log(html, cls) {
+// 원작 `대화/`chatview: 종류별로 화면 대화 줄에 보일지 정한다 (Main.dll 0x1001be96). 대화 기록 창에는 늘 남는다.
+// 순서는 원작 상태 글 0/0/477 그대로: 일반(G) 시스템(Sys) 외침(S) 귓속말(W) 그룹(Gr) 군단(A)
+const CHATVIEW = ['say', 'sys', 'shout', 'whisper', 'grp', 'army'], chatView = { say: 1, sys: 1, shout: 1, whisper: 1, grp: 1, army: 1 };
+function chatViewState() { let t = UI.M0(477); for (const k of CHATVIEW) t = t.replace('%s', UI.M0(chatView[k] ? 478 : 479)); return t; }
+// 대화 명령 (Main.dll 0x10076486 의 일부). 켜기/on, 끄기/off, 상태/state 는 원작 글자 그대로 받는다
+function setupCommand(text) {
+  const w = text.slice(1).trim().split(/\s+/), cmd = w[0], arg = w[1] || '';
+  const ON = arg === '켜기' || arg === 'on', OFF = arg === '끄기' || arg === 'off';
+  if (cmd === '대화' || cmd === 'chatview') {
+    if (ON || OFF) for (const k of CHATVIEW) chatView[k] = ON ? 1 : 0;
+    else if (arg !== '상태' && arg !== 'state') { if (!/^[01]{6}$/.test(arg)) return true; CHATVIEW.forEach((k, i) => chatView[k] = arg[i] === '1' ? 1 : 0); }
+    log(esc(chatViewState()), 'sys', true); return true;
+  }
+  if (cmd === '음악' || cmd === 'music') { if (ON || OFF) Sound.setMusic(ON); return true; }
+  if (cmd === '효과음' || cmd === 'sound') { if (ON || OFF) Sound.setSfx(ON); return true; }
+  return false;
+}
+function log(html, cls, force) {
   if (typeof UI !== 'undefined' && UI.hist) UI.hist(html, cls);   // 대화 기록 창에도 남긴다
+  if (!force && chatView[cls || 'say'] === 0) return;
   const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html;
   $('log').appendChild(d); while ($('log').children.length > 8) $('log').firstChild.remove();
 }
@@ -618,6 +637,7 @@ $('lf').addEventListener('submit', e => {
   const id = $('nm').value.trim(); if (!id) return;
   $('msg').textContent = '접속 중...'; connect(id, $('pw').value, false);
 });
+$('loginhelp').addEventListener('click', () => UI.help(0));   // 원작 로그인 화면의 Help 단추 (if-he-bu) → 로그인 도움말 (Message 1/0). 단추 자리는 원작과 다르다
 $('newid').addEventListener('click', () => { const id = $('nm').value.trim(); if (!id) return; $('msg').textContent = '접속 중...'; connect(id, $('pw').value, true); });
 $('mkok').addEventListener('click', () => { const fd = new FormData($('lf')); send({ t: 'newchar', slot: mkSlot, name: $('cn').value.trim(), chr: Number(fd.get('chr')), beginner: fd.get('beginner') === '1' }); });
 $('mkno').addEventListener('click', () => { $('mk').style.display = 'none'; });

@@ -35,6 +35,8 @@
   #chatbar { display: none; position: fixed; width: 479px; height: 64px; background: url(assets/int/53.png); z-index: 15; }   /* 대화 입력줄 iw-ct-ba, 원작 위치 160,531 */
   #chatbar .cb { position: absolute; top: 38px; height: 16px; cursor: pointer; background-position: 0 0; } #chatbar .cb:hover, #chatbar .cb.on { background-position: 0 -16px; }
   #winHist .htab { position: absolute; top: 220px; height: 18px; cursor: pointer; background-position: 0 0; } #winHist .htab.on { background-position: 0 -18px; }
+  #helptitle { position: absolute; left: 20px; top: 47px; width: 326px; height: 22px; font-size: 12px; color: #ffff00; text-align: center; line-height: 22px; }
+  #helptext { position: absolute; left: 20px; top: 70px; width: 326px; height: 185px; overflow: hidden; font-size: 12px; line-height: 15px; color: #ffd791; white-space: pre; }
   #histtext { position: absolute; left: 23px; top: 12px; width: 335px; height: 203px; overflow-y: auto; font-size: 12px; color: #fff; text-shadow: 0 0 2px #000; }
   #histtext .sys { color: #9fd0ff; } #trok.done { box-shadow: inset 0 0 0 2px #ffd27a; } .cell.okd { outline: 1px solid #ffd27a; } #histtext .shout, #log .shout { color: #ff9a6a; } #histtext .whisper, #log .whisper { color: #e3a0ff; } #histtext .grp { color: #8fd8ff; } #histtext .who { color: #ffd27a; }
   .win { display: none; position: fixed; font-size: 12px; color: #e8e2b8; user-select: none; }
@@ -126,6 +128,15 @@
   <div id="trcells"></div>
   <div id="trok" style="position:absolute;left:25px;top:214px;width:56px;height:16px;cursor:pointer"></div>
   <div id="trcancel" style="position:absolute;left:85px;top:214px;width:57px;height:16px;cursor:pointer"></div></div>
+<!-- 도움말 창 (Main.dll 0x10081900): 바탕 ge-wr-ba 383×297, 닫기 ge-cl-bu (304,263), 제목 (20,47)~(346,69), 글 (20,70)~(346,255), 스크롤 (349,45) 17×209 -->
+<div id="winHelp" class="win o" style="z-index:1000;--x:208px;--y:151px;width:383px;height:297px;background:url(assets/int/137.png)">
+  <div id="helpcl" class="pbtn" style="left:304px;top:263px;width:62px;height:20px;background-image:url(assets/int/136.png)"></div>
+  <div id="helptitle"></div><div id="helptext"></div>
+  <div id="helpsb" style="position:absolute;left:349px;top:45px;width:17px;height:209px;background:url(assets/int/143.png)">
+    <div id="helpup" class="pbtn" style="left:0;top:0;width:17px;height:17px;background-image:url(assets/int/67.png)"></div>
+    <div id="helpdn" class="pbtn" style="left:0;top:192px;width:17px;height:17px;background-image:url(assets/int/68.png)"></div>
+    <div id="helpth" style="position:absolute;left:0;top:17px;width:17px;height:8px;background:url(assets/int/70.png)"></div></div>
+</div>
 <div id="winHist" class="win o" style="--x:397px;--y:317px;width:400px;height:250px;background:url(assets/int/60.png)">
   <div class="clb" data-close="winHist" style="left:376px;top:0"></div><div id="histtext"></div>
   <div class="htab on" data-k="sys" style="left:36px;width:59px;background-image:url(assets/int/82.png)"></div><div class="htab on" data-k="shout" style="left:96px;width:51px;background-image:url(assets/int/81.png)"></div>
@@ -152,7 +163,7 @@
 <div id="dead" style="display:none;position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);border:1px solid #733;padding:18px 26px;text-align:center">쓰러졌습니다<br><button id="restart" style="margin-top:10px;padding:8px 16px;background:#a11;color:#fff;border:0;cursor:pointer;font:inherit">다시 시작</button></div>
 <div id="login"><form id="lf">
   <p>JavaScript 온라인 버전 · 시험판</p>
-  <div id="step1"><input id="nm" maxlength="14" placeholder="로그인 ID" autocomplete="off" autofocus><input id="pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상)" autocomplete="off"><button>Login</button><button type="button" id="newid">New ID</button>
+  <div id="step1"><input id="nm" maxlength="14" placeholder="로그인 ID" autocomplete="off" autofocus><input id="pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상)" autocomplete="off"><button>Login</button><button type="button" id="newid">New ID</button><span id="loginhelp" title="Help" style="display:inline-block;vertical-align:middle;margin-left:6px;width:137px;height:62px;cursor:pointer;background:url(assets/int/623.png) 0 0"></span>
   <div style="color:#888;font-size:12px;margin-top:6px">예전 판 캐릭터는 캐릭터 이름을 ID 로, 그 비밀번호로 로그인하면 계정으로 옮겨집니다.</div></div>
   <div id="step2" style="display:none"><div id="selhead" style="color:#e0b050;margin-bottom:10px"></div><div id="slots" style="display:flex;gap:14px;justify-content:center"></div>
     <div id="mk" style="display:none;margin-top:14px"><input id="cn" maxlength="14" placeholder="새 캐릭터 이름" autocomplete="off"><div id="classes"></div><div style="color:#aaa;font-size:13px;margin-top:8px">시작 위치: <label><input type="radio" name="beginner" value="1" checked> 초보존</label> <label><input type="radio" name="beginner" value="0"> 주택가2 병원</label></div><button type="button" id="mkok">만들기</button><button type="button" id="mkno">취소</button></div></div>

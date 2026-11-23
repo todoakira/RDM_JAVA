@@ -18,15 +18,19 @@ const Sound = (() => {
     pendingMap = id; if (!music) return;
     const t = trackOf(id); if (!t || t === cur) return;
     cur = t; bgm.src = `assets/bgm/${t}.ogg`;
-    if (on) bgm.play().catch(() => {});
+    if (on && musicOn) bgm.play().catch(() => {});
   }
   function ac() {
     if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return ctx;
   }
+  // 원작 대화 명령 `음악/`music 켜기·끄기 (Main.dll 0x10005e50: 음악만 묵음), `효과음/`sound 켜기·끄기 (0x10005e70: 효과음만)
+  let musicOn = true, sfxOn = true;
+  function setMusic(v) { musicOn = v; if (on && musicOn) { ac(); if (bgm.src) bgm.play().catch(() => {}); } else bgm.pause(); }
+  function setSfx(v) { sfxOn = v; }
   function play(no, vol = 1) {
-    if (!on || !no) return;
+    if (!on || !sfxOn || !no) return;
     const c = ac(); if (!c) return;
     let b = buffers.get(no);
     if (b === undefined) {
@@ -46,10 +50,10 @@ const Sound = (() => {
   }
   function toggle() {
     on = !on; try { localStorage.setItem('rmSound', on ? 'on' : 'off'); } catch (e) {}
-    if (on) { ac(); if (bgm.src) bgm.play().catch(() => {}); } else bgm.pause();
+    if (on && musicOn) { ac(); if (bgm.src) bgm.play().catch(() => {}); } else bgm.pause();
     return on;
   }
   // 브라우저는 사용자가 한 번 누르기 전에는 소리를 막는다
-  addEventListener('pointerdown', () => { ac(); if (on && bgm.src && bgm.paused) bgm.play().catch(() => {}); }, { once: false });
-  return { playMap, play, frameSound, toggle, get on() { return on; } };
+  addEventListener('pointerdown', () => { ac(); if (on && musicOn && bgm.src && bgm.paused) bgm.play().catch(() => {}); }, { once: false });
+  return { playMap, play, frameSound, toggle, setMusic, setSfx, get on() { return on; } };
 })();
