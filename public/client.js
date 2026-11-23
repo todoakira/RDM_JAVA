@@ -144,6 +144,8 @@ function drawEnt(e, now) {
   if (gi) { ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(gi, g[1], g[2], g[3], g[4], Math.round(e.px) + g[5], Math.round(e.py) + g[6], g[3], g[4]); ctx.globalCompositeOperation = 'source-over'; }
   ctx.globalAlpha = 1;
 }
+// 사람 이름 색: 명성 단계 (클라이언트 Main.dll 0x10031ff0 의 표, COLORREF → CSS). 0 과 그 밖은 흰색
+const FAME_COLOR = { '-5': '#9b0505', '-4': '#af3737', '-3': '#c36969', '-2': '#d79b9b', '-1': '#ebcdcd', 1: '#cdcdeb', 2: '#9b9bd7', 3: '#6969c3', 4: '#3737af', 5: '#05059b' };
 function outlined(text, x, y, color) { ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(text, x, y); ctx.fillStyle = color; ctx.fillText(text, x, y); }
 function drawLabels(e, now) {
   if (e.deadAt && e.mob) return;
@@ -151,7 +153,7 @@ function drawLabels(e, now) {
   const focus = e.id === hoverId || e.id === targetId;
   if (!e.mob || focus) {
     ctx.font = `bold 12px ${FONT}`;
-    outlined(e.mob || e.npc ? e.name : `${e.name} Lv.${e.level}`, x, y, e.mob ? '#ff9a8a' : e.npc ? '#9fe89f' : e.id === myId ? '#ffd27a' : '#fff');
+    outlined(e.mob || e.npc ? e.name : `${e.name} Lv.${e.level}`, x, y, e.mob ? '#ff9a8a' : e.npc ? '#9fe89f' : FAME_COLOR[e.ft] || '#fff');
   }
   if (!e.npc && e.hp < e.maxHp && !e.deadAt && (e.mob ? now - e.shownAt < 6000 || focus : e.id !== myId)) {
     ctx.fillStyle = '#000'; ctx.fillRect(x - 21, y + 5, 42, 5);
@@ -492,6 +494,7 @@ const handlers = {
   // PK 모드 (패킷 0x3f7): 켜는 중이면 0/0/208, 켜지면 71, 꺼지면 72
   pkmode(m) { const was = myPk; myPk = m.on ? 2 : m.arming ? 1 : 0; if (myPk !== was) log(esc(UI.M0(myPk === 2 ? 71 : myPk === 1 ? 208 : 72)), 'sys'); },
   pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
+  ftier(m) { const e = ents.get(m.id); if (e) e.ft = m.v; },
   // 교도관 (0x1d9 / 0x1db): 감옥 밖이면 0/0/214, 안이면 남은 분이 있으면 215 아니면 216
   jail(m) {
     const t = m.inJail ? (m.min ? UI.M0(215).replace('%u', m.min) : UI.M0(216)) : UI.M0(214);

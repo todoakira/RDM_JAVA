@@ -1096,7 +1096,9 @@ class World {
   // 근처에 있는 접속자에게만 보낸다
   near(e, msg) { for (const p of this.players.values()) if (Math.abs(p.x - e.x) <= CFG.viewX && Math.abs(p.y - e.y) <= CFG.viewY) p.send(msg); }
 }
-const pubP = p => ({ id: p.id, name: p.name, chr: p.chr, x: p.x, y: p.y, z: p.z, dir: p.dir, hp: p.hp, maxHp: p.maxHp, level: p.level, dead: p.dead ? 1 : 0 });
+// 명성 단계 (UpdateCIS 0x463c3d, CIS +0x26): 명성 > 0 이면 ⌊(명성−1)/200⌋+1 (최대 5), < 0 이면 −(⌊(−명성−1)/200⌋+1) (최소 −5)
+const fameTier = f => f > 0 ? Math.min(5, Math.trunc((f - 1) / 200) + 1) : f < 0 ? Math.max(-5, Math.trunc((f + 1) / 200) - 1) : 0;
+const pubP = p => ({ id: p.id, name: p.name, chr: p.chr, x: p.x, y: p.y, z: p.z, dir: p.dir, hp: p.hp, maxHp: p.maxHp, level: p.level, dead: p.dead ? 1 : 0, ft: fameTier(p.fame || 0) });
 const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y, z: m.z, dir: m.dir, hp: m.hp, maxHp: m.maxHp });
 
 // 시그너스 맵 (93~108, 137~176): 상점·은행은 돈 대신 Tau(시그너스 돈, 아이템 5/2, DB 칸 SigMoney)를 쓰고 은행도 따로다
@@ -1206,7 +1208,8 @@ class Game {
     p.maxDp = F.dpMax(hpPow); p.dp = Math.min(p.dp || 0, p.maxDp);
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
-  sendStat(p) { if (p.fx && p.fx[72] > Date.now()) p.sp = 0;   // 효과 72 Diamond Skin: 기력은 늘 0 (rm3944 NewDskinEffect 0x10002cfc, SendSPInfo 0x439f13)
+  sendStat(p) { if (p.fx && p.fx[72] > Date.now()) p.sp = 0;
+    const ft = fameTier(p.fame || 0); if (ft !== p.ftSent && p.world) { p.ftSent = ft; p.world.broadcast({ t: 'ftier', id: p.id, v: ft }); }   // 이름 색이 바뀜   // 효과 72 Diamond Skin: 기력은 늘 0 (rm3944 NewDskinEffect 0x10002cfc, SendSPInfo 0x439f13)
     if (p.group) this.groups.hpChanged(p); p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus + (p.bonus2 || 0) + (p.sbonus || 0), str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
