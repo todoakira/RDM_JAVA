@@ -13,10 +13,13 @@
   /* 원작에 없는 안내 글: 기본은 숨기고 F12 로 켠다 */
   #help, #hud { display: none; } body.keyhelp #help, body.keyhelp #hud { display: block; }
   #help { position: fixed; top: 8px; right: 10px; font-size: 12px; text-align: right; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; opacity: .85; line-height: 1.5; }
-  #chat { position: fixed; left: 92px; bottom: 42px; width: min(420px, calc(100vw - 20px)); }
-  #log { max-height: 150px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
-  #log .sys { color: #9fd0ff; }
-  #log .who { color: #ffd27a; }
+  /* 화면 대화 줄 (Main.dll 0x10010d2f): 550×350 판에 20줄, 줄 간격 17, 글꼴 높이 12. 판은 (5, 210) 에 붙여 마지막 줄 아래가 y 550.
+     줄마다 100 장(50ms × 100 = 5초) 지나면 사라진다 (0x1001c120). 글은 어두운 테두리(0x0a0a0a)로 그린다 */
+  #chat { position: fixed; width: 550px; height: 340px; --x: 5px; --y: 210px; overflow: hidden; pointer-events: none; z-index: 5; }
+  #log { position: absolute; left: 0; bottom: 0; width: 550px; font: 12px/17px Gulim, GulimChe, 굴림, sans-serif; color: #ffffff; pointer-events: none; }
+  #log > div { height: 17px; white-space: nowrap; overflow: hidden; text-shadow: 1px 0 #0a0a0a, -1px 0 #0a0a0a, 0 1px #0a0a0a, 0 -1px #0a0a0a; }
+  /* 종류별 색 (0x1001c097 표, COLORREF 를 RGB 로): 일반 흰색, 외침 노랑, 귓속말 #0080ff, 그룹 초록, 군단 #f09c00, 시스템 빨강, 7번 #ffc800 */
+  #log .sys { color: #ff0000; } #log .shout { color: #ffff00 !important; } #log .whisper { color: #0080ff !important; } #log .grp { color: #00ff00 !important; } #log .army { color: #f09c00; } #log .k7 { color: #ffc800; } #log .who { color: inherit !important; }
   #say { position: absolute; left: 15px; top: 12px; width: 452px; height: 20px; box-sizing: border-box; padding: 0 4px; background: transparent; border: 0; color: #fff; font: inherit; font-size: 13px; outline: none; }   /* 입력칸 (15,12)~(467,32), Main.dll 0x10076203 */
   #login { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; }
   #ls { position: relative; width: 800px; height: 600px; transform-origin: center; }
@@ -52,7 +55,7 @@
   #helptitle { position: absolute; left: 20px; top: 47px; width: 326px; height: 22px; font-size: 12px; color: #ffff00; text-align: center; line-height: 22px; }
   #helptext { position: absolute; left: 20px; top: 70px; width: 326px; height: 185px; overflow: hidden; font-size: 12px; line-height: 15px; color: #ffd791; white-space: pre; }
   #histtext { position: absolute; left: 23px; top: 12px; width: 335px; height: 203px; overflow-y: auto; font-size: 12px; color: #fff; text-shadow: 0 0 2px #000; }
-  #histtext .sys { color: #9fd0ff; } #trok.done { box-shadow: inset 0 0 0 2px #ffd27a; } .cell.okd { outline: 1px solid #ffd27a; } #histtext .shout, #log .shout { color: #ff9a6a; } #histtext .whisper, #log .whisper { color: #e3a0ff; } #histtext .grp { color: #8fd8ff; } #histtext .who { color: #ffd27a; }
+  #histtext .sys { color: #9fd0ff; } #trok.done { box-shadow: inset 0 0 0 2px #ffd27a; } .cell.okd { outline: 1px solid #ffd27a; } #histtext .shout { color: #ff9a6a; } #histtext .whisper { color: #e3a0ff; } #histtext .grp { color: #8fd8ff; } #histtext .who { color: #ffd27a; }
   .win { display: none; position: fixed; font-size: 12px; color: #e8e2b8; user-select: none; }
   .o { left: calc(50% - 400px + var(--x)); top: calc(100% - 600px + var(--y)); }
   .win .x { position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; cursor: pointer; }
@@ -66,7 +69,7 @@
   .skc { position: absolute; width: 50px; height: 35px; cursor: pointer; }
   .ska { position: absolute; width: 22px; height: 35px; cursor: pointer; }
   #fxlist { position: fixed; left: 90px; bottom: 150px; font-size: 12px; color: #9fd0ff; text-shadow: 0 0 3px #000; pointer-events: none; }
-  #log .grp, .grp .who { color: #8fd8ff; }
+  .grp .who { color: #8fd8ff; }
   #winAsk { display: none; position: fixed; width: 471px; height: 170px; background: url(assets/int/356.png); z-index: 20; font-size: 12px; }
   .askopt { position: absolute; left: 17px; width: 436px; height: 25px; box-sizing: border-box; padding: 5px 8px; color: #fff; cursor: pointer; background: url(assets/int/357.png) 0 0; white-space: nowrap; overflow: hidden; }
   .askopt:hover { background-position: 0 -25px; }
@@ -122,7 +125,7 @@
 <canvas id="cv"></canvas>
 <div id="hud"></div>
 <div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 · F6 그룹 · F7 대화 기록<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 대화 입력줄 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 · F8 빠른 창(소지품 오른쪽 클릭으로 넣고 CTRL+1~8) · !외치기 · /이름 귓속말 · @그룹 · `trade 이름: 거래</div>
-<div id="chat"><div id="log"></div></div>
+<div id="chat" class="o"><div id="log"></div></div>
 <div id="gauge" class="o" style="--x:505px;--y:540px">
   <b style="left:13px;top:2px;width:154px;background:url(assets/int/464.png)"><i id="gh" style="background:url(assets/int/465.png)"></i></b>
   <b style="left:13px;top:10px;width:154px;background:url(assets/int/466.png)"><i id="gm" style="background:url(assets/int/467.png)"></i></b>

@@ -453,11 +453,13 @@ function setupCommand(text) {
   if (cmd === '효과음' || cmd === 'sound') { if (ON || OFF) Sound.setSfx(ON); return true; }
   return false;
 }
+const CHAT_TTL = 100 * 50;   // 100 장 × 50ms (언어 설정 2·3·8 이면 200 장)
 function log(html, cls, force) {
   if (typeof UI !== 'undefined' && UI.hist) UI.hist(html, cls);   // 대화 기록 창에도 남긴다
   if (!force && chatView[cls || 'say'] === 0) return;
   const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html;
-  $('log').appendChild(d); while ($('log').children.length > 8) $('log').firstChild.remove();
+  $('log').appendChild(d); while ($('log').children.length > 20) $('log').firstChild.remove();
+  setTimeout(() => d.remove(), CHAT_TTL);
 }
 const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
