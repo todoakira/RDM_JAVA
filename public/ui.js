@@ -252,9 +252,11 @@ const UI = (() => {
     el('fxlist').innerHTML = fxList.map(([e, sec, id]) => `<div>${esc(id ? skText(id).name : '효과 ' + e)} ${Math.max(0, Math.ceil(sec - gone))}초</div>`).join('');
   }
   function drawQuickSkill() {
-    const id = typeof skillSel !== 'undefined' ? skillSel : 0;
-    el('skquick').style.cssText = id ? skIcon(id, 0) : 'display:none';
-    el('skquick').title = id ? skText(id).name : '';
+    for (let k = 0; k < 2; k++) {
+      const id = typeof qsk !== 'undefined' ? qsk[k] : 0, c = el('qksk' + k); if (!c) continue;
+      c.style.cssText = `position:absolute;left:${351 + 58 * k}px;top:15px;width:50px;height:35px;` + (id ? skIcon(id, 0) : '');
+      c.title = id ? skText(id).name + (k ? ' (SHIFT + 오른쪽 단추)' : ' (오른쪽 단추)') : '';
+    }
   }
 
   // ---------- 이벤트 대본 ----------

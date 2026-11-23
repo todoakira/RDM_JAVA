@@ -46,7 +46,7 @@ wss.on('connection', ws => {
       // 이름 규칙은 원작 로그인 서버와 같다: 14바이트(한글 7자)까지, 작은따옴표 금지 (svIP.exe CIPClient::ProcessNewCharacterID 0x404a10)
       if (a.created && ([...name].reduce((n, c) => n + (c.charCodeAt(0) > 127 ? 2 : 1), 0) > 14 || name.includes("'"))) { send({ t: 'error', text: '이름은 한글 7자(영문 14자)까지이고 작은따옴표를 쓸 수 없습니다.' }); return; }
       player = game.join(name, send, a.auth, a.created && Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1, !!m.beginner); game.save(player);
-      game.mail.login(player); game.army.sendBadge(player); game.story.sendInfo(player, false); game.story.checkAndStart(player);
+      game.mail.login(player); game.army.sendBadge(player); game.sendQuickSkill(player); game.story.sendInfo(player, false); game.story.checkAndStart(player);
       console.log(`[입장] ${name} (#${player.id}) 접속자 ${game.online}명`);
       return;
     }
@@ -62,6 +62,7 @@ wss.on('connection', ws => {
     else if (m.t === 'revive') world.reviveAnswer(player, !!m.yes);
     else if (m.t === 'mvskill') world.moveSkillAnswer(player, Number(m.kind), m.text);
     else if (m.t === 'recall') world.recallAnswer(player, !!m.yes);
+    else if (m.t === 'regskill') game.registerSkill(player, m.kind | 0, Number(m.id));   // 빠른 창 기술 칸 (ProcessRegisterSkill)
     else if (m.t === 'skill' && m.x !== undefined) world.warpCmd(player, Number(m.sk), Number(m.x), Number(m.y), Number(m.z));
     else if (m.t === 'skill') { if (m.id) world.skillCmd(player, Number(m.sk), m.id, m.run); else world.selfSkillCmd(player, Number(m.sk)); }
     else if (m.t === 'gcreate') game.groups.create(player);

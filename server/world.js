@@ -1217,7 +1217,7 @@ class Game {
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
-      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -1243,7 +1243,7 @@ class Game {
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
-      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'pkCount', 'pkPen', 'pkDecay', 'legal']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'qsk', 'pkCount', 'pkPen', 'pkDecay', 'legal']) if (d[k] !== undefined) p[k] = d[k];
       if (d.sigBank) p.sigBank = d.sigBank;
       if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
@@ -1485,6 +1485,19 @@ class Game {
     p[c] = (p[c] || 0) + gain; this.sendInv(p); this.sendStat(p);
   }
   // ---------- 아이템 ----------
+  // 빠른 창 기술 칸 (ProcessRegisterSkill 0x42b240): 1 = 보통 기술 → +0x4020, 2 = 특수 기술 → +0x4022. SendSetUserSkill(3, 칸, 기술)
+  registerSkill(p, kind, id) {
+    const ok = kind === 1 ? SK.list(p).includes(id) && id !== SK.SPECIAL[p.chr] : kind === 2 ? id === SK.SPECIAL[p.chr] : false;
+    if (!ok) return;
+    (p.qsk ||= [0, 0])[kind - 1] = id; p.send({ t: 'qskill', slot: kind - 1, id });
+  }
+  // 접속할 때 (SendQuickSkillInfo 0x43a2f0). 더 쓸 수 없는 기술은 비운다 (InitializeQuickSkill 0x434ef0 의 요건 검사)
+  sendQuickSkill(p) {
+    const q = p.qsk ||= [0, 0], list = SK.list(p);
+    if (q[0] && !list.includes(q[0])) q[0] = 0;
+    if (q[1] && q[1] !== SK.SPECIAL[p.chr]) q[1] = 0;
+    for (let k = 0; k < 2; k++) if (q[k]) p.send({ t: 'qskill', slot: k, id: q[k] });
+  }
   storyWindowOpen(p) { return this.story.windowOpen(p); }
   // 분류 5의 0번은 돈이다. 원작에 화폐 단위 이름은 없고 그냥 '돈'이다 (DB 칸 Money). 시그너스에서 쓰는 돈은 따로 있다 (DB 칸 SigMoney, 아직 없음)
   itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : k === 5 && i === 2 ? { name: 'Tau', icon: 0, tau: true } : (this.items[k] && this.items[k][i]) || null; }

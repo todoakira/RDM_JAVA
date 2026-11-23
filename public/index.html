@@ -49,7 +49,6 @@
   #msg { margin-top: 14px; color: #f88; font-size: 13px; min-height: 18px; }
   .skc { position: absolute; width: 50px; height: 35px; cursor: pointer; }
   .ska { position: absolute; width: 22px; height: 35px; cursor: pointer; }
-  #skquick { position: fixed; left: 50%; margin-left: 260px; bottom: 44px; width: 50px; height: 35px; outline: 1px solid #6a6; z-index: 5; }
   #fxlist { position: fixed; left: 90px; bottom: 150px; font-size: 12px; color: #9fd0ff; text-shadow: 0 0 3px #000; pointer-events: none; }
   #log .grp, .grp .who { color: #8fd8ff; }
   #winAsk { display: none; position: fixed; width: 471px; height: 170px; background: url(assets/int/356.png); z-index: 20; font-size: 12px; }
@@ -69,7 +68,6 @@
 </style>
 </head>
 <body>
-<div id="skquick" style="display:none"></div>
 <div id="fxlist"></div>
 <!-- 선택지 창 (Choose, 원작 위치 164,315): im-qs-ba 471×170, 보기 단추 im-qs-bu 436×25 (위 보통·아래 강조) 다섯 개 (Main.dll 0x100797c0) -->
 <div id="winAsk" class="o" style="--x:164px;--y:315px"></div>
@@ -118,7 +116,7 @@
 <div id="chatbar" class="o" style="--x:160px;--y:531px"><input id="say" maxlength="120" autocomplete="off">
   <div class="cb" data-mode="shout" style="left:41px;width:59px;background-image:url(assets/int/77.png)"></div><div class="cb" data-mode="whisper" style="left:100px;width:59px;background-image:url(assets/int/83.png)"></div>
   <div class="cb" data-mode="grp" style="left:160px;width:59px;background-image:url(assets/int/58.png)"></div><div class="cb" data-mode="army" style="left:220px;width:59px;background-image:url(assets/int/552.png)"></div></div>
-<div id="winQuick" class="win o" style="--x:136px;--y:4px;width:479px;height:64px;background:url(assets/int/76.png)"><div id="qkcells"></div></div>
+<div id="winQuick" class="win o" style="--x:136px;--y:4px;width:479px;height:64px;background:url(assets/int/76.png)"><div id="qkcells"></div><div id="qksk0"></div><div id="qksk1"></div></div>
 <!-- 거래 창 (Trade, ia-z26-ba 263×246, 원작 위치 268,175, Main.dll 0x100963b0): 내 돈 (40,46), 상대 돈 (164,69), 칸 여섯씩, OK·CANCEL -->
 <div id="winTrade" class="win o" style="--x:268px;--y:175px;width:263px;height:246px;background:url(assets/int/456.png)">
   <div id="trmymoney" class="txt" style="left:40px;top:46px;width:73px;height:12px;color:#ff0;text-align:right;cursor:pointer;pointer-events:auto"></div>

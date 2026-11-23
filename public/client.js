@@ -321,16 +321,17 @@ cv.addEventListener('pointerdown', e => {
   const m = mobAt(e.clientX / zoom + camX, e.clientY / zoom + camY);
   // 오른쪽 단추: 고른 기술을 그 몬스터에게 쓴다. 왼쪽 단추: 일반 공격
   if (e.button === 2) {
-    if (skillSel && UI.skN(skillSel) === 35 && !m) {           // Warp: 누른 자리로 (ProcessUseSkill 0x43c47c)
+    const useSk = qsk[e.shiftKey ? 1 : 0] || 0;
+    if (useSk && UI.skN(useSk) === 35 && !m) {           // Warp: 누른 자리로 (ProcessUseSkill 0x43c47c)
       const wx = e.clientX / zoom + camX, wy = e.clientY / zoom + camY;
       const x0 = Math.round(wx / map.tw), y0 = Math.round(wy / map.th), x1 = Math.floor(wx / map.tw), y1 = Math.floor(wy / map.th);
       const d0 = Math.abs(wx - x0 * map.tw) / 2 + Math.abs(wy - y0 * map.th), d1 = Math.abs(wx - (x1 + .5) * map.tw) / 2 + Math.abs(wy - (y1 + .5) * map.th);
       const [x, y, z] = d0 < d1 ? [x0, y0, 0] : [x1, y1, 1];
-      send({ t: 'skill', sk: skillSel, x, y, z });
+      send({ t: 'skill', sk: useSk, x, y, z });
     }
-    else if (skillSel && UI.isSelfSkill(skillSel)) useSelfSkill(skillSel);
-    else if (!m && skillSel && UI.isAreaSkill(skillSel)) useSelfSkill(skillSel);     // 범위 기술을 빈 곳에: 내 자리가 중심
-    else if (m && skillSel) { targetId = m.id; send({ t: 'skill', sk: skillSel, id: m.id, run: runToggle !== shift }); }
+    else if (useSk && UI.isSelfSkill(useSk)) useSelfSkill(useSk);
+    else if (!m && useSk && UI.isAreaSkill(useSk)) useSelfSkill(useSk);     // 범위 기술을 빈 곳에: 내 자리가 중심
+    else if (m && useSk) { targetId = m.id; send({ t: 'skill', sk: useSk, id: m.id, run: runToggle }); }
     return;
   }
   if (m) { targetId = m.id; send({ t: 'attack', id: m.id, run: runToggle !== shift }); return; }
@@ -402,7 +403,14 @@ addEventListener('keydown', e => {
 // 고른 기술은 빠른 메뉴에 놓이며 몬스터를 오른쪽 단추로 누르면 쓴다.
 const SKILL_KEYS = ['q', 'w', 'e', 'r', 't', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v'];
 let skillSel = 0;
-function selectSkill(id) { skillSel = id; drawSkills(); }
+// 빠른 창의 기술 두 칸 (원작 Main.dll 0x10090bc3: 창 (351,15) 의 50×35 칸 둘, 서버 +0x4020 / +0x4022).
+// 보통 기술은 첫 칸, 특수 기술은 둘째 칸에 올라가고 (ProcessRegisterSkill 0x42b240),
+// 몬스터를 오른쪽 단추로 누르면 첫 칸, [SHIFT] 를 누른 채면 둘째 칸 기술을 쓴다 (WM_RBUTTONDOWN 0x10011d70: GetKeyState(VK_SHIFT))
+const qsk = [0, 0];
+function selectSkill(id) {
+  const special = stat && stat.special === id;
+  skillSel = id; send({ t: 'regskill', kind: special ? 2 : 1, id }); drawSkills();
+}
 function useSelfSkill(id) { send({ t: 'skill', sk: id }); }
 function drawSkills() {
   const list = (stat && stat.skills) || [];
@@ -507,6 +515,7 @@ const handlers = {
   pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
   ftier(m) { const e = ents.get(m.id); if (e) e.ft = m.v; },
   wave(m) { Sound.play(m.id); },
+  qskill(m) { qsk[m.slot] = m.id || 0; if (typeof UI !== 'undefined') UI.skills(); },   // SendSetUserSkill(3, 칸, 기술)
   whisperfail(m) { log(esc(UI.M0(159).replace('%s', m.name)), 'sys'); },   // 0/0/159 "%s refuses to hear your whisper."                                       // 서버가 내는 소리 (AllPlayWave 0x473380: snd<번호>)
   // 교도관 (0x1d9 / 0x1db): 감옥 밖이면 0/0/214, 안이면 남은 분이 있으면 215 아니면 216
   jail(m) {
