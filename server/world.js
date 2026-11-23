@@ -897,7 +897,9 @@ class World {
       maxRange: Math.max(info.range, info.range2 || 0),
       // 배치표의 아이템 칸 다섯 중 하나를 무작위로 지닌다. 빈 칸이면 아무것도 없다 (InitializeMopInstance 0x4795a3)
       item: s.drops[rnd(5)] || null,
-      cnt: 0, delay: 0, targetName: '', warpState: 0, warpCnt: 0 };
+      cnt: 0, delay: 0, targetName: '', warpState: 0, warpCnt: 0,
+      // 스스로 고치는 횟수 (+0x118, InitializeMopInstance 0x479519~0x479551): 첫 기술이 종류 1 이면 1, 모습 93 이면 1, 모습 98 이면 10
+      healCnt: info.img === 98 ? 10 : info.img === 93 ? 1 : (info.skill && SK.get(info.skill) && SK.get(info.skill).n === 1 ? 1 : 0) };
     this.mobs.set(m.id, m); if (!info.noOccupy) this.take(m);
     return m;
   }
@@ -1125,7 +1127,7 @@ class World {
     switch (s.n) {
       case 2: refl ? this.mobEffect(m, 5, Math.floor(spi / 30), null, now) : this.userEffect(u, 5, Math.floor(spi / 30), now); break;
       case 17: refl ? this.mobEffect(m, 13, Math.floor(spi / 150), null, now) : this.userEffect(u, 13, Math.floor(spi / 150), now); break;
-      case 38: if (!refl) this.userEffect(u, 14, Math.floor(spi / 30), now); break;
+      case 38: refl ? this.mobEffect(m, 14, Math.floor(spi / 30), null, now) : this.userEffect(u, 14, Math.floor(spi / 30), now); break;
       case 42: if (!refl) this.userEffect(u, 27, Math.floor(spi / 30), now); break;
       case 68: refl ? this.mobEffect(m, 58, s.p, null, now) : this.userEffect(u, 58, s.p, now); break;
       case 41: {
@@ -1140,10 +1142,34 @@ class World {
         if (refl) { this.applyDamage(u, m, this.mobDamage(u, Math.max(1, SK.damage(v, s.o, 0)), now, m), now, { k: 2, sk: sid }); break; }
         const dmg = this.userDamage(m, u, Math.floor(s.o * v / 100), now);
         if (this.fxOn(u, 6, now)) { u.mp = Math.max(0, u.mp - (2 * dmg + Math.floor(dmg / 4))); if (!u.mp) this.fxOff(u, 6); this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, dmg, hp: u.hp }); this.game.sendStat(u); break; }
-        this.applyDamage(m, u, dmg, now, { k: 2, sk: sid }); return;
+        this.applyDamage(m, u, dmg, now, { k: 2, sk: sid });
+        if (s.n === 67 && !u.dead) this.mobSteal(m, u, 'quick');
+        return;
       }
+      case 39: if (!refl) this.mobSteal(m, u, 'equip'); break;
     }
     this.near(m, { t: 'cast', id: m.id, sk: sid, tid: refl ? m.id : u.id });
+  }
+  // 몬스터의 훔치기 (UseSkill 0x480c2c~, 0x480e5c~): 종류 67 은 빠른 창(8칸, 가방 3)에서, 39 는 장비(14칸, 가방 2)에서 무작위 칸을 고른다.
+  //   빈 칸이면 아래로, 그다음 위로 찾는다 (빠른 창은 분류 6 을 건너뛴다). 빠른 창은 절반(1 이하면 1)을, 장비는 통째로 몬스터 자리에 떨어뜨린다 (DropItem)
+  mobSteal(m, u, bag) {
+    const list = bag === 'quick' ? (u.quick || []) : u.equip, n = bag === 'quick' ? 8 : 14;
+    const ok = e => e && e.n !== 0 && (bag !== 'quick' || e.k !== 6);
+    const start = rnd(n); let slot = -1;
+    if (ok(list[start])) slot = start;
+    else if (bag === 'quick' && list[start] && list[start].k === 6) slot = -1;
+    else { for (let i = start; i >= 0 && slot < 0; i--) if (ok(list[i])) slot = i; for (let i = start; i < n && slot < 0; i++) if (ok(list[i])) slot = i; }
+    if (slot < 0) return;
+    const e = list[slot];
+    if (bag === 'quick') {
+      const take = e.n >= 2 ? e.n >> 1 : 1;
+      e.n -= take; if (e.n <= 0) list[slot] = null;
+      this.dropItem(m, [e.k, e.i, take]);
+    } else {
+      list[slot] = null; this.dropItem(m, [e.k, e.i, 1]);
+      this.game.recalc(u, false); this.game.sendStat(u); this.near(u, { t: 'hp', id: u.id, hp: u.hp, maxHp: u.maxHp });
+    }
+    this.game.sendInv(u);
   }
   // 몬스터의 범위 기술 (CMopServer::UseSkillRange 0x4813c0). 반경 = l − 10000. 중심은 몬스터 자리 (기술 212·213·216 만 대상 자리, 212 는 반경 − 1)
   //   반경 안 살아 있는 사람마다: 막힘이 없고 효과 19(숨기)가 아니어야 한다 (종류 73 은 막힘·숨기 무시, 0x4815ef~0x481618)
@@ -1157,6 +1183,9 @@ class World {
     if (!G.same(center, m)) { const dir = G.direction(m, center); if (dir !== 5) m.dir = dir; }
     this.near(m, { t: 'cast', id: m.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
     const img = m.info.img, k = s.n, v = m.atk;
+    // 모습 98 이 종류 73 을 쓰면: 체력이 다 차지 않았고 둘에 하나 꼴, 남은 횟수가 있으면 체력을 채운다 (0x48144c~0x4814a4)
+    if (img === 98 && k === 73 && m.hp < m.maxHp && rnd(100) < 50 && m.healCnt > 0) { m.hp = m.maxHp; m.healCnt--; this.near(m, { t: 'hp', id: m.id, hp: m.hp }); }
+    const DMG = new Set([0, 43, 45, 70, 71, 72, 73]);           // 피해를 주는 종류 (분기표 0x482118/0x482134)
     for (const u of [...this.players.values()]) {
       if (u.dead || G.dist(center, u) > rad) continue;
       if (k !== 73 && (!this.noObstacle(center, u) || this.fxOn(u, 19, now))) continue;
@@ -1167,6 +1196,17 @@ class World {
       }
       if (img === 78) { hit = true; refl = false; } else if (img === 98) refl = false;
       if (!hit) { this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, miss: 1, hp: u.hp, area: 1 }); continue; }
+      // 피해가 아닌 종류 (0x481bc2~0x481e2e). 68 은 rm3944 NewMassAnih: 효과 58 을 15초
+      if (k === 68) { this.userEffect(u, 58, 15, now); continue; }
+      if (!DMG.has(k)) {
+        const sp = m.spi;
+        if (k === 2) { if (img === 78) this.userEffect(u, 59, 180, now); else if (refl) this.mobEffect(m, 5, s.p, null, now); else this.userEffect(u, 5, s.p, now); }
+        else if (k === 17) { if (refl) this.mobEffect(m, 13, Math.floor(sp / 30), null, now); else this.userEffect(u, 13, Math.floor(sp / 150), now); }
+        else if (k === 22) { if (refl && img !== 78) this.mobEffect(m, 16, s.p, null, now); else this.userEffect(u, 16, s.p, now); }
+        else if (k === 26) this.userEffect(u, 18, Math.floor(sp / 30), now);
+        else if (k === 40) { if (this.userEffect(u, 16, Math.floor(sp / 150), now)) { u.mp = 0; this.game.sendStat(u); } }
+        continue;
+      }
       if (refl) {
         if (k === 43) { this.mobEffect(m, 16, Math.floor(m.spi / 150), null, now); this.fxOff(m, 26); }
         this.applyDamage(u, m, this.mobDamage(u, Math.max(1, SK.damage(v, s.o, 0)), now, m), now, { k: 2, sk: sid, area: 1 });
