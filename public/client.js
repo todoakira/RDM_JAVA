@@ -495,6 +495,7 @@ const handlers = {
   pkmode(m) { const was = myPk; myPk = m.on ? 2 : m.arming ? 1 : 0; if (myPk !== was) log(esc(UI.M0(myPk === 2 ? 71 : myPk === 1 ? 208 : 72)), 'sys'); },
   pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
   ftier(m) { const e = ents.get(m.id); if (e) e.ft = m.v; },
+  wave(m) { Sound.play(m.id); },                                       // 서버가 내는 소리 (AllPlayWave 0x473380: snd<번호>)
   // 교도관 (0x1d9 / 0x1db): 감옥 밖이면 0/0/214, 안이면 남은 분이 있으면 215 아니면 216
   jail(m) {
     const t = m.inJail ? (m.min ? UI.M0(215).replace('%u', m.min) : UI.M0(216)) : UI.M0(214);

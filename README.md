@@ -528,7 +528,8 @@ Ghidra 로 `svMapServer.exe` 를 풀어 읽었습니다 (DoEventServerAction 0x4
   `python3 tools/midi2ogg.py assets/mid assets/bgm` — 음색은 원작 PC 의 MIDI 장치와 다를 수 있습니다.
 - **효과음:** 캐릭터·몬스터·발사체 그림 묶음(RMD) 끝에 동작마다 [소리 번호, 장면] 표가 있습니다(ExStage.dll 0x10007eca, SOUND_SET). 그 동작의 그 장면이 화면에 나올 때 `snd<번호>` 를 냅니다(공격, 맞기, 죽기, 기술 총알 등).
   `node tools/convert.js <클라이언트 폴더> --sounds-only` 로 기존 그림 json 에 소리 표만 넣을 수 있습니다.
-- 아직: 화면 위치에 따른 좌우·음량 조절, 설정 창, NPC·이벤트가 내는 소리(서버 SendPlayWave).
+- 서버가 내는 소리: 우주선 경보·안내 소리 (AllPlayWave, SendMessagePacket 의 안내 번호별 소리)는 `{t:'wave'}` 로 보내 snd<번호> 를 냅니다.
+- 아직: 화면 위치에 따른 좌우·음량 조절, 설정 창, 독립기념일 행사 소리(0xdd·0xe2), 사이렌(0x74).
 
 ## 저장과 비밀번호
 

@@ -61,7 +61,14 @@ function questInfo(p) {
 class Story {
   constructor(game) { this.game = game; }
   // 시스템 메시지 (SendMessagePacket 0x43fc10 → 패킷 0x123, 클라이언트는 Message.ctf 0/2 의 그 번호 줄을 보인다)
-  msg(p, code, ...args) { p.send({ t: 'sys', code, args }); }
+  // SendMessagePacket 0x43fc20: 우주선 안내 몇 개는 소리도 낸다 (SendPlayWave 0x41b540, 클라이언트 snd<번호>)
+  msg(p, code, ...args) {
+    p.send({ t: 'sys', code, args });
+    const alarm = () => (Date.now() % 1000 < 500 ? 0xc4 : 0xc5);
+    const w = { 0xb4: alarm, 0xb5: 0xba, 0xb6: 0xbb, 0xb7: 0xbc, 0xb8: 0xbd, 0xba: 0xbe, 0xbb: 0xbf, 0xbc: 0xc0, 0xbd: 0xc2, 0xc0: 0xc8, 0xc4: 0xc1 }[code];
+    if (w) p.send({ t: 'wave', id: typeof w === 'function' ? w() : w });
+    if (code === 0xbe) { p.send({ t: 'wave', id: alarm() }); p.send({ t: 'wave', id: 0xc3 }); }   // 0xbe: 경보 두 번 (+0x43b4 = 1)
+  }
   // 보조 퀘스트가 있으면 그것이 먼저다 (SendQuestInfo 0x4254e0: 보조 퀘스트 줄을 보내고 끝)
   sendInfo(p, open) {
     const sub = this.game.subq && this.game.subq.lines(p);
