@@ -68,4 +68,4 @@ NPC 이벤트 종류 6 은행, 8 병원, 0x14 교환소, 0x1b 고고학자(이�
 줄 0 은 세 칸을 모두 지운다 (클라이언트 0x100277bc).
 
 ## 저장
-원작이 이 칸들을 DB 에 저장하는지는 아직 확인하지 못했다. 여기서는 저장하지 않는다 (접속을 끊으면 퀘스트 아이템만 남는다).
+원작 DB 의 tblGameID1 에 SubQuestKind·SubQuestDone·SubQuestClientNPCID·…·SubQuestTimer·SubQuestGift* 칸이 있어 저장된다 (rmDB.dll 의 SELECT). 여기서도 진행 중이면 저장한다.

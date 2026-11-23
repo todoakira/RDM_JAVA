@@ -12,10 +12,10 @@ for pg in range(0, len(d) - 8191, 8192):
 txt = d.decode('latin1')
 # 프로시저 이름 → (StoryQuestState 에 더하는 값, 보낸이, 제목, 내용)
 out = {}
-for name in ['RMS_BEGINSPYQUEST', 'RMS_BEGINCAPTAINYQUEST', 'RMS_KASAMSPACESHIPMAIL']:
+for name in ['RMS_BEGINSPYQUEST', 'RMS_BEGINCAPTAINYQUEST', 'RMS_KASAMSPACESHIPMAIL', 'RMS_LEVEL1000MAIL']:
     i = txt.find('CREATE PROCEDURE ' + name); body = txt[i:i + 4000]
-    bit = int(re.search(r'StoryQuestState \| (\d+)', body).group(1))
-    m = re.search(r"values\(@Time, @GameID, '((?:[^']|'')*)', 0, '((?:[^']|'')*)', \d+, '((?:[^']|'')*)', ''\)", body)
+    b = re.search(r'StoryQuestState \| (\d+)', body); bit = int(b.group(1)) if b else 0   # 레벨 1000 우편은 이야기 비트가 없다
+    m = re.search(r"values ?\(@Time, @GameID, '((?:[^']|'')*)', 0, '((?:[^']|'')*)', \d+, '((?:[^']|'')*)', ''\)", body)
     un = lambda t: t.replace("''", "'").replace('\r', '')
     out[name] = {'bit': bit, 'from': un(m.group(1)), 'title': un(m.group(2)), 'text': un(m.group(3))}
 json.dump(out, sys.stdout, ensure_ascii=False, indent=1)

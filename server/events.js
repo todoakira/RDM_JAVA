@@ -158,6 +158,7 @@ class Events {
       }
       else if (/^BeginSubQuest[123]$/.test(cmd) && p) this.w.game.subq.begin(p, Number(cmd.slice(-1)));
       else if (cmd === 'StopSubQuestAndResume' && p) this.w.game.subq.stopAndResume(p);
+      else if (cmd === 'TryMakeMysteryPill' && p) this.w.game.tryMakeMysteryPill(p);
       else if (p && this.w.game.story.action(p, cmd, w)) { /* 퀘스트 행동 */ }
       // 그룹 만들기·해산, 보너스 초기화(InitBonus, 그 조건 WantToInitBonus 는 이 서버판에서 어디서도 걸리지 않는다)는 아직
     }

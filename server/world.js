@@ -601,7 +601,8 @@ class World {
       else if (R.kasam4(p)) ev.named(p, 'KasamQuest4', n);
       else if (R.recollect(p)) ev.named(p, 'KasamRecollectQuest', n);
       else if (R.spaceship(p)) ev.named(p, p.chr === 3 ? 'DestinoKasamSpaceShip' : 'KasamSpaceShip', n);
-      else say(0x297);                                                                         // 레벨 1000 보너스 퀘스트는 아직 없다
+      else if (p.sbonus > 0) ev.named(p, 'Level1000Quest', n);                                  // 단약 점수가 있으면 전설의 단약 만들기 (0x421064)
+      else say(0x297);
       return true;
     }
     if (kind === 41 && e) {                                                                    // 이벤트 번호를 직접 가리킨다 (0x421e60)
@@ -980,11 +981,14 @@ class World {
       if (d.item) this.dropItem(d, d.item);
       this.respawnLater(d);
       if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); this.game.subq.onKill(a, d); }
-    } else {
-      if (d.trade) this.game.trades.cancel(d);
-      d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
-      this.game.deathPenalty(d);
-    }
+    } else this.killPlayer(d, false);
+  }
+  // 사람이 죽음 (CMapServerClient::Dead)
+  killPlayer(d, announce = true) {
+    if (announce) this.broadcast({ t: 'die', id: d.id });
+    if (d.trade) this.game.trades.cancel(d);
+    d.hp = 0; d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
+    this.game.deathPenalty(d);
   }
 
   // 50ms마다 호출
@@ -1079,11 +1083,20 @@ class World {
 const pubP = p => ({ id: p.id, name: p.name, chr: p.chr, x: p.x, y: p.y, z: p.z, dir: p.dir, hp: p.hp, maxHp: p.maxHp, level: p.level, dead: p.dead ? 1 : 0 });
 const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y, z: m.z, dir: m.dir, hp: m.hp, maxHp: m.maxHp });
 
+// 전설의 단약 수와 한도 (원작 DB tblSpecialItem1 의 6/66 개수, tblSpecialItemLimit1 의 한도).
+// 받은 원작 DB 의 tblSpecialItemLimit1 은 비어 있어 한도가 0 이다 (그러면 만들 수 없다). 운영자는 save/pills.json 의 limit 로 정한다
+class Pills {
+  constructor() { this.file = path.join(ROOT, 'save', 'pills.json'); let d = {}; try { d = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch (e) {} this.limit = d.limit | 0; this.count = d.count | 0; }
+  save() { try { fs.mkdirSync(path.dirname(this.file), { recursive: true }); fs.writeFileSync(this.file, JSON.stringify({ limit: this.limit, count: this.count })); } catch (e) {} }
+  made() { this.count++; this.save(); }
+  used() { if (this.count > 0) this.count--; this.save(); }
+}
+
 // 전체 게임: 맵은 누군가 처음 들어올 때 만든다
 class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
-    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
+    this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.pills = new Pills(); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
@@ -1166,13 +1179,14 @@ class Game {
     p.hp = heal ? p.maxHp : Math.min(p.hp, p.maxHp); p.mp = heal ? p.maxMp : Math.min(p.mp || 0, p.maxMp);
   }
   sendStat(p) { if (p.fx && p.fx[72] > Date.now()) p.sp = 0;   // 효과 72 Diamond Skin: 기력은 늘 0 (rm3944 NewDskinEffect 0x10002cfc, SendSPInfo 0x439f13)
-    if (p.group) this.groups.hpChanged(p); p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus, str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
+    if (p.group) this.groups.hpChanged(p); p.send({ t: 'stat', hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, sp: p.sp, dp: p.dp, maxDp: p.maxDp, weight: this.weightOf(p), weightMax: F.weightMax(p.str), level: p.level, exp: p.exp, need: F.expTable[p.level], bonus: p.bonus + (p.bonus2 || 0) + (p.sbonus || 0), str: p.str, spi: p.spi, dex: p.dex, pow: p.pow, atk: p.atk, minPct: p.minPct, armor: p.armor, range: p.range, fame: p.fame, name: p.name, chr: p.chr, skills: SK.list(p), special: SK.SPECIAL[p.chr] }); }
   // ---------- 저장 ----------
   // 원작은 DB 서버에 저장한다. 여기서는 이름마다 파일 하나(save/이름.json)에 저장한다.
   saveFile(name) { return path.join(ROOT, 'save', encodeURIComponent(name) + '.json'); }
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
-      hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [] };
+      hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -1198,7 +1212,8 @@ class Game {
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
-      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal']) if (d[k] !== undefined) p[k] = d[k];
+      if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
       if (d.bank) p.bank = d.bank;
       p.quick = Array.isArray(d.quick) ? d.quick : null;
@@ -1325,24 +1340,63 @@ class Game {
     const seq = this.atkLen[p.chr][p.dir] || this.atkLen[p.chr][2];
     return (seq ? seq.length : 16) * FRAME_MS;
   }
+  // 특수 아이템 (ProcessUseItem 0x430f73~0x43106c)
+  //  6/66 전설의 단약: Bonus2 +4, STotalBonus +4 (RMS_USEMYSTERYPILL)
+  //  6/74 인공 단약: STotalBonus < 200 이면 Bonus2 +2, STotalBonus +2. 아이템은 어느 쪽이든 없어진다 (RMS_USEARTIFICIALMYSTERYPILL)
+  //  6/67 극약: 능력치 초기화 (InitBonusPoint 0x428e10) 뒤 "+Poison+" 에게 죽는다 (Dead 0x43ac60)
+  useSpecialItem(p, slot, e) {
+    if (--e.n <= 0) p.inv.splice(slot, 1);
+    if (e.i === 66) { p.bonus2 = (p.bonus2 || 0) + 4; p.stotal = (p.stotal || 0) + 4; this.pills.used(); }
+    else if (e.i === 74) { if ((p.stotal || 0) < 200) { p.bonus2 = (p.bonus2 || 0) + 2; p.stotal = (p.stotal || 0) + 2; } }
+    else if (e.i === 67) { this.initBonusPoint(p); this.sendInv(p); p.hp = 0; p.world.killPlayer(p); return; }
+    this.sendInv(p); this.sendStat(p);
+  }
+  // InitBonusPoint 0x428e10: 순수 능력치를 모두 10 으로, 보통 점수 = 레벨/100 + 레벨×2, Bonus2 = STotalBonus − SBonus (RMS_INITBONUS2)
+  initBonusPoint(p) {
+    if (STATS.some(k => p.base[k] < 10)) return;
+    for (const k of STATS) p.base[k] = 10;
+    p.bonus = F.bonusTotal(p.level);
+    p.bonus2 = (p.stotal || 0) >= (p.sbonus || 0) ? (p.stotal || 0) - (p.sbonus || 0) : 0;
+    this.recalc(p, false); this.sendStat(p);
+  }
+  // TryMakeMysteryPill (대본 행동, DoEventServerAction): 단약 점수 1 을 써서 30% (RAND()%100 >= 70) 로 전설의 단약.
+  //  서버 전체의 전설의 단약 수가 한도(tblSpecialItemLimit1)보다 적어야 한다. 넣을 칸이 없으면 아무 일도 없다
+  tryMakeMysteryPill(p) {
+    const st = p.inv.find(x => x.k === 6 && x.i === 66);
+    if (!st && p.inv.length >= F.INV_SLOTS) return;
+    let made = false;
+    if ((p.sbonus || 0) >= 1 && (p.stotal || 0) >= 1) {
+      p.sbonus--; p.stotal--;
+      if (this.pills.limit > this.pills.count && Math.floor(Math.random() * 100) >= 70) made = this.giveItem(p, 6, 66, 1) > 0;
+      if (made) this.pills.made();
+    }
+    this.sendStat(p);
+    p.world.script.named(p, made ? 'MakeMysteryPillSuccess' : 'MakeMysteryPillFail');
+  }
   // 능력치 점수 1점 사용: 직업별 증가량만큼 오른다
   useBonus(p, stat) {
-    const i = STATS.indexOf(stat); if (i < 0 || p.bonus < 1 || p.dead) return;
-    p.bonus--; p.base[stat] += F.classGain[p.chr][i];
+    // 보통 점수 → 레벨 1000 점수(Bonus2) → 단약 점수(SBonus) 순으로 쓴다 (ProcessUseBonus 0x438800). SendBonusInfo 는 셋의 합을 보낸다
+    const i = STATS.indexOf(stat); if (i < 0 || p.dead) return;
+    if (p.bonus > 0) p.bonus--; else if (p.bonus2 > 0) p.bonus2--; else if (p.sbonus > 0) p.sbonus--; else return;
+    p.base[stat] += F.classGain[p.chr][i];
     this.recalc(p, false); this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp, maxHp: p.maxHp });
   }
   // 한 마리로 얻는 경험치는 필요 경험치의 1/10까지. 레벨이 오르면 경험치는 0부터 다시 시작한다
   // 경험치 얻기 (DoExperimentUp 0x438e70): 한 번에 필요 경험치의 1/10 까지, 남은 만큼까지. 실제로 얻은 양을 돌려준다
   //  div: 한 번에 얻는 한계 = 필요 경험치 / div (몬스터 10, 보조 퀘스트 보상 1)
   gainExp(p, exp, div = F.EXP_CAP_DIV) {
-    if (p.level >= F.MAX_LEVEL) return 0;
-    const need = F.expTable[p.level];
+    const need = F.expTable[Math.min(p.level, F.MAX_LEVEL)];
     let gain = Math.min(exp, Math.max(1, Math.floor(need / div)));
     if (p.exp < need) gain = Math.min(gain, need - p.exp);
     p.exp += gain; p.send({ t: 'exp', gain });
-    if (p.exp >= need) {
+    if (p.exp >= need && p.level >= F.MAX_LEVEL) {
+      // 레벨 1000: 경험치를 0 으로 하고 단약 점수 +2 (RMS_INCREASEBONUSQUESTCOUNT: SBonus·STotalBonus +2) (DoExperimentUp 0x4390xx)
+      p.exp = 0; p.sbonus = (p.sbonus || 0) + 2; p.stotal = (p.stotal || 0) + 2;
+      p.world.broadcast({ t: 'lvl', id: p.id, level: p.level, hp: p.hp, maxHp: p.maxHp });
+    } else if (p.exp >= need) {
       p.level++; p.exp = 0; p.bonus += F.bonusForLevelUp(p.level); this.recalc(p, true);
       p.world.broadcast({ t: 'lvl', id: p.id, level: p.level, hp: p.hp, maxHp: p.maxHp });
+      if (p.level === F.MAX_LEVEL) { this.story.mail(p, 'RMS_LEVEL1000MAIL'); }   // 레벨 1000 우편 "Legendary Medicine" + 0/2/0x74
       this.story.checkAndStart(p);
     }
     this.sendStat(p);
@@ -1444,6 +1498,7 @@ class Game {
     const e = p.inv[slot]; if (!e || p.dead) return;
     const f = this.itemInfo(e.k, e.i);
     if (f && (e.k === 1 || e.k === 2 || e.k === 3 || e.k === 6) && f.type !== 14) { this.equipItem(p, slot, f); return; }
+    if (e.k === 6 && (e.i === 66 || e.i === 74 || e.i === 67)) { this.useSpecialItem(p, slot, e); return; }
     if (!f || !(f.hp > 0 || f.mp > 0)) { p.send({ t: 'chat', id: 0, name: '안내', text: `${f ? f.name : '이 아이템'}: 사용 효과는 아직 구현되지 않았습니다.` }); return; }
     const amount = (v, max) => v >= PERCENT_HEAL ? Math.floor(max * (v - PERCENT_HEAL) / 100) : v;
     if (f.hp > 0) p.hp = Math.min(p.maxHp, p.hp + amount(f.hp, p.maxHp));
