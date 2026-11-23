@@ -1273,9 +1273,10 @@ class World {
   //   명중: 종류 43 은 20%, 그 밖은 몬스터 정신력 대 사람 기본 정신력. 효과 24 되돌림은 한 명 판과 같고, 모습 78 은 늘 맞고 되돌림 없음, 모습 98 은 되돌림 없음
   //   값 = 몬스터 공격력, 피해 = 위력 % (값 500만 이상이면 ÷100 먼저) → 사람 쪽 GetAttack. 종류 43 은 사람 효과 16 도, 71 은 27, 73 은 효과 19·35·26 을 먼저 푼다
   //   되돌려지면 사람이 몬스터를 친다 (DoSkillAttackMop). 종류 70(지속 피해)·72(마력)·모습 98 의 스스로 회복은 아직이다
-  mobSkillArea(m, target, s, sid, now) {
-    let rad = s.l - 10000, center = { x: m.x, y: m.y, z: m.z };
-    if (sid === 212) { rad = Math.max(1, s.l - 10001); center = { x: target.x, y: target.y, z: target.z }; }
+  //   cont: 지속 피해 목록이 다시 부른 것 (param_8 = 1). 이때 중심은 처음 대상 자리이고 몬스터가 죽었어도 친다
+  mobSkillArea(m, target, s, sid, now, cont) {
+    let rad = s.l - 10000, center = cont ? { x: target.x, y: target.y, z: target.z } : { x: m.x, y: m.y, z: m.z };
+    if (cont) { /* 중심 그대로 */ } else if (sid === 212) { rad = Math.max(1, s.l - 10001); center = { x: target.x, y: target.y, z: target.z }; }
     else if (sid === 213 || sid === 216) center = { x: target.x, y: target.y, z: target.z };
     if (!G.same(center, m)) { const dir = G.direction(m, center); if (dir !== 5) m.dir = dir; }
     this.near(m, { t: 'cast', id: m.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
@@ -1310,7 +1311,11 @@ class World {
         if (m.hp <= 0) return; continue;
       }
       if (k === 43) this.userEffect(u, 16, Math.floor(m.spi / 150), now);
-      else if (k === 71) this.userEffect(u, 27, Math.floor(m.spi / 30), now);
+      // 71: 원작은 사람 효과 27 을 ⌊USERDB +0x790 ÷ 100⌋ 초 건다 (0x48197e). +0x790 이 무엇인지 몰라 아직 걸지 않는다
+      else if (k === 72) { u.mp = 0; this.game.sendStat(u); }   // 72: DecreaseMP(지금 마력 USERDB +0x7a0) = 마력 0 (0x4819c1)
+      else if (k === 70 && !cont) {                             // 70: 맞은 사람마다 지속 피해 목록에 하나씩 넣는다 (중심 자리, 횟수 2). 1초 넘게 지날 때마다 그 자리에 다시 범위 기술 (AddToCSAttackList 0x481917, ProcessCSAttack 0x482a40)
+        (this.mobCS ||= []).push({ m, s, sid, at: now, n: 2, pos: { x: center.x, y: center.y, z: center.z } });
+      }
       const raw = v < 5000000 ? Math.floor(s.o * v / 100) : Math.floor(v / 100) * s.o;
       const dmg = this.userDamage(m, u, raw, now);
       if (k === 73) { this.fxOff(u, 19); this.fxOff(u, 35); this.fxOff(u, 26); }
@@ -1452,6 +1457,11 @@ class World {
     for (let i = this.timers.length - 1; i >= 0; i--) if (now >= this.timers[i].at) { const t = this.timers.splice(i, 1)[0]; t.fn(); }
     for (const g of [...this.gates.values()]) if (now >= g.until) { this.gates.delete(g.id); this.broadcast({ t: 'gate', id: g.id, on: 0 }); }
     this.game.ship.tick(this, now);                                     // 우주선 퀘스트 주기 (맵 87~92)
+    if (this.mobCS && this.mobCS.length) for (let i = this.mobCS.length - 1; i >= 0; i--) {   // 몬스터 지속 피해 (CMopServer::ProcessCSAttack 0x482a40)
+      const c = this.mobCS[i];
+      if (c.n < 1) { this.mobCS.splice(i, 1); continue; }
+      if (now - c.at > 1000) { c.n--; c.at = now; if (c.s.l > 9999) this.mobSkillArea(c.m, c.pos, c.s, c.sid, now, true); }
+    }
     if (!this.players.size) { this.mobTickAt = now + MOB_TICK; return; }
     this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
