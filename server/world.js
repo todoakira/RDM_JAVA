@@ -84,6 +84,19 @@ class World {
       this.npcs.push(npc); this.occ.set(this.key(t), npc.id);
     }
     let skipped = 0, seq = 0;
+    // 몬스터 짝 (CMopServer::LoadMop 0x477616~0x4776d5): 불러온 순서대로 모습 81 을 모으고, 모습 82 는 다섯 마리씩 그 81 을 우두머리(+0x2e0)로 삼는다.
+    //   다시 날 때도 같은 몬스터 구조체를 쓰므로 이름표(sid)로 잇는다
+    this.leaderOf = {}; const q81 = []; let n82 = 0;
+    for (const s of sv.spawns) {
+      const info = game.mopInfo[s.kind]; if (!info) continue;
+      for (let i = 0; i < s.count; i++) {
+        const sid = `+${s.name}_${seq + i}`;
+        if (info.img === 81) q81.push(sid);
+        else if (info.img === 82 && Math.floor(n82 / 5) < q81.length) { this.leaderOf[sid] = q81[Math.floor(n82 / 5)]; n82++; }
+      }
+      seq += s.count;
+    }
+    seq = 0;
     // 몬스터 다시 나기 (CMopServer +0xd8 의 +0x3c): 우주선 맵 88~92 는 꺼진 채 시작한다 (CMopServer::CMopServer 0x476bf1)
     this.regenOn = !(mapId >= 88 && mapId <= 92); this.pendingSpawn = [];
     for (const s of sv.spawns) {
@@ -324,7 +337,7 @@ class World {
     this.game.sendStat(p);
   }
   fxOn(o, e, now = Date.now()) { return !!(o.fx && o.fx[e] > now); }
-  fxOff(p, e) { if (p.fx && p.fx[e]) { delete p.fx[e]; if (SK.RECALC_FX.has(e)) { this.game.recalc(p, false); this.game.sendStat(p); } this.sendFx(p); } }
+  fxOff(p, e) { if (p.mob) { if (p.fx) delete p.fx[e]; return; } if (p.fx && p.fx[e]) { delete p.fx[e]; if (SK.RECALC_FX.has(e)) { this.game.recalc(p, false); this.game.sendStat(p); } this.sendFx(p); } }
   sendFx(p) { const now = Date.now(); p.send({ t: 'fx', fx: Object.entries(p.fx || {}).filter(([, t]) => t > now).map(([e, t]) => [Number(e), Math.ceil((t - now) / 1000), (p.fxSk || {})[e] || 0]) }); }
   // ---------- 싸움에 쓰이는 효과 ----------
   // 효과가 더해진 민첩성: 기본 + 장비 + (효과 17·42: min(효과 값, 기본)) + (효과 22·42 이고 총: ⌊기본 × 15 ÷ 100⌋) + (효과 30: ⌊기본 ÷ 5⌋)
@@ -891,7 +904,7 @@ class World {
     const info = this.game.mopInfo[s.kind];
     const t = this.findFirstEmptyPlace(s.rect, q => this.canMop(q)); if (!t) return null;
     const st = F.mobStats(info, s.pattern);
-    const m = { id: this.game.nextId++, mob: 1, sid, s, info, pattern: s.pattern, home: t, name: s.name, chr: spriteOf(info.img), x: t.x, y: t.y, z: t.z, dir: G.DIRS[rnd(8)],
+    const m = { id: this.game.nextId++, mob: 1, sid, leaderSid: this.leaderOf && this.leaderOf[sid], s, info, pattern: s.pattern, home: t, name: s.name, chr: spriteOf(info.img), x: t.x, y: t.y, z: t.z, dir: G.DIRS[rnd(8)],
       str: st.str, spi: st.spi, dex: st.dex, pow: st.pow, atk: st.atk, minPct: st.minPct, maxHp: st.maxHp, hp: st.maxHp, exp: st.exp,
       // 사거리는 두 공격 범위 중 큰 값 (CMopInfo::LoadMopInfo 0x475f63)
       maxRange: Math.max(info.range, info.range2 || 0),
@@ -1095,8 +1108,8 @@ class World {
     const l = s2.l >= 10000 ? s2.l - 10000 : s2.l;
     for (const o of this.mobs.values()) {
       if (o === m || o.hp <= 0 || G.dist(m, o) > l) continue;
-      if (o.hp === o.maxHp && !this.fxOn(o, 16, now) && !this.fxOn(o, 12, now)) continue;
-      if (o.fx) for (const e of [5, 12, 14, 16, 18]) delete o.fx[e];
+      if (o.hp === o.maxHp && !this.mobDisorder(o, now)) continue;
+      this.mobBadOff(o);
       o.hp = o.maxHp;
       const dir = G.direction(m, o); if (dir !== 5) m.dir = dir;
       this.near(m, { t: 'cast', id: m.id, sk: m.info.skill2, tid: o.id }); this.near(m, { t: 'hp', id: o.id, hp: o.hp });
@@ -1156,7 +1169,7 @@ class World {
   //   70: 효과 8 이 없고 체력 절반 이하면 스스로 효과 8 (정신력/30 초), 기술간격1 만큼 쉰다
   //   79: 대상이 있으면 (act>1) 아직 안 훔쳤고 체력 51% 미만이며 첫 기술 사거리 안이면 DoItemStealSkill, 체력 26% 미만이면 DoUseItem
   //   80: 자폭 (DoExplosionAttack 0x47a460): 대상이 없으면 단계를 0 으로. 체력 51% 미만이면 단계 −1~−3, 아니면(단계 100 이 아니면) 1~4.
-  //       첫 기술 반경(l−10000) 안이면 |단계|(+3) × 65000 을 공격 값으로 범위 기술을 쓴다. 맞아서 체력이 50% 넘으면 단계 100 (DecreaseHP 0x478416)
+  //       첫 기술 반경(l−10000) 안이면 |단계|(+3) × 65000 을 공격 값으로 범위 기술을 쓴다. 단계가 0 이상일 때 맞기 전 체력이 50% 넘으면 단계 100 (DecreaseHP 0x478416)
   //   84 의 불러오기, 82 의 동료 회복, 93 의 범위 효과는 몬스터 짝(+0x2e0)을 만드는 LoadMop 부분과 함께 아직이다
   mobSpecial(m, u, act, now) {
     const info = m.info, img = info.img;
@@ -1184,6 +1197,14 @@ class World {
       if (pct() < 26) return this.mobUsePotion(m);
       return false;
     }
+    if (img === 82) {                                           // 우두머리가 혼란 상태면 51% 로 나쁜 효과를 풀어 준다 (DoRestorationSkill 0x47a9d0)
+      const L = m.leaderSid && [...this.mobs.values()].find(o => o.sid === m.leaderSid);
+      if (!L || L.hp <= 0 || !this.mobDisorder(L, now) || rnd(100) >= 51) return false;
+      this.mobBadOff(L);
+      const dir = G.direction(m, L); m.dir = dir === 5 ? 2 : dir;
+      this.near(m, { t: 'cast', id: m.id, sk: info.skill, tid: L.id }); this.near(L, { t: 'hp', id: L.id, hp: L.hp });
+      return true;
+    }
     if (img === 80) {
       if (act < 2) { if (m.boom) m.boom = 0; return false; }
       const R = s1.l - 10000;
@@ -1196,6 +1217,11 @@ class World {
     }
     return false;
   }
+  // 나쁜 효과 풀기 (CMopServer::OnBadSkillExpired 0x47bca0): 5·4·13·12·15·16·18·14·55·27·54·47·43·58
+  mobBadOff(o) { for (const e of [5, 4, 13, 12, 15, 16, 18, 14, 55, 27, 54, 47, 43, 58]) this.fxOff(o, e); }
+  // 혼란 상태 (CMopServer::IsDisorderState 0x47ac40) 는 몬스터 효과 시간 칸 아홉 개(+0x188~+0x1e4)를 본다. 칸과 효과 번호의 짝을 다 풀지 못해
+  //   OnBadSkillExpired 가 푸는 효과 가운데 하나라도 걸려 있으면 혼란으로 본다 (확인 못 함)
+  mobDisorder(o, now) { return [5, 4, 13, 12, 15, 16, 18, 14, 55, 27, 54, 47, 43, 58].some(e => this.fxOn(o, e, now)); }
   // 물약 훔치기 (DoItemStealSkill 0x47a2e0): 대상 빠른 창 8칸 가운데 분류 4 이고 10개 이상인 것마다 ⌊n/10⌋ 을 빼앗는다.
   //   번호 21 미만이거나 34·35 면 몬스터 소지품(같은 칸)에 넣는다. 하나라도 빼앗으면 그림 0x2f, 대상에게 글 0xa8, 다시는 안 훔친다
   mobStealPotions(m, u) {
@@ -1368,6 +1394,16 @@ class World {
   }
   applyDamage(a, d, dmg, now, extra) {
     const pct = (v, n) => v < 10000000 ? Math.floor(v * n / 100) : Math.floor(v / 100) * n;
+    // CMopServer::DecreaseHP 0x47836d~0x478434: 피해가 0 보다 크면 모습 87 은 피해 ÷4, 모습 98 은 ÷10. 모습 78 은 처음 다섯 번은 맞지 않는다 (+0x29c).
+    //   모습 80 은 자폭 단계가 0 이상일 때 맞기 전 체력이 50% 넘으면 단계 100. 모습 84 는 맞기 전 체력이 가득이면 불러오기 표시(+0x2d4)
+    if (d.mob && dmg > 0) {
+      const img = d.info.img;
+      if (img === 87) dmg = dmg >>> 2; else if (img === 98) dmg = Math.floor(dmg / 10);
+      if (img === 78 && (d.ignored || 0) < 5) { d.ignored = (d.ignored || 0) + 1; return; }
+      const hp0 = d.hp < 20000001 ? Math.floor(d.hp * 100 / d.maxHp) : Math.floor(d.hp / Math.floor(d.maxHp / 100));
+      if (img === 80 && (d.boom || 0) >= 0 && hp0 > 50) d.boom = 100;
+      else if (img === 84 && d.hp === d.maxHp) d.recall = true;
+    }
     // 장비 묶음 덤 (server/equip.js): 몬스터에게 주는 피해 + mobDmgPct% (CMopServer::DecreaseHP 0x478446, 최대 2억),
     //   몬스터에게 받는 피해 − mobDefPct% (최대 80, 적어도 1 은 남김. CMapServerClient::DecreaseHP 0x4393d2)
     if (d.mob && a && !a.mob && a.mobDmgPct > 0) dmg = Math.min(200000000, dmg + pct(dmg, a.mobDmgPct));
@@ -1381,7 +1417,6 @@ class World {
     }
     const before = d.hp;
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
-    if (d.mob && d.hp > 0 && Math.floor(d.hp * 100 / d.maxHp) > 50) d.boom = 100;   // 맞고도 체력이 50% 넘으면 자폭 단계 100 (CMopServer::DecreaseHP 0x478416)
     if (!d.mob && d.hp < before) {
       this.fxOff(d, 35);                                         // 효과 35 Hide: 체력이 줄면 풀린다 (0x439349)
       // Voodoo (몬스터 효과 15): 시전자가 잃은 체력만큼 그 몬스터도 잃는다. 단 최대 체력의 1/10 아래로는 내려가지 않고, 이미 그 아래면 그대로 (ProcessVoodoo 0x4601f0)
