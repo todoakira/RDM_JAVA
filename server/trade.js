@@ -34,23 +34,23 @@ class Trades {
     if (!q) { this.msg(p, 0x97); return; }
     if (!yes) { this.msg(q, 0x99, p.name); return; }
     if (q.trade || p.trade) { this.msg(q, 0x9b, p.name); return; }
-    for (const [a, b] of [[p, q], [q, p]]) { a.trade = { with: b.name, items: Array(SLOTS).fill(null), money: 0, ok: 0 }; a.shop = null; a.bankNpc = 0; }
+    for (const [a, b] of [[p, q], [q, p]]) { a.trade = { with: b.name, items: Array(SLOTS).fill(null), money: 0, tau: 0, ok: 0 }; a.shop = null; a.bankNpc = 0; }
     this.send(p); this.send(q);
   }
   // 거래 창 내용: 내 쪽과 상대 쪽
   send(p) {
     const q = this.partner(p); if (!p.trade || !q) return;
     const view = e => { if (!e) return null; const f = this.game.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n, name: f ? f.name : '?', icon: f ? f.icon : 0, desc: f ? f.desc || '' : '' }; };
-    p.send({ t: 'trade', with: q.name, mine: { items: p.trade.items.map(view), money: p.trade.money, ok: p.trade.ok }, theirs: { items: q.trade.items.map(view), money: q.trade.money, ok: q.trade.ok } });
+    p.send({ t: 'trade', with: q.name, mine: { items: p.trade.items.map(view), money: p.trade.money, tau: p.trade.tau, ok: p.trade.ok }, theirs: { items: q.trade.items.map(view), money: q.trade.money, tau: q.trade.tau, ok: q.trade.ok } });
   }
   both(p) { const q = this.partner(p); this.send(p); if (q) this.send(q); }
   // 올리기: what = 'money' 이면 n 만큼, 아니면 소지품 칸(where='inv') 또는 빠른 창 칸(where='quick') 의 아이템 n 개
   add(p, where, slot, n) {
     const t = p.trade, q = this.partner(p); if (!t || !q || t.ok) return;
     n = Math.floor(Number(n)); if (!(n > 0)) return;
-    if (where === 'money') {
-      n = Math.min(n, p.money, MONEY_MAX - t.money); if (n <= 0) return;
-      p.money -= n; t.money += n; this.game.sendInv(p); this.both(p); return;
+    if (where === 'money' || where === 'tau') {                       // 돈, 또는 Tau (시그너스 돈, 0/0/437 "How much Tau will you give?")
+      n = Math.min(n, p[where] || 0, MONEY_MAX - t[where]); if (n <= 0) return;
+      p[where] -= n; t[where] += n; this.game.sendInv(p); this.both(p); return;
     }
     const list = where === 'quick' ? (p.quick || []) : p.inv, e = list[slot]; if (!e) return;
     n = Math.min(n, e.n);
@@ -67,15 +67,16 @@ class Trades {
     const u = q.trade;
     const room = x => F.weightMax(x.str) - this.game.weightOf(x);   // 거래 칸에 올린 것은 이미 빠져 있다
     const fine = p.money + u.money <= MONEY_MAX && q.money + t.money <= MONEY_MAX
+      && (p.tau || 0) + u.tau <= MONEY_MAX && (q.tau || 0) + t.tau <= MONEY_MAX
       && this.weight(u.items) <= room(p) && this.weight(t.items) <= room(q);
     if (!fine) { this.msg(p, 0x9f); this.msg(q, 0x9f); this.cancel(p); return; }
-    const give = (to, items, money) => {
-      to.money += money;
+    const give = (to, items, money, tau) => {
+      to.money += money; to.tau = (to.tau || 0) + tau;
       for (const e of items) if (e) { const got = this.game.giveItem(to, e.k, e.i, e.n); if (got < e.n) to.world.dropItem(to, [e.k, e.i, e.n - got]); }
     };
-    const pi = t.items, qi = u.items, pm = t.money, qm = u.money;
+    const pi = t.items, qi = u.items, pm = t.money, qm = u.money, pt = t.tau, qt = u.tau;
     p.trade = null; q.trade = null;
-    give(p, qi, qm); give(q, pi, pm);
+    give(p, qi, qm, qt); give(q, pi, pm, pt);
     for (const x of [p, q]) { this.msg(x, 0x9d); x.send({ t: 'trade', close: 1 }); this.game.recalc(x, false); this.game.sendInv(x); this.game.sendStat(x); this.game.save(x); }
   }
   // 취소: 둘 다 돌려받는다 (CMapServerServer::CancelTrade 0x444280)
@@ -84,7 +85,7 @@ class Trades {
     for (const x of [p, q]) {
       if (!x || !x.trade) continue;
       const t = x.trade; x.trade = null;
-      x.money += t.money;
+      x.money += t.money; x.tau = (x.tau || 0) + (t.tau || 0);
       for (const e of t.items) if (e) { const got = this.game.giveItem(x, e.k, e.i, e.n); if (got < e.n) x.world.dropItem(x, [e.k, e.i, e.n - got]); }
       if (!quiet) this.msg(x, 0x9e);
       x.send({ t: 'trade', close: 1 }); this.game.recalc(x, false); this.game.sendInv(x); this.game.sendStat(x);

@@ -68,6 +68,7 @@ const UI = (() => {
   function drawTrade() {
     if (!trade) return;
     el('trmymoney').textContent = trade.mine.money.toLocaleString(); el('trthmoney').textContent = trade.theirs.money.toLocaleString();
+    el('trmytau').textContent = (trade.mine.tau || 0).toLocaleString(); el('trthtau').textContent = (trade.theirs.tau || 0).toLocaleString();
     el('trok').classList.toggle('done', !!trade.mine.ok);
     const box = el('trcells'); box.innerHTML = '';
     trade.mine.items.forEach((it, k) => { const c = cell(it, TR_MINE[k][0] + 1, TR_MINE[k][1] + 1, false); if (it) c.title = itemTip(it); box.appendChild(c); });
@@ -77,6 +78,7 @@ const UI = (() => {
     el('trok').onclick = () => send({ t: 'tradeok' });
     el('trcancel').onclick = () => send({ t: 'tradecancel' });
     el('trmymoney').onclick = () => msgBox(M0(45), ['ok', 'cancel'], (y, v) => { const n = parseInt(v, 10); if (y && n > 0) send({ t: 'tradeadd', where: 'money', n }); }, true);
+    el('trmytau').onclick = () => msgBox(M0(437), ['ok', 'cancel'], (y, v) => { const n = parseInt(v, 10); if (y && n > 0) send({ t: 'tradeadd', where: 'tau', n }); }, true);
   });
   // 빠른 창 (Quick, iw-qi-ba 479×64, 원작 위치 136,4, Main.dll 0x100909d0): 아이템 칸 여덟 (19+41k, 15) 35×35, 기술 칸 둘 (351,15)·(409,15) 50×35
   function drawQuick() {
@@ -105,6 +107,7 @@ const UI = (() => {
     el('cstats').innerHTML = ['str', 'spi', 'dex', 'pow'].map(k => `<span style="flex:1;text-align:center">${stat[k]}</span>`).join('');
     el('cbonus').textContent = stat.bonus; el('cfame').textContent = stat.fame || 0; el('cweight').textContent = `${stat.weight} / ${stat.weightMax}`;
     el('cmoney').textContent = inv ? inv.money.toLocaleString() : '';
+    el('ctau').textContent = inv ? (inv.tau || 0).toLocaleString() : '';   // 물방울 칸: Tau (시그너스 돈)
     for (const b of document.querySelectorAll('.stb')) { b.classList.toggle('can', stat.bonus > 0); b.title = STAT_KR[['str', 'spi', 'dex', 'pow'].indexOf(b.dataset.s)] + ' ' + stat[b.dataset.s]; }
   }
   for (const b of document.querySelectorAll('.stb')) b.onclick = () => { if (stat && stat.bonus > 0) send({ t: 'bonus', stat: b.dataset.s }); };

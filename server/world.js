@@ -1083,6 +1083,11 @@ class World {
 const pubP = p => ({ id: p.id, name: p.name, chr: p.chr, x: p.x, y: p.y, z: p.z, dir: p.dir, hp: p.hp, maxHp: p.maxHp, level: p.level, dead: p.dead ? 1 : 0 });
 const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y, z: m.z, dir: m.dir, hp: m.hp, maxHp: m.maxHp });
 
+// 시그너스 맵 (93~108, 137~176): 상점·은행은 돈 대신 Tau(시그너스 돈, 아이템 5/2, DB 칸 SigMoney)를 쓰고 은행도 따로다
+// (ProcessUserBuyItem 0x4294f0, ProcessUserSellItem 0x42a540, ProcessAddBankMoney 0x41dc10, SendBankInfo 0x41ec10: 맵 0x5d~0x6c, 0x89~0xb0)
+const isSignus = m => (m >= 0x5d && m <= 0x6c) || (m >= 0x89 && m <= 0xb0);
+const cur = p => isSignus(p.world.mapId) ? 'tau' : 'money';
+
 // 전설의 단약 수와 한도 (원작 DB tblSpecialItem1 의 6/66 개수, tblSpecialItemLimit1 의 한도).
 // 받은 원작 DB 의 tblSpecialItemLimit1 은 비어 있어 한도가 0 이다 (그러면 만들 수 없다). 운영자는 save/pills.json 의 limit 로 정한다
 class Pills {
@@ -1127,6 +1132,7 @@ class Game {
       p.equip.forEach((e, s) => { if (e && e.k !== 6 && roll()) { p.equip[s] = null; w.dropItem(p, [e.k, e.i, 1]); } });
       (p.quick || []).forEach((e, s) => { if (e && e.k !== 6 && roll()) { p.quick[s] = null; w.dropItem(p, [e.k, e.i, e.n]); } });   // DropAllQuickItem 0x433490
       if (p.money > 0 && roll()) { w.dropItem(p, [5, 0, p.money]); p.money = 0; }
+      if (p.tau > 0 && roll()) { w.dropItem(p, [5, 2, p.tau]); p.tau = 0; }   // DropSigMoney 0x433610
       this.recalc(p, false);
     }
     this.sendInv(p); this.sendStat(p);
@@ -1186,7 +1192,7 @@ class Game {
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
-      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -1212,7 +1218,8 @@ class Game {
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
-      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau']) if (d[k] !== undefined) p[k] = d[k];
+      if (d.sigBank) p.sigBank = d.sigBank;
       if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
       if (d.bank) p.bank = d.bank;
@@ -1302,10 +1309,12 @@ class Game {
   // ---------- 은행 ----------
   // 돈은 40억까지, 물건은 스무 칸. 같은 물건은 한 칸에 쌓인다. 수수료는 없다
   // (ProcessAddBankMoney 0x41dc10, ProcessGetBankMoney 0x41e3d0, ProcessAddBankItem 0x41ddc0, ProcessGetBankItem 0x41e590)
+  // 시그너스에서는 시그너스 은행 (DB 의 은행 칸 종류 1)
+  bankOf(p) { return isSignus(p.world.mapId) ? (p.sigBank ||= { money: 0, items: [] }) : p.bank; }
   openBank(p, npc) { p.bankNpc = npc.id; this.sendBank(p, npc.name); }
   sendBank(p, name) {
     const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0 }; };
-    p.send({ t: 'bank', name, money: p.bank.money, items: p.bank.items.map(view) });
+    const B = this.bankOf(p); p.send({ t: 'bank', name, money: B.money, tau: cur(p) === 'tau' ? 1 : 0, items: B.items.map(view) });
   }
   bankOk(p) {
     if (!p.bankNpc || p.dead) return false;
@@ -1315,22 +1324,24 @@ class Game {
   }
   bankMoney(p, n, put) {
     n = Math.floor(Number(n)); if (!this.bankOk(p) || !(n >= 1)) return;
-    if (put) { n = Math.min(n, F.MONEY_MAX - p.bank.money); if (n < 1 || n > p.money) return; p.money -= n; p.bank.money += n; }
-    else { if (n > p.bank.money) return; n = Math.min(n, F.MONEY_MAX - p.money); if (n < 1) return; p.bank.money -= n; p.money += n; }
+    const B = this.bankOf(p), c = cur(p), have = p[c] || 0;
+    if (put) { n = Math.min(n, F.MONEY_MAX - B.money); if (n < 1 || n > have) return; p[c] = have - n; B.money += n; }
+    else { if (n > B.money) return; n = Math.min(n, F.MONEY_MAX - have); if (n < 1) return; B.money -= n; p[c] = have + n; }
     this.sendInv(p); this.sendBank(p); this.save(p);
   }
   bankPut(p, slot, n) {
     const it = p.inv[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !it || !(n >= 1)) return;
     n = Math.min(n, it.n);
-    let b = p.bank.items.find(q => q.k === it.k && q.i === it.i);
-    if (!b) { if (p.bank.items.length >= BANK_SLOTS) { p.send({ t: 'chat', id: 0, name: '안내', text: '은행에 빈 칸이 없습니다.' }); return; } b = { k: it.k, i: it.i, n: 0 }; p.bank.items.push(b); }
+    const B = this.bankOf(p);
+    let b = B.items.find(q => q.k === it.k && q.i === it.i);
+    if (!b) { if (B.items.length >= BANK_SLOTS) { p.send({ t: 'chat', id: 0, name: '안내', text: '은행에 빈 칸이 없습니다.' }); return; } b = { k: it.k, i: it.i, n: 0 }; B.items.push(b); }
     b.n += n; it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
     this.sendInv(p); this.sendStat(p); this.sendBank(p); this.save(p);
   }
   bankGet(p, slot, n) {
-    const b = p.bank.items[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !b || !(n >= 1)) return;
+    const B = this.bankOf(p), b = B.items[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !b || !(n >= 1)) return;
     const took = this.giveItem(p, b.k, b.i, Math.min(n, b.n)); if (!took) return;
-    b.n -= took; if (b.n <= 0) p.bank.items.splice(slot, 1);
+    b.n -= took; if (b.n <= 0) B.items.splice(slot, 1);
     this.sendBank(p); this.save(p);
   }
   // 공격 간격: 공격 동작(동작 번호 2) 한 번이 끝나는 시간. 동작표 한 칸이 화면 한 장(50ms)이다 (Main.dll 0x10039480, Staff.dll CtPump::Get)
@@ -1428,9 +1439,10 @@ class Game {
     const f = this.itemInfo(e[0], e[1]), price = this.shopPrice(e); if (!f) return;
     if (e[2] <= 4000000000) n = Math.min(n, e[2]);
     if (n < 1) return;
-    if (price * n > p.money) { p.send({ t: 'chat', id: 0, name: '안내', text: '돈이 모자랍니다.' }); return; }
+    const c = cur(p), have = p[c] || 0;
+    if (price * n > have) { if (c === 'tau') this.story.msg(p, 0x170); else p.send({ t: 'chat', id: 0, name: '안내', text: '돈이 모자랍니다.' }); return; }
     const took = this.giveItem(p, e[0], e[1], n); if (!took) return;
-    p.money -= price * took; if (e[2] <= 4000000000) e[2] -= took;
+    p[c] = (p[c] || 0) - price * took; if (e[2] <= 4000000000) e[2] -= took;
     this.sendInv(p);
     p.world.script.bought(p, e[0], e[1], took);
   }
@@ -1442,23 +1454,25 @@ class Game {
     if (!e) { p.send({ t: 'chat', id: 0, name: '안내', text: '이 상점에서는 사 주지 않는 물건입니다.' }); return; }
     n = Math.min(n, it.n);
     const gain = Math.floor(this.shopPrice(e) / this.sellDiv(p.shop.id)) * n;
-    if (p.money + gain > F.MONEY_MAX) { p.send({ t: 'chat', id: 0, name: '안내', text: '돈을 더 가질 수 없습니다.' }); return; }
+    const c = cur(p);
+    if ((p[c] || 0) + gain > F.MONEY_MAX) { if (c === 'tau') this.story.msg(p, 0x171); else p.send({ t: 'chat', id: 0, name: '안내', text: '돈을 더 가질 수 없습니다.' }); return; }
     it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
-    p.money += gain; this.sendInv(p); this.sendStat(p);
+    p[c] = (p[c] || 0) + gain; this.sendInv(p); this.sendStat(p);
   }
   // ---------- 아이템 ----------
   storyWindowOpen(p) { return this.story.windowOpen(p); }
   // 분류 5의 0번은 돈이다. 원작에 화폐 단위 이름은 없고 그냥 '돈'이다 (DB 칸 Money). 시그너스에서 쓰는 돈은 따로 있다 (DB 칸 SigMoney, 아직 없음)
-  itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : (this.items[k] && this.items[k][i]) || null; }
+  itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : k === 5 && i === 2 ? { name: 'Tau', icon: 0, tau: true } : (this.items[k] && this.items[k][i]) || null; }
   sendInv(p) {
     const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, name: f.name, desc: f.desc || '', icon: f.icon, hp: f.hp || 0, mp: f.mp || 0, atk: f.atk || 0, def: f.def || 0, v: f.v || [], req: f.req || 0, reqStat: f.reqStat || [], cls: f.cls || 0, weight: f.weight || 0, wear: f.type !== undefined && f.type !== 14 ? 1 : 0 }; };
-    p.send({ t: 'inv', money: p.money, items: p.inv.map(view), quick: (p.quick || []).map(e => e ? view(e) : null), equip: p.equip.map((e, s) => e ? { ...view(e), slot: SLOT_NAMES[s] } : null) });
+    p.send({ t: 'inv', money: p.money, tau: p.tau || 0, items: p.inv.map(view), quick: (p.quick || []).map(e => e ? view(e) : null), equip: p.equip.map((e, s) => e ? { ...view(e), slot: SLOT_NAMES[s] } : null) });
   }
   // 넣을 수 있는 만큼만 넣고 넣은 개수를 돌려준다. 같은 아이템은 종류에 상관없이 한 칸에 겹쳐 쌓인다 (GetAvailableItemIndex 0x431b4b)
   giveItem(p, k, i, n) {
     const f = this.itemInfo(k, i); if (!f) return 0;
     let take = n;
     if (f.money) { take = Math.min(n, F.MONEY_MAX - p.money); p.money += take; }
+    else if (f.tau) { take = Math.min(n, F.MONEY_MAX - (p.tau || 0)); p.tau = (p.tau || 0) + take; }   // AddItem 0x431d07: 5/2 는 Tau, 40억까지
     else {
       if (f.weight > 0) take = Math.min(take, Math.floor((F.weightMax(p.str) - this.weightOf(p)) / f.weight));
       const st = p.inv.find(e => e.k === k && e.i === i);
