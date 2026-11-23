@@ -436,11 +436,13 @@ class World {
     const X = p.atk, f = SK.MOVING[sid];
     for (const o of hit) {
       if (F.rand100() > this.hitChance(p, o, F.hitPct(this.fightDex(p, now), this.mobDex(o, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: o.id, dir, k: 2, sk: sid, miss: 1, hp: o.hp }); continue; }
-      const v = f(X, cost, o === m) + (p.atkExtra || 0);
+      const v = (sid === 382 ? SK.bowValue(382, p, this.fightDex(p, now), this.weaponInfo(p)) : f(X, cost, o === m)) + (p.atkExtra || 0);
       this.applyDamage(p, o, this.mobDamage(p, Math.max(1, SK.damage(v, s.o)), now, o), now, { k: 2, sk: sid });
     }
     if (!hit.length) this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
   }
+  // 든 무기의 아이템 정보 (CrItemInfo::Get: 분류 1 또는 6)
+  weaponInfo(p) { const e = p.equip && p.equip[7]; return e ? this.game.itemInfo(e.k, e.i) : null; }
   // 몬스터 효과 54 면 GetDexterity·GetSpirit 이 0.7배 (CMopServer 0x47ae20, 0x47ae60, 상수 0x48ffc0)
   mobDex(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.dex * 0.7) : m.dex; }
   mobSpi(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.spi * 0.7) : m.spi; }
@@ -566,7 +568,8 @@ class World {
     if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? this.fightDex(p, now) : p.spi, dex ? this.mobDex(m, now) : this.mobSpi(m, now)), now)) {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
     }
-    const dmg = this.mobDamage(p, Math.max(1, SK.damage(SK.attackValue(sid, p, cost), s.o)), now, m);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
+    const av = sid in SK.BOW_DIV || sid === 385 ? SK.bowValue(sid, p, this.fightDex(p, now), this.weaponInfo(p)) : SK.attackValue(sid, p, cost);
+    const dmg = this.mobDamage(p, Math.max(1, SK.damage(av + (sid in SK.BOW_DIV || sid === 385 ? (p.atkExtra || 0) : 0), s.o)), now, m);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
     const before = m.hp;
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
     if (sid === 66 && m.hp > 0) this.mobEffect(m, 13, SK.duration(p, s), p, now);   // 몬스터 효과 13 (0x44de8c)

@@ -107,8 +107,27 @@ const FORMULA = {
 };
 // 준 피해(몬스터 체력이 실제로 준 만큼)에 따른 회복: [체력, 마력, 기력] 비율 분자/분모
 const DRAIN = { 27: { hp: [3, 10] }, 68: { hp: [3, 10], mp: [3, 10], sp: [3, 10] }, 76: { hp: [1, 2] } };
-const PENDING = new Set([88, 89, 383, 385]);
-const formulaKnown = id => !PENDING.has(id);
+// 활 기술 (88 0x44dfc6, 89 0x44e7e1, 383 0x44f063, 돌진 382 0x45308c): 나눗수 D (88·89 1000, 383 950, 382 900)
+//   B(v) = ⌊3 × (⌊v / D⌋ + 1) × 무기 공격 / 2⌋. 기본 = B(기본 민첩성) + T+0x30
+//   든 무기의 아이템 정보(CrItemInfo::Get, 무기 번호가 양수면 분류 1, 음수면 6)가 있으면 싸움 민첩성 S 로:
+//     등급(+0x54) 1·3 → ⌊7B(S)/20⌋ + 5000 / 필요 레벨(+0x30) 450~499 → ⌊3B(S)/4⌋ + 1000 / 500~549 → ⌊3B(S)/5⌋ + 2000
+//     550~599 → ⌊3(⌊S/D⌋+1)·무기 공격/4⌋ + 3000 / 600 이상 → ⌊7B(S)/20⌋ + 4000 / 450 미만 → 기본
+//   385 (rm3944 0x1000311a): ⌊7 × ⌊3 × (⌊S'/1000⌋ + 10) × 무기 공격 / 2⌋ / 20⌋ + 5000, S' = 장비 민첩성 + (+0x4230) + 기본 민첩성
+const BOW_DIV = { 88: 1000, 89: 1000, 383: 950, 382: 900 };
+function bowValue(id, p, fightDex, wInfo) {
+  const w = p.wAtk || 0;
+  if (id === 385) { const S = (p.eqDex || 0) + (p.fxPow17 || 0) + (p.bDex || 0); return Math.floor(7 * Math.floor(3 * (Math.floor(S / 1000) + 10) * w / 2) / 20) + 5000; }
+  const D = BOW_DIV[id], B = v => Math.floor(3 * (Math.floor(v / D) + 1) * w / 2);
+  if (!wInfo) return B(p.bDex || 0);
+  const S = fightDex, L = wInfo.req;
+  if (wInfo.grade === 1 || wInfo.grade === 3) return Math.floor(7 * B(S) / 20) + 5000;
+  if (L >= 450 && L < 500) return Math.floor(3 * B(S) / 4) + 1000;
+  if (L >= 500 && L < 550) return Math.floor(3 * B(S) / 5) + 2000;
+  if (L >= 550 && L < 600) return Math.floor(3 * (Math.floor(S / D) + 1) * w / 4) + 3000;
+  if (L >= 600) return Math.floor(7 * B(S) / 20) + 4000;
+  return B(p.bDex || 0);
+}
+const formulaKnown = id => true;
 function attackValue(id, p, cost) {
   const X = p.strAtk + p.wAtk;
   if (HALF.has(id)) return Math.floor((X + cost) / 2);
@@ -179,6 +198,7 @@ const AREA_DEBUFF = {
 //   323 Cross Blade: 3⌊X/4⌋ + 2 × 마력 소모량, 342 Ghost Spear: 2⌊X/4⌋ + 2 × 마력 소모량 (rm3944 NewMovingAttacks 0x10002fd6)
 //   362 Lunar Blade: ⌊X/2⌋ + 3X (0x453824). 382 Piercing Arrow 는 활 식이라 아직
 const MOVING = {
+  382: () => 0,   // 활 식 (bowValue)
   25: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X, 45: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X,
   323: (X, c) => 3 * Math.floor(X / 4) + 2 * c, 342: (X, c) => 2 * Math.floor(X / 4) + 2 * c, 362: X => Math.floor(X / 2) + 3 * X,
 };
@@ -257,4 +277,4 @@ const areaFormulaKnown = id => true;
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { BOW_DIV, bowValue, AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
