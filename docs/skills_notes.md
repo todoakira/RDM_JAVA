@@ -126,6 +126,14 @@ n = 20 (Dimensional Gate), 23 (Recall), 35 (Warp), 48 (Teleport) 은 이 표에�
 - Warp (효과 종류 35, ProcessUseSkill 0x43c47c): 클라이언트가 고른 자리로 바로 (ProcessUseWarpSkill 0x43d2f0). 맵에 들어온 지 5초가 지나야. 원작 서버는 거리를 보지 않는다.
 - 돌진 25·45 도 같은 함수로 시전자를 옮긴다 (UseSkill 0x45f1c3, FindWarpPIS: 설 수 없으면 시전자 쪽으로 한 칸씩 당김).
 
+## 범위 공격의 고유 식 (UseSkillAttackRange 몬스터 분기 0x45b996, 효과 종류 0·78)
+
+민첩성 명중(싸움 민첩성 대 GetDexterity) 뒤. X = 근력 공격 + 무기 공격, 끝에 + T+0x30.
+- 46: X + ⌊X/5⌋ (rm3944 NewAreaAttacks 0x10002dec 의 기본 갈래), 325: 2X + ⌊X/2⌋, 336: 5X − ⌊X/2⌋ (NewCheckForAreaAttack 0x10002d95 가 46 갈래로)
+- 384: ⌊7·⌊3(⌊S/1000⌋+1)·무기 공격/2⌋/20⌋ + T+0x30 + 5000, S = 장비 민첩성 + (+0x4230 효과 17 값) + 기본 민첩성
+- 49: 18⌊X/10⌋ (0x45cfff), 67: 3X, 명중 민첩성 = 장비 + 4 × 기본 + 효과 몫 (0x45d3b0), 351: 3X + ⌊X/4⌋ (0x45d23d)
+- 42: 값 = X + ⌊T+0x30/3⌋, 치명타 10 ± ⌊⌊50|a−d|/(a+d)⌋/3⌋ (0~100) 면 두 배 (0x45bcd4~0x45ce7e)
+
 ## 범위 약화 (UseSkillAttackRange 몬스터 분기표 0x45e348 / 0x45e368)
 
 반경 안 몬스터마다 되돌림(그림 0x5a) → 정신력 명중 → 효과. 피해 없음.

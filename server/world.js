@@ -186,7 +186,7 @@ class World {
     const m = id ? this.mobs.get(id) : null, s = SK.get(sid);
     if (p.dead || !s || !this.skillReady(p, sid, s)) return;
     const area = s.l >= 10000;
-    const ok = area ? (s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
+    const ok = area ? ((s.n === 0 || s.n === 78) && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
     const u = id ? this.players.get(id) : null;
     if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
@@ -402,6 +402,14 @@ class World {
       if (adb) { this.debuffOne(p, m, s, sid, adb, now); continue; }
       let dmg;
       if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o);            // 특수: 반드시 맞음 (0x45d409)
+      else if (sid in SK.AREA_FORMULA || sid === 42) {                           // 고유 식 (skills.js AREA_FORMULA)
+        const fd = this.fightDex(p, now), aDex = sid === 67 ? fd + 3 * (p.bDex || 0) : fd, mDex = this.mobDex(m, now);
+        if (F.rand100() > this.hitChance(p, m, F.hitPct(aDex, mDex), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
+        if (sid === 42) {
+          const v = p.atk + Math.floor((p.atkExtra || 0) / 3), cp = F.critPct(fd, mDex, 10);
+          dmg = SK.damage(F.rand100() < cp ? 2 * v : v, s.o);
+        } else dmg = SK.damage(SK.AREA_FORMULA[sid](p.atk, p) + (p.atkExtra || 0), s.o);
+      }
       else {
         if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, this.mobSpi(m, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
         dmg = SK.damage(cost, s.o);                                               // 일반: 공격 값 = 마력 소모량 (0x45d094)
@@ -421,8 +429,10 @@ class World {
     }
     if (!dest) return;
     const hit = [...this.mobs.values()].filter(o => o.hp > 0 && cells.some(c => G.same(c, o)) && !G.same(o, dest));
-    this.release(p); p.x = dest.x; p.y = dest.y; p.z = dest.z; p.dir = dir; this.take(p);
-    this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir });
+    if (sid === 25 || sid === 45) {                             // 시전자가 옮겨지는 것은 Slash·Dash 뿐 (UseSkill 0x45f19b → ProcessUseWarpSkill)
+      this.release(p); p.x = dest.x; p.y = dest.y; p.z = dest.z; p.dir = dir; this.take(p);
+      this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir });
+    } else p.dir = dir;
     const X = p.atk, f = SK.MOVING[sid];
     for (const o of hit) {
       if (F.rand100() > this.hitChance(p, o, F.hitPct(this.fightDex(p, now), this.mobDex(o, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: o.id, dir, k: 2, sk: sid, miss: 1, hp: o.hp }); continue; }

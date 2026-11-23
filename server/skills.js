@@ -238,12 +238,23 @@ function areaOf(sid, s, hasTarget) {
   if (!hasTarget) return { R, rad: R };
   return { R, rad: sid === 374 ? Math.floor(R / 4) : Math.trunc(2 * R / 3) };
 }
-// 범위 공격에서 몬스터에게 쓰는 식 (몬스터 쪽 분기 0x45b996): 효과 종류 0 의 일반 기술은 정신력 명중 판정 후 공격 값 = 마력 소모량 (0x45d057).
-// 42, 46, 49, 67, 351 과 rm3944 가 따로 보내는 325, 336, 384 는 고유한 식이 있어 아직 옮기지 않았다.
-const AREA_OWN = new Set([42, 46, 49, 67, 351, 325, 336, 384]);
-const areaFormulaKnown = id => !AREA_OWN.has(id);
+// 범위 공격에서 몬스터에게 쓰는 식 (몬스터 쪽 분기 0x45b996, 효과 종류 0 과 78): 일반 기술은 정신력 명중 판정 후 공격 값 = 마력 소모량 (0x45d057).
+// 아래 기술은 민첩성 명중 판정(싸움 민첩성 대 GetDexterity) 뒤 고유한 식. X = 근력 공격 + 무기 공격, 끝에 + T+0x30
+//   46 (0x45bb3b, rm3944 NewAreaAttacks 0x10002dec): X + ⌊X/5⌋
+//   49 (0x45cfff): 18 × ⌊X/10⌋
+//   67 (0x45d3d0): 3X. 명중 판정 민첩성은 장비 + 4 × 기본 + 효과 몫 (0x45d3b0)
+//   351 (0x45d23d): 3X + ⌊X/4⌋
+//   325 / 336 (rm3944 NewCheckForAreaAttack 0x10002d95 가 46 갈래로 보냄): 2X + ⌊X/2⌋ / 5X − ⌊X/2⌋
+//   384: ⌊7 × ⌊3 × (⌊S/1000⌋ + 1) × 무기 공격 / 2⌋ / 20⌋ + 5000, S = 장비 민첩성 + 효과 17 값(+0x4230) + 기본 민첩성
+//   42 (0x45bcd4~0x45ce7e): 치명타 판정이 있는 일반 공격처럼. 값 = X + ⌊T+0x30 / 3⌋, 치명타 확률 10 ± ⌊⌊50|a−d|/(a+d)⌋/3⌋ (0~100), 치명타면 두 배
+const AREA_FORMULA = {
+  46: X => X + Math.floor(X / 5), 49: X => 18 * Math.floor(X / 10), 67: X => 3 * X, 351: X => 3 * X + Math.floor(X / 4),
+  325: X => 2 * X + Math.floor(X / 2), 336: X => 5 * X - Math.floor(X / 2),
+  384: (X, p) => { const S = (p.eqDex || 0) + (p.fxPow17 || 0) + (p.bDex || 0); return Math.floor(7 * Math.floor(3 * (Math.floor(S / 1000) + 1) * (p.wAtk || 0) / 2) / 20) + 5000; },
+};
+const areaFormulaKnown = id => true;
 // 특수 기술(a=1): 위험 점수(DP)가 가득 차야 쓸 수 있고(UseSkill 0x45e55e, 최대 DP 와 비교) 쓰면 DP 는 0 (0x44d840, 0x454927).
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
