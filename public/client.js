@@ -693,7 +693,8 @@ $('sbStart').onclick = startGame;
 $('sbAdd').onclick = () => { mkSlot = slotList.findIndex(c => !c); if (mkSlot < 0) { $('msg').textContent = (UI.msg && UI.msg(0, 1, 3)) || ''; return; } $('cn').value = ''; scr('scrCreate'); pickClass(mkChr); $('cn').focus(); };
 $('sbDel').onclick = () => {
   const c = slotList[selSlot]; if (!c) return;
-  UI.msgBox(`${c.name}`, ['ok', 'cancel'], y => { if (!y) return; const pw = prompt('계정 비밀번호'); if (pw) send({ t: 'delchar', slot: selSlot, pw }); });
+  // 원작은 가입 때 넣은 생년월일을 받는다 (Message 0/0/51). 우리 계정에는 생년월일이 없어 비밀번호를 받는다 (0/0/10)
+  const slot = selSlot; UI.msgBox(UI.M0(10) + '\n' + c.name, ['ok', 'cancel'], (y, pw) => { if (y && pw) send({ t: 'delchar', slot, pw }); }, true); $('msgin').type = 'password';
 };
 $('sbInfo').onclick = () => { $('msg').textContent = '아직 구현되지 않았습니다.'; };
 $('sbOut').onclick = () => { if (ws) { ws.onclose = null; ws.close(); } scr('scrTitle'); showDlg(null); $('msg').textContent = ''; };

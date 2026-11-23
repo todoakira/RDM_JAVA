@@ -166,7 +166,7 @@ const UI = (() => {
     arrow(box, 270, 38, () => { exTop--; drawExch(); }); arrow(box, 270, 176, () => { exTop++; drawExch(); });
     const t = el('shoptxt'); t.textContent = '';
     const line = s => { const d = document.createElement('div'); d.textContent = s; t.appendChild(d); return d; };
-    if (cur && exMode === 'buy') { line(`${cur.name} × ${cur.n}`); line(`개당 ${cur.price.toLocaleString()} · 파는 사람 ${cur.seller}`); if (cur.memo) line(`"${cur.memo}"`); if (cur.desc) line(cur.desc); line('두 번 클릭: 1개 · Shift+두 번 클릭: 전부'); }
+    if (cur && exMode === 'buy') { line(`${cur.name} × ${cur.n}`); line(`개당 ${cur.price.toLocaleString()} · 파는 사람 ${cur.seller}`); if (cur.buyer) line(M0(171).replace('%s', cur.seller).replace('%s', cur.buyer).split('\n')[1]); if (cur.desc) line(cur.desc); line('두 번 클릭: 1개 · Shift+두 번 클릭: 전부'); }
     else if (cur) { line(cur.name + (cur.n > 1 ? ' × ' + cur.n : '')); line('두 번 클릭하면 수량과 값을 정해 올립니다.'); }
     else line(exMode === 'buy' ? (exch.items.length ? '살 물건을 고르세요.' : '올라온 물건이 없습니다.') : '올릴 물건을 고르세요. (다섯 건까지)');
     line(`가진 돈 ${inv.money.toLocaleString()} · 내가 올린 물건 ${exch.mine}건`);
@@ -200,9 +200,10 @@ const UI = (() => {
   }
   el('xscancel').onclick = () => { el('winXs').style.display = 'none'; xsItem = null; };
   el('xsok').onclick = () => {
-    const it = xsItem; if (!it) return; const price = Math.floor(Number(el('xsprice').value)); if (!(price >= 1)) return;
-    const n = it.n > 1 ? ask('올릴 수량', it.n) : 1; if (!n) return;
-    send({ t: 'exchsell', slot: it.key, n, price, memo: el('xsbuyer').value.slice(0, 16) }); el('winXs').style.display = 'none'; xsItem = null;
+    const it = xsItem; if (!it) return; const price = Math.floor(Number(el('xsprice').value));
+    if (!(price >= 1)) { msgBox(M0(168), ['ok']); return; }
+    const buyer = el('xsbuyer').value.trim().slice(0, 16), go = n => { send({ t: 'exchsell', slot: it.key, n, price, buyer }); el('winXs').style.display = 'none'; xsItem = null; };
+    if (it.n > 1) ask(M0(170), it.n, go); else go(1);
   };
   function closeExch(tell) { if (exch && tell) send({ t: 'exchclose' }); exch = null; el('winShop').style.display = 'none'; el('winTop').style.display = 'none'; el('winXs').style.display = 'none'; }
   function openShop(m) {
@@ -220,9 +221,10 @@ const UI = (() => {
     const box = el('bankcells'); box.innerHTML = ''; el('bankmoney').textContent = bank.money.toLocaleString();
     bank.items.forEach((it, slot) => { const e = cell(it, 34 + (slot % 5) * 40, 69 + Math.floor(slot / 5) * 40); e.title = it.name + (it.desc ? '\n' + it.desc : ''); e.ondblclick = ev => send({ t: 'bankget', slot, n: ev.shiftKey ? it.n : 1 }); box.appendChild(e); });
   }
-  const ask = (msg, max) => { const v = Math.floor(Number(prompt(msg, String(max)))); return v >= 1 ? v : 0; };
-  el('bankput').onclick = () => { const n = bank && inv && inv.money ? ask('맡길 금액', inv.money) : 0; if (n) send({ t: 'bankmoney', n, put: 1 }); };
-  el('bankmoney').onclick = () => { const n = bank && bank.money ? ask('찾을 금액', bank.money) : 0; if (n) send({ t: 'bankmoney', n, put: 0 }); };
+  // 수·금액 묻기: 원작 메시지 창(입력칸) 으로. 처음 값은 최대값
+  function ask(msg, max, cb) { msgBox(msg, ['ok', 'cancel'], (y, v) => { const n = Math.floor(Number(v)); if (y && n >= 1) cb(Math.min(n, max)); }, true); el('msgin').value = String(max); el('msgin').select(); }
+  el('bankput').onclick = () => { if (bank && inv && inv.money) ask(M0(45), inv.money, n => send({ t: 'bankmoney', n, put: 1 })); };
+  el('bankmoney').onclick = () => { if (bank && bank.money) ask(M0(69), bank.money, n => send({ t: 'bankmoney', n, put: 0 })); };
   function openBank(m) { bank = { ...m, name: m.name || (bank && bank.name) }; el('winBank').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawBank(); }
   function closeBank(tell) { if (bank && tell) send({ t: 'bankclose' }); bank = null; el('winBank').style.display = 'none'; }
 
@@ -335,7 +337,7 @@ const UI = (() => {
   const BTN = { ok: [88, 41], yes: [89, 41], cancel: [85, 45], no: [87, 45] };
   function msgBox(text, kinds, cb, input) {
     const box = el('winMsg'); el('msgtext').textContent = text;
-    const inp = el('msgin'); inp.style.display = input ? 'block' : 'none'; inp.value = '';
+    const inp = el('msgin'); inp.style.display = input ? 'block' : 'none'; inp.value = ''; inp.type = 'text';
     [el('msgb1'), el('msgb2')].forEach((b, k) => {
       const kd = kinds[k]; b.style.display = kd ? 'block' : 'none'; if (!kd) return;
       b.style.width = BTN[kd][1] + 'px'; b.style.backgroundImage = `url(assets/int/${BTN[kd][0]}.png)`;

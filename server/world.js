@@ -1749,23 +1749,25 @@ class Game {
   }
   sendExch(p) {
     const d = this.exchData(p.exchAt.id), owed = (d.owed[p.name] || []).reduce((a, r) => Math.min(F.MONEY_MAX, a + r.n * r.price), 0);
-    const items = d.list.map(e => { const f = this.itemInfo(e.k, e.i); return { id: e.id, k: e.k, i: e.i, n: e.n, price: e.price, seller: e.seller, memo: e.memo, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0, weight: f ? f.weight || 0 : 0 }; });
+    const items = d.list.map(e => { const f = this.itemInfo(e.k, e.i); return { id: e.id, k: e.k, i: e.i, n: e.n, price: e.price, seller: e.seller, buyer: e.buyer || '', name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0, weight: f ? f.weight || 0 : 0 }; });
     p.send({ t: 'exch', name: p.exchAt.name, items, owed, mine: d.list.filter(e => e.seller === p.name).length });
   }
   exchTell(p, text) { p.send({ t: 'chat', id: 0, name: '거래소', text }); }
-  exchSell(p, slot, n, price, memo) {
+  // 사는 사람 이름을 적으면 그 사람만 살 수 있다 (tblExchange 의 Buyer 칸, ProcessExchangeBuyItem 0x40f7bd: 비어 있지 않고 내 이름과 다르면 0x61)
+  exchSell(p, slot, n, price, buyer) {
     const d = this.exchOk(p), it = p.inv[slot]; n = Math.floor(Number(n)); price = Math.floor(Number(price));
     if (!d || !it || !(n >= 1) || n > it.n) return;
     if (!(price >= 1) || price > Math.floor(F.MONEY_MAX / n)) { this.exchTell(p, '값이 올바르지 않습니다.'); return; }
     if (d.list.filter(e => e.seller === p.name).length >= 5) { this.exchTell(p, '다섯 건까지만 올릴 수 있습니다.'); return; }
     it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
-    d.list.push({ id: d.seq++, seller: p.name, k: it.k, i: it.i, n, price, memo: String(memo || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 16) });
+    d.list.push({ id: d.seq++, seller: p.name, k: it.k, i: it.i, n, price, buyer: String(buyer || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 16) });
     this.exchSave(); this.save(p); this.sendInv(p); this.sendStat(p); this.sendExch(p);
   }
   exchBuy(p, id, n) {
     const d = this.exchOk(p); n = Math.floor(Number(n)); if (!d || !(n >= 1)) return;
     const e = d.list.find(q => q.id === id); if (!e) { this.exchTell(p, '이미 팔린 물건입니다.'); this.sendExch(p); return; }
     if (e.seller.toLowerCase() === p.name.toLowerCase()) { this.exchTell(p, '자기가 올린 물건은 살 수 없습니다.'); return; }
+    if (e.buyer && e.buyer.toLowerCase() !== p.name.toLowerCase()) { p.send({ t: 'sys', code: 0x61, args: [] }); return; }
     n = Math.min(n, e.n);
     if (n > Math.floor(p.money / e.price)) { this.exchTell(p, '돈이 모자랍니다.'); return; }
     const took = this.giveItem(p, e.k, e.i, n); if (!took) return;
