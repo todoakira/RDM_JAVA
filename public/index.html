@@ -31,14 +31,14 @@
   #ls .okb, #ls .cab { position: absolute; width: 125px; height: 30px; cursor: pointer; background-position: 0 0; }
   #ls .okb { background-image: url(assets/int/32.png); } #ls .cab { background-image: url(assets/int/1.png); }
   #ls .okb:hover, #ls .cab:hover { background-position: 0 -30px; }
-  #slots .slot { position: absolute; width: 120px; height: 150px; cursor: pointer; text-align: center; color: #e0c070; font: 13px sans-serif; }
-  #slots .face { width: 120px; height: 120px; background-repeat: no-repeat; }
-  #classes { position: absolute; left: 270px; top: 188px; width: 352px; }
-  #classes label { float: left; width: 114px; height: 110px; margin: 0 3px 3px 0; text-align: center; color: #e0c070; font: 12px sans-serif; cursor: pointer; }
-  #classes input { display: none; }
-  #classes .face { width: 80px; height: 80px; margin: 4px auto 2px; background-size: 160px 80px; background-position: 0 0; background-repeat: no-repeat; }
-  #classes input:checked + .face { background-position: -80px 0; }
-  #startpos { position: absolute; left: 270px; top: 548px; color: #aaa; font: 12px sans-serif; }
+  #ls .body { position: absolute; width: 220px; height: 387px; background-repeat: no-repeat; background-position: 0 0; }
+  #slots .slot { position: absolute; top: 31px; width: 220px; height: 387px; cursor: pointer; }
+  #slots .nm { position: absolute; left: 0; top: 339px; width: 218px; height: 46px; text-align: center; color: #e0c070; font: 13px sans-serif; line-height: 46px; }
+  #classes { position: absolute; left: 0; top: 0; }
+  #classes .cf { position: absolute; width: 120px; height: 120px; cursor: pointer; background-repeat: no-repeat; background-position: 0 0; }
+  #classes .cf.on, #classes .cf:hover { background-position: -120px 0; }
+  #ccDesc { position: absolute; left: 268px; top: 189px; width: 355px; height: 333px; padding: 6px; box-sizing: border-box; color: #e0c070; font: 13px sans-serif; line-height: 1.5; white-space: pre-line; overflow: hidden; }
+  #startpos { position: absolute; left: 270px; top: 527px; color: #aaa; font: 12px sans-serif; }
   #msg { position: absolute; left: 0; right: 0; top: 584px; text-align: center; color: #e0c070; font: 13px sans-serif; }
   /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
   #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
@@ -194,7 +194,8 @@
       <input id="nid" class="fld" maxlength="14" autocomplete="off" style="left:204px;top:28px;width:276px"><input id="npw" class="fld" type="password" maxlength="64" autocomplete="off" style="left:204px;top:52px;width:276px"><input id="npw2" class="fld" type="password" maxlength="64" autocomplete="off" style="left:204px;top:76px;width:276px">
       <div class="okb" id="nwOk" style="left:120px;top:332px"></div><div class="cab" id="nwCa" style="left:255px;top:332px"></div></div>
   </div>
-  <!-- 캐릭터 고르기: if-co-ba, 단추 (250, 456~576) 300×24, 그림은 세 칸 (0, 24, 48) -->
+  <!-- 캐릭터 고르기 (Main.dll 0x10015370): if-co-ba, 칸마다 전신 if-co-* 220×387 을 (49|291|532, 31) 에, 이름 칸 (x, 370)~(x+218, 416).
+       단추 (250, 456~576) 300×24, 그림은 세 칸 (0, 24, 48) -->
   <div id="scrSelect" class="scr" style="background-image:url(assets/int/5.png);display:none">
     <div id="slots"></div>
     <div class="sb" id="sbStart" style="top:456px;background-image:url(assets/int/27.png)"></div>
@@ -203,10 +204,11 @@
     <div class="sb" id="sbInfo" style="top:528px;background-image:url(assets/int/14.png)"></div>
     <div class="sb" id="sbOut" style="top:552px;background-image:url(assets/int/30.png)"></div>
   </div>
-  <!-- 캐릭터 만들기: if-cc-ba, 이름 칸 (395,157)~(560,172), OK (500,540) Cancel (625,540) 125×30 -->
+  <!-- 캐릭터 만들기 (Main.dll 0x1000a2bf~0x1000ba34, 0x10018bb0): if-cc-ba. 얼굴 단추 120×120 아홉 개 (위 줄 다섯, 오른쪽 줄 넷),
+       고른 직업의 전신 (16,146) 220×387, 설명 (268,189)~(623,522) = Message 0/0/(52+직업), 이름 칸 (395,157)~(560,172), OK (500,540) Cancel (625,540) -->
   <div id="scrCreate" class="scr" style="background-image:url(assets/int/2.png);display:none">
     <input id="cn" class="fld" maxlength="14" autocomplete="off" style="left:395px;top:155px;width:165px;height:18px">
-    <div id="classes"></div>
+    <div id="classes"></div><div id="ccBody" class="body" style="left:16px;top:146px"></div><div id="ccDesc"></div>
     <div id="startpos">시작 위치: <label><input type="radio" name="beginner" value="1" checked> 초보존</label> <label><input type="radio" name="beginner" value="0"> 주택가2 병원</label></div>
     <div class="okb" id="mkok" style="left:500px;top:540px"></div><div class="cab" id="mkno" style="left:625px;top:540px"></div>
   </div>

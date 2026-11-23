@@ -602,17 +602,31 @@ const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
 //   동그라미 안 얼굴 자리와 이름 글 자리는 Main.dll 0x10010881 근처를 다 풀지 못해 그림에 맞춰 두었다 (확인 못 함)
 const FACE = [113, 114, 115, 116, 118, 117, 121, 119, 120];
 const FA = [25, 17, 26, 19, 24, 18, 20, 22, 21];          // 직업 → if-fa-pi·az·sa·de·pa·ca·ha·lu·la
-const SLOT_X = [156, 400, 644];
-let slotList = [], mkSlot = -1, selSlot = -1;
+const CO = [12, 4, 13, 7, 11, 6, 8, 10, 9];              // 직업 → if-co-* (220×1935 = 220×387 다섯 장: 0 = 회색 멈춤, 1~4 = 고른 움직임)
+const SLOT_X = [49, 291, 532];
+// 만들기 화면 얼굴 단추 자리 (pi·az·sa·de·pa 위 줄, ca·ha·lu·la 오른쪽 줄)
+const CF_POS = [[16, 16], [145, 16], [274, 16], [404, 16], [535, 16], [663, 16], [663, 146], [663, 276], [663, 406]];
+let slotList = [], mkSlot = -1, selSlot = -1, mkChr = 0;
 function scr(id) { for (const s of ['scrTitle', 'scrSelect', 'scrCreate']) $(s).style.display = s === id ? 'block' : 'none'; }
 function drawSlots() {
-  $('slots').innerHTML = slotList.map((c, i) => `<div class="slot" data-i="${i}" style="left:${SLOT_X[i] - 60}px;top:150px">` +
-    `<div class="face" style="background-image:url(assets/int/${c ? FA[c.chr] : 23}.png);background-position:${i === selSlot && c ? -120 : 0}px 0"></div>` +
-    (c ? `<div>${esc(c.name)}</div><div style="color:#aaa;font-size:12px">Lv.${c.level}</div>` : '') + `</div>`).join('');
+  $('slots').innerHTML = slotList.map((c, i) => c ? `<div class="slot" data-i="${i}" style="left:${SLOT_X[i]}px">` +
+    `<div class="body" data-anim="${i === selSlot ? 1 : 0}" style="background-image:url(assets/int/${CO[c.chr]}.png)"></div>` +
+    `<div class="nm">${esc(c.name)}  Lv.${c.level}</div></div>` : '').join('');
   $('slots').querySelectorAll('.slot').forEach(d => {
     d.onclick = () => { selSlot = Number(d.dataset.i); drawSlots(); };
-    d.ondblclick = () => { if (slotList[Number(d.dataset.i)]) startGame(); };
+    d.ondblclick = () => { selSlot = Number(d.dataset.i); startGame(); };
   });
+}
+// 고른 캐릭터의 움직임: if-co 의 1~4 장을 돈다 (CxDXCAniSurface, 장 간격은 원작 값을 못 찾아 150ms)
+setInterval(() => {
+  const f = 1 + Math.floor(Date.now() / 150) % 4;
+  document.querySelectorAll('#ls .body[data-anim="1"]').forEach(e => { e.style.backgroundPosition = `0 ${-387 * f}px`; });
+}, 50);
+function pickClass(c) {
+  mkChr = c;
+  $('classes').querySelectorAll('.cf').forEach((e, i) => e.classList.toggle('on', i === c));
+  $('ccBody').style.backgroundImage = `url(assets/int/${CO[c]}.png)`; $('ccBody').dataset.anim = 1;
+  $('ccDesc').textContent = (UI.msg && UI.msg(0, 0, 52 + c)) || '';
 }
 function showChars(list) {
   slotList = list; scr('scrSelect'); $('msg').textContent = (UI.msg && UI.msg(0, 1, 4)) || '';
@@ -652,8 +666,9 @@ function connect(id, pw, create) {
     else $('msg').textContent = '서버에 연결할 수 없습니다.';
   };
 }
-// 직업 고르기: 얼굴은 원작 만들기 화면의 if-fa-* (두 칸: 보통·고름). 칸 배치는 원작 자리를 못 찾아 상자 안에 3×3 으로 두었다
-$('classes').innerHTML = CLASS_KR.map((n, i) => `<label><input type="radio" name="chr" value="${i}"${i === 1 ? ' checked' : ''}><div class="face" style="background-image:url(assets/int/${FA[i]}.png)"></div><span>${n}</span></label>`).join('');
+// 직업 고르기: 얼굴은 원작 만들기 화면의 if-fa-* 단추 (두 칸: 보통·고름)
+$('classes').innerHTML = CLASS_KR.map((n, i) => `<div class="cf" title="${n}" style="left:${CF_POS[i][0]}px;top:${CF_POS[i][1]}px;background-image:url(assets/int/${FA[i]}.png)"></div>`).join('');
+$('classes').querySelectorAll('.cf').forEach((e, i) => e.onclick = () => pickClass(i));
 $('restart').addEventListener('click', () => send({ t: 'restart' }));
 const showDlg = id => { for (const d of ['dlgLogin', 'dlgNew']) $(d).style.display = d === id ? 'block' : 'none'; if (id) $(id === 'dlgLogin' ? 'nm' : 'nid').focus(); };
 const doLogin = () => { const id = $('nm').value.trim(); if (!id) return; $('msg').textContent = '접속 중...'; connect(id, $('pw').value, false); };
@@ -672,14 +687,14 @@ $('nwOk').onclick = doNew; $('nwCa').onclick = () => showDlg(null);
 for (const id of ['nm', 'pw']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); if (e.key === 'Escape') showDlg(null); });
 for (const id of ['nid', 'npw', 'npw2']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doNew(); if (e.key === 'Escape') showDlg(null); });
 $('sbStart').onclick = startGame;
-$('sbAdd').onclick = () => { mkSlot = slotList.findIndex(c => !c); if (mkSlot < 0) { $('msg').textContent = (UI.msg && UI.msg(0, 1, 3)) || ''; return; } $('cn').value = ''; scr('scrCreate'); $('cn').focus(); };
+$('sbAdd').onclick = () => { mkSlot = slotList.findIndex(c => !c); if (mkSlot < 0) { $('msg').textContent = (UI.msg && UI.msg(0, 1, 3)) || ''; return; } $('cn').value = ''; scr('scrCreate'); pickClass(mkChr); $('cn').focus(); };
 $('sbDel').onclick = () => {
   const c = slotList[selSlot]; if (!c) return;
   UI.msgBox(`${c.name}`, ['ok', 'cancel'], y => { if (!y) return; const pw = prompt('계정 비밀번호'); if (pw) send({ t: 'delchar', slot: selSlot, pw }); });
 };
 $('sbInfo').onclick = () => { $('msg').textContent = '아직 구현되지 않았습니다.'; };
 $('sbOut').onclick = () => { if (ws) { ws.onclose = null; ws.close(); } scr('scrTitle'); showDlg(null); $('msg').textContent = ''; };
-$('mkok').onclick = () => { const chr = Number((document.querySelector('#classes input:checked') || {}).value || 1), beginner = (document.querySelector('input[name=beginner]:checked') || {}).value === '1'; send({ t: 'newchar', slot: mkSlot, name: $('cn').value.trim(), chr, beginner }); };
+$('mkok').onclick = () => { const chr = mkChr, beginner = (document.querySelector('input[name=beginner]:checked') || {}).value === '1'; send({ t: 'newchar', slot: mkSlot, name: $('cn').value.trim(), chr, beginner }); };
 $('mkno').onclick = () => scr('scrSelect');
 $('cn').addEventListener('keydown', e => { if (e.key === 'Enter') $('mkok').onclick(); });
 // 800×600 접속 화면을 창에 맞춰 키운다
