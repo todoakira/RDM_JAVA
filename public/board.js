@@ -10,7 +10,8 @@ const BoardUI = (() => {
   function win() {
     let d = el('winBoard'); if (d) return d;
     d = document.createElement('div'); d.id = 'winBoard'; d.className = 'win';
-    d.style.cssText = 'display:none;position:fixed;left:calc(50% - 260px);top:calc(50% - 190px);width:520px;height:380px;z-index:22;background:#0d140d;border:2px solid #4a6a3a;box-shadow:0 0 0 1px #000;color:#dfe8d0;font-size:12px';
+    // 원작 게시판은 게임 안 웹 창이었다. 창 기본 위치 "Board" (150,80) 는 Main.dll 0x10007480 GetProfileInt 값, 바탕은 원작 일반 창 iw-ge-ba (500×400) 를 쓴다 (게시판이 이 바탕인지는 확인 못 함)
+    d.style.cssText = 'display:none;position:fixed;left:calc(50% - 400px + 150px);top:calc(50% - 300px + 80px);width:500px;height:400px;z-index:22;background:url(assets/int/142.png);color:#dfe8d0;font-size:12px';
     d.innerHTML = `<div id="bdtitle" style="height:22px;line-height:22px;padding:0 8px;background:#1c2a16;border-bottom:1px solid #4a6a3a;font-weight:bold"></div>
       <div id="bdclose" style="position:absolute;right:6px;top:3px;cursor:pointer;pointer-events:auto">✕</div>
       <div id="bdbody" style="position:absolute;left:8px;right:8px;top:30px;bottom:36px;overflow:auto;pointer-events:auto"></div>

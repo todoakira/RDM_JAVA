@@ -159,9 +159,7 @@ const UI = (() => {
       e.onclick = () => { exSel = it.key; drawExch(); };
       e.ondblclick = ev => {
         if (exMode === 'buy') { send({ t: 'exchbuy', id: it.id, n: ev.shiftKey ? it.n : 1 }); return; }
-        const n = it.n > 1 ? ask('올릴 수량', it.n) : 1; if (!n) return;
-        const price = ask('개당 값', 100); if (!price) return;
-        send({ t: 'exchsell', slot: it.key, n, price, memo: (prompt('남길 말 (16자까지, 비워도 됨)', '') || '') });
+        openXs(it);
       };
       box.appendChild(e);
     }
@@ -176,10 +174,45 @@ const UI = (() => {
     if (exch.owed) link(`판 돈 ${exch.owed.toLocaleString()} 찾기`, () => send({ t: 'exchrepay' }));
     if (exch.mine) link('올린 물건 모두 거두기', () => send({ t: 'exchcancel' }));
   }
-  function openExch(m) { closeShop(true); exch = m; if (el('winShop').style.display !== 'block') { exMode = 'buy'; exSel = -1; exTop = 0; } el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawExch(); }
-  function closeExch(tell) { if (exch && tell) send({ t: 'exchclose' }); exch = null; el('winShop').style.display = 'none'; }
-  function openShop(m) { shop = m; shopMode = 'buy'; shopSel = -1; shopTop = 0; el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawShop(); }
-  function closeShop(tell) { if (shop && tell) send({ t: 'shopclose' }); shop = null; el('winShop').style.display = 'none'; }
+  // 첫 메뉴: 그림의 줄을 누른다 (줄 높이는 그림에서 잰 값 18·17·18 …). 고른 뒤에 큰 창을 연다
+  function topMenu(img, h, rows, pick) {
+    const w = el('winTop'); w.style.background = `url(assets/int/${img}.png)`; w.style.height = h + 'px'; w.innerHTML = '';
+    rows.forEach(([y0, y1, k]) => { const r = document.createElement('div'); r.style.cssText = `position:absolute;left:4px;width:58px;top:${y0}px;height:${y1 - y0}px;cursor:pointer`; r.onclick = () => { w.style.display = 'none'; pick(k); }; w.appendChild(r); });
+    w.style.display = 'block';
+  }
+  function showExch() { el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawExch(); }
+  function openExch(m) {
+    closeShop(true); const again = !!exch; exch = m;
+    if (again && el('winShop').style.display === 'block') { drawExch(); return; }
+    exSel = -1; exTop = 0;
+    topMenu(305, 76, [[3, 21, 'buy'], [21, 38, 'sell'], [38, 56, 'repay'], [56, 73, 'cancel']], k => {
+      if (k === 'cancel') { closeExch(true); return; }
+      if (k === 'repay') { send({ t: 'exchrepay' }); exMode = 'buy'; } else exMode = k;
+      showExch();
+    });
+  }
+  // 교환소에 올리기 (ExchangeSell 창): 물건 이름·그림, Buyer, Price, OK·Cancel. Buyer 칸은 우리 판에서 남길 말로 쓴다 (원작 뜻은 확인 못 함)
+  let xsItem = null;
+  function openXs(it) {
+    xsItem = it; el('xsname').textContent = it.name + (it.n > 1 ? ' × ' + it.n : '');
+    el('xsicon').innerHTML = ''; const c = cell(it, 0, 0); el('xsicon').appendChild(c);
+    el('xsbuyer').value = ''; el('xsprice').value = ''; el('winXs').style.display = 'block'; el('xsprice').focus();
+  }
+  el('xscancel').onclick = () => { el('winXs').style.display = 'none'; xsItem = null; };
+  el('xsok').onclick = () => {
+    const it = xsItem; if (!it) return; const price = Math.floor(Number(el('xsprice').value)); if (!(price >= 1)) return;
+    const n = it.n > 1 ? ask('올릴 수량', it.n) : 1; if (!n) return;
+    send({ t: 'exchsell', slot: it.key, n, price, memo: el('xsbuyer').value.slice(0, 16) }); el('winXs').style.display = 'none'; xsItem = null;
+  };
+  function closeExch(tell) { if (exch && tell) send({ t: 'exchclose' }); exch = null; el('winShop').style.display = 'none'; el('winTop').style.display = 'none'; el('winXs').style.display = 'none'; }
+  function openShop(m) {
+    shop = m; shopSel = -1; shopTop = 0;
+    topMenu(156, 58, [[3, 20, 'buy'], [20, 37, 'sell'], [37, 55, 'cancel']], k => {
+      if (k === 'cancel') { closeShop(true); return; }
+      shopMode = k; el('winShop').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawShop();
+    });
+  }
+  function closeShop(tell) { if (shop && tell) send({ t: 'shopclose' }); shop = null; el('winShop').style.display = 'none'; el('winTop').style.display = 'none'; }
 
   // 은행 창: 다섯 칸 × 네 줄(스무 칸)과 맡긴 돈
   function drawBank() {
@@ -261,7 +294,7 @@ const UI = (() => {
 
   // ---------- 도움말 창 (Main.dll 0x10081900 만들기, 0x10082410 글 채우기) ----------
   // 글은 Message 그룹 1: 0 = 로그인 도움말, 1 = 게임 도움말. 0번 줄이 제목, 1번부터 ':EOF' 줄 앞까지가 본문.
-  // 창 위치는 원작에서 찾지 못해 화면 가운데에 둔다. 글 색은 COLORREF 로 읽었다 (본문 0x91d7ff, 제목 0xffff)
+  // 창 위치는 원작 기본값 (Main.dll 0x10007480 의 GetProfileInt "Help" l·t = 208,130). 글 색은 COLORREF 로 읽었다 (본문 0x91d7ff, 제목 0xffff)
   let helpTop = 0, helpLines = [];
   function openHelp(sec) {
     const g = msgs && msgs[1] && msgs[1][sec]; if (!g) return;

@@ -168,7 +168,7 @@ function drawLabels(e, now) {
   const focus = e.id === hoverId || e.id === targetId;
   if (!e.mob || focus) {
     ctx.font = `bold 12px ${FONT}`;
-    outlined(e.mob || e.npc ? e.name : `${e.name} Lv.${e.level}`, x, y, e.mob ? '#ff9a8a' : e.npc ? '#9fe89f' : FAME_COLOR[e.ft] || '#fff');
+    outlined(e.name, x, y, e.mob ? '#ff9a8a' : e.npc ? '#9fe89f' : FAME_COLOR[e.ft] || '#fff');
   }
   if (!e.npc && e.hp < e.maxHp && !e.deadAt && (e.mob ? now - e.shownAt < 6000 || focus : e.id !== myId)) {
     ctx.fillStyle = '#000'; ctx.fillRect(x - 21, y + 5, 42, 5);
@@ -330,6 +330,8 @@ function sendMove() {
   send({ t: 'evc', name: runToggle !== shift ? 'Run' : 'Walk' });   // 이벤트 조건 Walk / Run
   marker = { x, y, z, until: performance.now() + 600 };
 }
+let iAmDead = false;
+cv.addEventListener('pointerdown', e => { if (iAmDead) { send({ t: 'restart' }); return; } }, true);
 cv.addEventListener('pointerdown', e => {
   if (!map) return;
   $('say').blur(); shift = e.shiftKey; clearInterval(holdTimer);
@@ -498,9 +500,10 @@ const handlers = {
   die(m) {
     const e = ents.get(m.id); if (!e) return;
     e.deadAt = performance.now(); e.hp = 0; e.act = ''; e.moving = false;
-    if (m.id === myId) { log('쓰러졌습니다.', 'sys'); targetId = 0; $('dead').style.display = 'block'; }
+    // 원작은 창 없이 시스템 글 0/2/9 "Player %s killed you. Click to respawn." 또는 0/2/10 을 보이고, 화면을 누르면 다시 선다
+    if (m.id === myId) { log(esc(m.by ? UI.msg(0, 2, 9).replace('%s', m.by) : UI.msg(0, 2, 10)), 'sys'); targetId = 0; iAmDead = true; }
   },
-  respawn(m) { const e = ents.get(m.id); if (e) { e.deadAt = 0; e.hp = m.hp; e.dir = 2; snapTo(e, m.x, m.y, m.z); } },
+  respawn(m) { if (m.id === myId) iAmDead = false; const e = ents.get(m.id); if (e) { e.deadAt = 0; e.hp = m.hp; e.dir = 2; snapTo(e, m.x, m.y, m.z); } },
   pos(m) { const e = ents.get(m.id); if (e) { e.dir = m.dir; snapTo(e, m.x, m.y, m.z); } },
   gadd(m) { ground.set(m.g.id, m.g); },
   gdel(m) { ground.delete(m.id); },
@@ -611,7 +614,7 @@ function scr(id) { for (const s of ['scrTitle', 'scrSelect', 'scrCreate']) $(s).
 function drawSlots() {
   $('slots').innerHTML = slotList.map((c, i) => c ? `<div class="slot" data-i="${i}" style="left:${SLOT_X[i]}px">` +
     `<div class="body" data-anim="${i === selSlot ? 1 : 0}" style="background-image:url(assets/int/${CO[c.chr]}.png)"></div>` +
-    `<div class="nm">${esc(c.name)}  Lv.${c.level}</div></div>` : '').join('');
+    `<div class="nm">${esc(c.name)}<br>Level : ${c.level}</div></div>` : '').join('');   // 원작 "%s\nLevel : %d" (0x10018a62)
   $('slots').querySelectorAll('.slot').forEach(d => {
     d.onclick = () => { selSlot = Number(d.dataset.i); drawSlots(); };
     d.ondblclick = () => { selSlot = Number(d.dataset.i); startGame(); };
@@ -650,7 +653,7 @@ function connect(id, pw, create) {
       for (const p of m.players) addEnt(p);
       for (const q of m.mobs) addEnt(q);
       for (const q of m.npcs || []) addEnt(q);
-      $('dead').style.display = 'none';
+      $('dead').style.display = 'none'; iAmDead = false;
       myId = m.id; $('login').style.display = 'none'; UI.show(first);
       log(first ? `${esc(map.name)}에 접속했습니다.` : `${esc(map.name)}(으)로 이동했습니다.`, 'sys');
       return;

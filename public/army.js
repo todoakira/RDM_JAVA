@@ -12,7 +12,9 @@ const ArmyUI = (() => {
   function win(id, img, w, h) {
     let d = el(id); if (d) return d;
     d = document.createElement('div'); d.id = id; d.className = 'win armyw';
-    d.style.cssText = `display:none;position:fixed;left:calc(50% - ${w >> 1}px);top:calc(50% - ${h >> 1}px);width:${w}px;height:${h}px;background:url(assets/int/${img}.png);z-index:22`;
+    // 군단 정보 창만 원작 기본 위치 "Army" (245,113, Main.dll 0x10007480 GetProfileInt) 를 안다. 나머지 군단 창은 아직 가운데
+    const pos = id === 'arInfo' ? 'left:calc(50% - 400px + 245px);top:calc(50% - 300px + 113px);' : `left:calc(50% - ${w >> 1}px);top:calc(50% - ${h >> 1}px);`;
+    d.style.cssText = `display:none;position:fixed;${pos}width:${w}px;height:${h}px;background:url(assets/int/${img}.png);z-index:22`;
     document.body.appendChild(d); return d;
   }
   // 그림 단추: 위·아래 두 칸 (보통, 눌림)

@@ -1435,7 +1435,7 @@ class World {
     if (d.mob && !a.mob) { const dd = G.direction(d, a); if (dd !== 5) d.dir = dd; }   // 맞은 몬스터는 공격자를 본다 (DoSkillAttackMop 0x45f8d3)
     this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, dmg, hp: d.hp, ...extra });
     if (d.hp > 0) return;
-    this.broadcast({ t: 'die', id: d.id });
+    this.broadcast({ t: 'die', id: d.id, by: !d.mob && a && !a.mob ? a.name : undefined });
     if (d.mob) {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);

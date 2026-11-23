@@ -33,7 +33,7 @@
   #ls .okb:hover, #ls .cab:hover { background-position: 0 -30px; }
   #ls .body { position: absolute; width: 220px; height: 387px; background-repeat: no-repeat; background-position: 0 0; }
   #slots .slot { position: absolute; top: 31px; width: 220px; height: 387px; cursor: pointer; }
-  #slots .nm { position: absolute; left: 0; top: 339px; width: 218px; height: 46px; text-align: center; color: #e0c070; font: 13px sans-serif; line-height: 46px; }
+  #slots .nm { position: absolute; left: 0; top: 339px; width: 218px; height: 46px; text-align: center; color: #e0c070; font: 13px sans-serif; line-height: 18px; padding-top: 5px; box-sizing: border-box; }
   #classes { position: absolute; left: 0; top: 0; }
   #classes .cf { position: absolute; width: 120px; height: 120px; cursor: pointer; background-repeat: no-repeat; background-position: 0 0; }
   #classes .cf.on, #classes .cf:hover { background-position: -120px 0; }
@@ -143,7 +143,7 @@
   <div id="trok" style="position:absolute;left:25px;top:214px;width:56px;height:16px;cursor:pointer"></div>
   <div id="trcancel" style="position:absolute;left:85px;top:214px;width:57px;height:16px;cursor:pointer"></div></div>
 <!-- 도움말 창 (Main.dll 0x10081900): 바탕 ge-wr-ba 383×297, 닫기 ge-cl-bu (304,263), 제목 (20,47)~(346,69), 글 (20,70)~(346,255), 스크롤 (349,45) 17×209 -->
-<div id="winHelp" class="win o" style="z-index:1000;--x:208px;--y:151px;width:383px;height:297px;background:url(assets/int/137.png)">
+<div id="winHelp" class="win o" style="z-index:1000;--x:208px;--y:130px;width:383px;height:297px;background:url(assets/int/137.png)">
   <div id="helpcl" class="pbtn" style="left:304px;top:263px;width:62px;height:20px;background-image:url(assets/int/136.png)"></div>
   <div id="helptitle"></div><div id="helptext"></div>
   <div id="helpsb" style="position:absolute;left:349px;top:45px;width:17px;height:209px;background:url(assets/int/143.png)">
@@ -170,6 +170,13 @@
 <div id="winBank" class="win o" style="--x:268px;--y:169px;width:264px;height:261px;background:url(assets/int/193.png)"><div class="x" data-close="winBank"></div>
   <div id="bankput" title="돈 맡기기" style="position:absolute;left:30px;top:32px;width:46px;height:24px;cursor:pointer"></div>
   <div id="bankmoney" title="돈 찾기" style="position:absolute;left:80px;top:37px;width:170px;height:17px;line-height:17px;text-align:right;color:#fff;cursor:pointer"></div><div id="bankcells"></div></div>
+<!-- 상점·교환소 첫 메뉴 (원작 기본 위치 ShopTop·ExchangeTop 367,260): iw-bs-ba 66×58 BUY·SELL·Cancel, iw-bt-ba 66×76 BUY·SELL·REPAY·Cancel.
+     교환소 팔기 창 (ExchangeSell 269,230): iw-bu-ba 262×132 -->
+<div id="winTop" class="win o" style="--x:367px;--y:260px;width:66px;height:58px;z-index:21"></div>
+<div id="winXs" class="win o" style="--x:269px;--y:230px;width:262px;height:132px;background:url(assets/int/306.png);z-index:21">
+  <div id="xsname" class="txt" style="left:22px;top:9px;width:218px;height:26px;line-height:26px;color:#fff"></div><div id="xsicon" style="position:absolute;left:21px;top:54px;width:34px;height:34px"></div>
+  <input id="xsbuyer" class="xwin" maxlength="16" style="left:108px;top:48px;width:132px;height:18px"><input id="xsprice" class="xwin" maxlength="10" style="left:108px;top:77px;width:132px;height:18px">
+  <div id="xsok" style="position:absolute;left:126px;top:108px;width:41px;height:14px;cursor:pointer"></div><div id="xscancel" style="position:absolute;left:167px;top:108px;width:45px;height:14px;cursor:pointer"></div></div>
 <div id="winShop" class="win o" style="--x:250px;--y:90px;width:300px;height:400px;background:url(assets/int/159.png)"><div class="x" data-close="winShop"></div><div id="shoptitle" class="txt" style="left:24px;top:16px;width:230px;height:18px;color:#ffd27a"></div><div id="shopcells"></div>
   <div id="shoptxt" class="txt" style="left:20px;top:202px;width:262px;height:156px"></div>
   <div class="sb" id="sbBuy" style="left:98px;top:367px;background-image:url(assets/int/158.png)"></div><div class="sb" id="sbSell" style="left:160px;top:367px;background-image:url(assets/int/157.png)"></div><div class="sb" id="sbCancel" style="left:224px;top:367px;background-image:url(assets/int/155.png)"></div>
