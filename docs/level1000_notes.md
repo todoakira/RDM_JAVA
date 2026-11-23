@@ -24,7 +24,7 @@
 - SBonus ≥ 1 이고 STotalBonus ≥ 1 이면 둘 다 −1.
 - tblSpecialItemLimit1 의 6/66 한도가 서버 전체 6/66 개수(tblSpecialItem1)보다 크고 RAND()%100 ≥ 70 이면 전설의 단약을 넣는다.
 - 아이템 수가 늘었으면 `MakeMysteryPillSuccess` (이벤트 45: 291·292), 아니면 `MakeMysteryPillFail` (이벤트 46: 293·294).
-- **받은 원작 DB 의 tblSpecialItemLimit1 은 비어 있다** (sysindexes 의 첫 페이지 0, 행 수 0). 그대로면 한도 0 이라 만들 수 없다. 여기서는 `save/pills.json` 의 `limit` 으로 운영자가 정한다 (기본 0). `count` 는 만든 수 − 먹은 수.
+- **받은 원작 DB 의 tblSpecialItemLimit1 은 비어 있다** (sysindexes 의 첫 페이지 0, 행 수 0). 그대로면 한도 0 이라 만들 수 없다. 운영 결정으로 여기서는 **기본 한도 없음**. `save/pills.json` 의 `limit` 에 숫자를 넣으면 그 한도를 쓴다. `count` 는 만든 수 − 먹은 수.
 
 ## 특수 아이템 (ProcessUseItem 0x430f73~)
 - 6/66 전설의 단약 (RMS_USEMYSTERYPILL): Bonus2 +4, STotalBonus +4.

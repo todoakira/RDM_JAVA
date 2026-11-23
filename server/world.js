@@ -1105,9 +1105,15 @@ const isSignus = m => (m >= 0x5d && m <= 0x6c) || (m >= 0x89 && m <= 0xb0);
 const cur = p => isSignus(p.world.mapId) ? 'tau' : 'money';
 
 // 전설의 단약 수와 한도 (원작 DB tblSpecialItem1 의 6/66 개수, tblSpecialItemLimit1 의 한도).
-// 받은 원작 DB 의 tblSpecialItemLimit1 은 비어 있어 한도가 0 이다 (그러면 만들 수 없다). 운영자는 save/pills.json 의 limit 로 정한다
+// 받은 원작 DB 의 한도 표는 비어 있다 (그대로면 한도 0 이라 만들 수 없음). 운영 결정으로 기본은 한도 없음.
+// save/pills.json 의 limit 에 숫자를 넣으면 그 한도를 쓴다 (null 이나 없음 = 한도 없음)
 class Pills {
-  constructor() { this.file = path.join(ROOT, 'save', 'pills.json'); let d = {}; try { d = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch (e) {} this.limit = d.limit | 0; this.count = d.count | 0; }
+  constructor() {
+    this.file = path.join(ROOT, 'save', 'pills.json'); let d = {};
+    try { d = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch (e) {}
+    this.limit = Number.isFinite(d.limit) ? d.limit : null; this.count = d.count | 0;
+  }
+  allowed() { return this.limit === null || this.limit > this.count; }
   save() { try { fs.mkdirSync(path.dirname(this.file), { recursive: true }); fs.writeFileSync(this.file, JSON.stringify({ limit: this.limit, count: this.count })); } catch (e) {} }
   made() { this.count++; this.save(); }
   used() { if (this.count > 0) this.count--; this.save(); }
@@ -1394,7 +1400,7 @@ class Game {
     let made = false;
     if ((p.sbonus || 0) >= 1 && (p.stotal || 0) >= 1) {
       p.sbonus--; p.stotal--;
-      if (this.pills.limit > this.pills.count && Math.floor(Math.random() * 100) >= 70) made = this.giveItem(p, 6, 66, 1) > 0;
+      if (this.pills.allowed() && Math.floor(Math.random() * 100) >= 70) made = this.giveItem(p, 6, 66, 1) > 0;
       if (made) this.pills.made();
     }
     this.sendStat(p);
