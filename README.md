@@ -302,6 +302,8 @@ Shop (250,90), Bank (268,169), Post (150,140), PostItem (200,130), Choose (164,3
 | 92 → 77 | 90 Destruction | 몬스터에게 주는 피해 + /5 |
 | 31·33·59·60·61·63·79·89 | 55·85 Mind Shield, 65 Red Halo, 48 MadSpin, 58 Dysperse, 59 Chain Reaction, 361 Purity of Heart, 363 WindWalker, 353 Quick Reload | 효과는 걸리지만 하는 일은 몬스터 기술·주인공끼리 싸움·클라이언트 쪽이라 아직 없음 (MadSpin 은 맞는 무기가 아니면 풀림) |
 
+고유·세트 장비 효과 (공격·방어 식, 추가 공격, 기술 덤, 몬스터 피해 증감 %, 능력치 성장) 를 옮겼습니다. 기록은 `docs/equip_notes.md`.
+
 주인공 기술은 몬스터 기술을 빼고 모두 옮겼습니다 (활 기술·범위 공격 고유 식 포함). 식은 `docs/skills_notes.md`.
 
 이동 기술: Dimensional Gate(맵 x y 입력, 10초 동안 문), Recall(이름 입력, 상대에게 묻기), Teleport(이름 입력), Warp(오른쪽 단추로 자리 고르기), 돌진 5종, 회복·부활이 동작합니다. 문 그림은 아직 찾지 못해 보이지 않습니다.

@@ -73,7 +73,7 @@ n = 20 (Dimensional Gate), 23 (Recall), 35 (Warp), 48 (Teleport) 은 이 표에�
 - ProcessUserMoving 0x43d9f0: 움직이면 34 풀림. rm3944 NewStaminaEffect: 효과 62 면 달려도 기력이 줄지 않음.
 - 알아보기 CMopServer::GetCanRecognize 0x47d630: 그림 0x62·0x61 이 아니면 26 (그림 0x9b 제외, NewCanRecognize)·35·19 → 못 알아봄. 1 은 몬스터 정신력 ≤ 2 × 기본 정신력 + (+0x432c) 이면 못 알아봄.
 - InitializeEquipmentEffect: 30 이면 방어 + ⌊3 × 방어/10⌋. 48 이면 체력 최대·방어·회복에 기본 기골의 절반 (InitializeHPMax 0x4346d3, InitializeDefence 0x434c26, OnTimer 0x43e436), 근력 공격 두 배 (InitializeAttack 0x4349ce).
-  rm3944: 69 정신력 보정 (NewFocusEffect 0x10002b5c), 75 기골 + 5000 (NewGshieldEffect 0x10002d36), 73 최소 피해 비율 ≥ 100 (NewBullseyeEffect), 72 기력 0 (NewDskinEffect, SendSPInfo).
+  rm3944: 69 정신력 = ⌊(DB 정신력 − 10)/18⌋ × 23 + 10 (+0x3f60 은 레벨이 아니라 DB 의 정신력이었다, NewFocusEffect 0x10002b5c), 75 기골 + 5000 (NewGshieldEffect 0x10002d36), 73 최소 피해 비율 ≥ 100 (NewBullseyeEffect), 72 기력 0 (NewDskinEffect, SendSPInfo).
 - 무기가 맞지 않으면 풀림 (0x437932~0x437c73, 메시지 0xa5): 49 (SPIN 무기), 2·22 (총·중화기), 10·11·34 (총).
 
 ## 몬스터 약화 (UseSkillAttackSingleMop 0x44f864~0x450700, CMopServer::DoSkillEffect 0x479630)

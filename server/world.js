@@ -36,6 +36,7 @@ const crypto = require('crypto');
 const G = require('./grid');
 const SK = require('./skills');
 const { Events } = require('./events');
+const EQUIP = require('./equip');
 const STORY = require('./story');
 const { Groups } = require('./group');
 const { Trades } = require('./trade');   // 이벤트 대본 (NPC 대사, 초보 안내, 퀘스트)   // 기술 (svMapServer.exe UseSkill*, rm3944.dll)         // 원작의 위치·방향·거리 계산
@@ -401,18 +402,18 @@ class World {
       if (m.hp <= 0 || G.dist(center, m) > rad || !this.noObstacle(center, m)) continue;
       if (adb) { this.debuffOne(p, m, s, sid, adb, now); continue; }
       let dmg;
-      if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o);            // 특수: 반드시 맞음 (0x45d409)
+      if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o, p.skDmg || 0);            // 특수: 반드시 맞음 (0x45d409)
       else if (sid in SK.AREA_FORMULA || sid === 42) {                           // 고유 식 (skills.js AREA_FORMULA)
         const fd = this.fightDex(p, now), aDex = sid === 67 ? fd + 3 * (p.bDex || 0) : fd, mDex = this.mobDex(m, now);
         if (F.rand100() > this.hitChance(p, m, F.hitPct(aDex, mDex), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
         if (sid === 42) {
           const v = p.atk + Math.floor((p.atkExtra || 0) / 3), cp = F.critPct(fd, mDex, 10);
-          dmg = SK.damage(F.rand100() < cp ? 2 * v : v, s.o);
-        } else dmg = SK.damage(SK.AREA_FORMULA[sid](p.atk, p) + (p.atkExtra || 0), s.o);
+          dmg = SK.damage(F.rand100() < cp ? 2 * v : v, s.o, p.skDmg || 0);
+        } else dmg = SK.damage(SK.AREA_FORMULA[sid](p.atk, p) + (p.atkExtra || 0), s.o, p.skDmg || 0);
       }
       else {
         if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, this.mobSpi(m, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp, area: 1 }); continue; }
-        dmg = SK.damage(cost, s.o);                                               // 일반: 공격 값 = 마력 소모량 (0x45d094)
+        dmg = SK.damage(cost + (p.skSpi || 0), s.o, p.skDmg || 0);                               // 일반: 공격 값 = 마력 소모량 + T+0x34 (0x45d094)
       }
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now, m), now, { k: 2, sk: sid, area: 1 });
     }
@@ -437,7 +438,7 @@ class World {
     for (const o of hit) {
       if (F.rand100() > this.hitChance(p, o, F.hitPct(this.fightDex(p, now), this.mobDex(o, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: o.id, dir, k: 2, sk: sid, miss: 1, hp: o.hp }); continue; }
       const v = (sid === 382 ? SK.bowValue(382, p, this.fightDex(p, now), this.weaponInfo(p)) : f(X, cost, o === m)) + (p.atkExtra || 0);
-      this.applyDamage(p, o, this.mobDamage(p, Math.max(1, SK.damage(v, s.o)), now, o), now, { k: 2, sk: sid });
+      this.applyDamage(p, o, this.mobDamage(p, Math.max(1, SK.damage(v, s.o, p.skDmg || 0)), now, o), now, { k: 2, sk: sid });
     }
     if (!hit.length) this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
   }
@@ -462,7 +463,7 @@ class World {
     if (db.hit === 'dex') { if (F.rand100() > this.hitChance(p, m, F.hitPct(this.fightDex(p, now), this.mobDex(m, now)), now)) return miss(); }
     else if (F.rand100() > this.hitChance(p, m, F.hitPct(p.spi, msp), now)) return miss();
     if (db.dmg) {                                               // n=37: 공격 값 = 마력 소모량 (+ USERDB+0x34) 로 피해를 주고 살아 있으면 건다 (0x450060)
-      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(cost, s.o)), now, m), now, { k: 2, sk: sid });
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(cost + (p.skSpi || 0), s.o, p.skDmg || 0)), now, m), now, { k: 2, sk: sid });
       if (m.hp <= 0) return;
     } else this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
     if (db.dispel) { m.fx = {}; m.voodoo = ''; return; }
@@ -556,7 +557,7 @@ class World {
     if (s.a === 1) {                                             // 특수 기술: 반드시 맞음 (0x44f81c)
       this.fxOff(p, 1); this.fxOff(p, 19);
       const d = G.direction(p, m); if (d !== 5) p.dir = d;
-      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o)), now, m), now, { k: 2, sk: sid });
+      this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o, p.skDmg || 0)), now, m), now, { k: 2, sk: sid });
       return;
     }
     this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);                         // 공격 기술을 쓰면 위장·19·35 가 풀린다 (0x44d873~0x44d8a6)
@@ -569,7 +570,7 @@ class World {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
     }
     const av = sid in SK.BOW_DIV || sid === 385 ? SK.bowValue(sid, p, this.fightDex(p, now), this.weaponInfo(p)) : SK.attackValue(sid, p, cost);
-    const dmg = this.mobDamage(p, Math.max(1, SK.damage(av + (sid in SK.BOW_DIV || sid === 385 ? (p.atkExtra || 0) : 0), s.o)), now, m);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
+    const dmg = this.mobDamage(p, Math.max(1, SK.damage(av + (sid in SK.BOW_DIV || sid === 385 ? (p.atkExtra || 0) : 0), s.o, p.skDmg || 0)), now, m);   // 몬스터 쪽 GetAttack(0x47acb0)은 걸린 효과의 배수만 곱하고 최소 1
     const before = m.hp;
     this.applyDamage(p, m, dmg, now, { k: 2, sk: sid });
     if (sid === 66 && m.hp > 0) this.mobEffect(m, 13, SK.duration(p, s), p, now);   // 몬스터 효과 13 (0x44de8c)
@@ -902,7 +903,8 @@ class World {
     const defDex = !d.mob && this.fxOn(d, 44, now) ? dDex + Math.floor(dDex / 5) : dDex;
     if (!a.mob) { this.fxOff(a, 1); this.fxOff(a, 19); this.fxOff(a, 35); }            // 공격하면 효과 1 위장·19·35 Hide 가 풀린다 (ProcessUserAttack 0x43a931, 0x43a958)
     if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(aDex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp, bul }); return; }
-    let dmg = Math.max(1, F.rollDamage(a.atk, a.minPct) * (crit ? 2 : 1));
+    // 공격력 = 근력 공격 + 무기 공격 + ⌊T+0x30 / 3⌋ (DoAttackMop 0x46f8a3)
+    let dmg = Math.max(1, F.rollDamage(a.atk + (a.mob ? 0 : Math.floor((a.atkExtra || 0) / 3)), a.minPct) * (crit ? 2 : 1));
     if (!d.mob) dmg = this.userDamage(a, d, dmg, now);
     if (a.mob && !d.mob && this.fxOn(d, 6, now)) {             // 효과 6: 체력 대신 마력 (CMopServer::Attack 0x47f58f)
       d.mp = Math.max(0, d.mp - (2 * dmg + Math.floor(dmg / 4))); d.hitAt = now;
@@ -917,6 +919,11 @@ class World {
     if (reflect && a.hp > 0 && this.mobs.has(a.id)) this.applyDamage(d, a, reflect, now, { k: 4, reflect: 1 });
   }
   applyDamage(a, d, dmg, now, extra) {
+    const pct = (v, n) => v < 10000000 ? Math.floor(v * n / 100) : Math.floor(v / 100) * n;
+    // 장비 묶음 덤 (server/equip.js): 몬스터에게 주는 피해 + mobDmgPct% (CMopServer::DecreaseHP 0x478446, 최대 2억),
+    //   몬스터에게 받는 피해 − mobDefPct% (최대 80, 적어도 1 은 남김. CMapServerClient::DecreaseHP 0x4393d2)
+    if (d.mob && a && !a.mob && a.mobDmgPct > 0) dmg = Math.min(200000000, dmg + pct(dmg, a.mobDmgPct));
+    if (!d.mob && a && a.mob && d.mobDefPct > 0 && dmg > 0) dmg -= Math.min(pct(dmg, Math.min(80, d.mobDefPct)), Math.max(dmg, 1) - 1);
     if (!d.mob && dmg > 0 && this.fxOn(d, 31, now)) {           // 효과 31 Scarecrow: 처음 세 번은 피해 0, 세 번째에 풀린다 (CMapServerClient::DecreaseHP 0x43922e)
       if ((d.scarecrow || 0) < 3) { dmg = 0; d.scarecrow = (d.scarecrow || 0) + 1; }
       if (d.scarecrow > 2) this.fxOff(d, 31);
@@ -1088,19 +1095,17 @@ class Game {
     return w;
   }
   recalc(p, heal) {
-    // 장비 합산: 공격, 방어, 능력치 네 가지 (InitializeEquipmentEffect 0x436a04~0x437825)
-    let wAtk = 0, armor = 0, range = 1; const add = [0, 0, 0, 0];
-    p.equip.forEach((e, slot) => {
-      const f = e && this.itemInfo(e.k, e.i); if (!f) return;
-      wAtk += Math.max(0, f.atk || 0); armor += Math.max(0, f.def || 0); (f.v || []).forEach((v, q) => { add[q] += v; });
-      if (slot === 7 && f.range) range = f.range;
-    });
-    // 장비를 뺀 능력치 (사용자 +0x4360~0x436c, InitializeEquipmentEffect 0x437825~0x43783f). 여기에 효과가 더해진다:
-    //   효과 69 Focused Spirit: 정신력 + ⌊(레벨 − 10) ÷ 18⌋ × 23 + 10 − 레벨 (rm3944 NewFocusEffect 0x10002b5c)
+    // 장비 효과 (InitializeEquipmentEffect 0x4352d0, server/equip.js): 공격·방어·능력치, 고유 장비 식, 묶음 덤
+    const isCmd = !!(this.army && this.army.db && Object.values(this.army.db.armies).some(a => a.commander === p.name && a.state > 0));   // CArmy::IsArmyCommander
+    const eo = EQUIP.compute(p, (k, i) => this.itemInfo(k, i), { isCommander: isCmd });
+    let wAtk = eo.wAtk, armor = eo.def; const range = eo.range, add = eo.add;
+    p.atkExtra = eo.x; p.skSpi = eo.s; p.skDmg = eo.k; p.mobDmgPct = eo.mobDmg; p.mobDefPct = eo.mobDef; p.pvpPct = eo.pvp; p.eqFlag36 = eo.flag36;
+    // 장비를 뺀 능력치 (사용자 +0x4360~0x436c). 묶음 성장이 반영된 값에 효과가 더해진다:
+    //   효과 69 Focused Spirit: 정신력 + ⌊(기본 정신력 − 10) ÷ 18⌋ × 23 + 10 − 기본 정신력 (rm3944 NewFocusEffect 0x10002b5c, +0x3f60 = DB 의 정신력)
     //   효과 75 Godly Shield: 기골 + 5000 (NewGshieldEffect 0x10002d36)
     const now = Date.now(), on = e => !!(p.fx && p.fx[e] > now);
-    p.bStr = p.base.str; p.bDex = p.base.dex; p.bSpi = p.base.spi; p.bPow = p.base.pow;
-    if (on(69)) p.bSpi = Math.max(0, p.bSpi + Math.floor((p.level - 10) / 18) * 23 + 10 - p.level);
+    [p.bStr, p.bSpi, p.bDex, p.bPow] = eo.base;
+    if (on(69)) p.bSpi = Math.max(0, p.bSpi + Math.floor((p.base.spi - 10) / 18) * 23 + 10 - p.base.spi);
     if (on(75)) p.bPow += 5000;
     const eq = {}; STATS.forEach((k, q) => { eq[k] = add[q]; });
     p.str = p.bStr + eq.str; p.dex = p.bDex + eq.dex; p.spi = p.bSpi + eq.spi; p.pow = p.bPow + eq.pow;

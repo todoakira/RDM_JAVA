@@ -78,7 +78,7 @@ const DEX_HIT = new Set([21, 26, 27, 29, 30, 32, 36, 37, 39, 44, 50, 61, 66, 68,
 const hitStat = id => DEX_HIT.has(id) ? 'dex' : 'spi';
 
 // 공격 값 (UseSkillAttackSingleMop 0x44dc24 이후의 분기표 0x45139c, 0x4513e4, rm3944 NewCheckForSingleAttack2 0x10003054).
-// X = 근력 공격(T+0x18) + 장비 공격 합(T+0x2c). 고유·세트 장비 보너스(T+0x30, T+0x34, T+0x38)는 아직 구현하지 않아 0.
+// X = 근력 공격(T+0x18) + 장비 공격 합(T+0x2c). T+0x30·0x34·0x38 은 장비 효과(server/equip.js)의 x·s·k (p.atkExtra, p.skSpi, p.skDmg).
 //   기본(0x44f02b): T+0x34 + 마력 소모량
 //   21·32·61 (0x44ddbd): ⌊(X + 마력 소모량 + T+0x30 + T+0x34) ÷ 2⌋
 //   26 (0x44dc4e): X + ⌊X/5⌋ + T+0x30
@@ -129,14 +129,14 @@ function bowValue(id, p, fightDex, wInfo) {
 }
 const formulaKnown = id => true;
 function attackValue(id, p, cost) {
-  const X = p.strAtk + p.wAtk;
-  if (HALF.has(id)) return Math.floor((X + cost) / 2);
-  if (FORMULA[id]) return FORMULA[id](X, X + 10 * (p.bDex || 0));   // USERDB+0x98 = 장비를 뺀 민첩성 (사용자 +0x4368)
-  if (id === 76) return cost;
-  return cost;
+  const X = p.strAtk + p.wAtk, T30 = p.atkExtra || 0, T34 = p.skSpi || 0;
+  if (HALF.has(id)) return Math.floor((X + cost + T30 + T34) / 2);
+  if (FORMULA[id]) return FORMULA[id](X, X + 10 * (p.bDex || 0)) + T30;   // USERDB+0x98 = 장비를 뺀 민첩성 (사용자 +0x4368)
+  if (id === 76) return cost + 2 * T34;
+  return cost + T34;
 }
 // 피해 = ⌊공격 값 × 위력 ÷ 100⌋ + T+0x38 (DoSkillAttackMop 0x45f935~0x45f972). 천만이 넘으면 ⌊공격 값 ÷ 100⌋ × 위력
-const damage = (atk, power) => atk > 10000000 ? Math.floor(atk / 100) * power : Math.floor(atk * power / 100);
+const damage = (atk, power, plus = 0) => (atk > 10000000 ? Math.floor(atk / 100) * power : Math.floor(atk * power / 100)) + plus;
 
 const USE_MS = 500;   // 기술은 0.5초에 한 번 (ProcessUseSkill 의 0x1f4)
 
