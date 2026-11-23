@@ -10,22 +10,36 @@
   canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
   #hud { position: fixed; top: 8px; left: 10px; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; line-height: 1.5; }
   #hud b { color: #ffd27a; }
+  /* 원작에 없는 안내 글: 기본은 숨기고 F12 로 켠다 */
+  #help, #hud { display: none; } body.keyhelp #help, body.keyhelp #hud { display: block; }
   #help { position: fixed; top: 8px; right: 10px; font-size: 12px; text-align: right; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; opacity: .85; line-height: 1.5; }
   #chat { position: fixed; left: 92px; bottom: 42px; width: min(420px, calc(100vw - 20px)); }
   #log { max-height: 150px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; font-size: 13px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
   #log .sys { color: #9fd0ff; }
   #log .who { color: #ffd27a; }
   #say { position: absolute; left: 15px; top: 12px; width: 452px; height: 20px; box-sizing: border-box; padding: 0 4px; background: transparent; border: 0; color: #fff; font: inherit; font-size: 13px; outline: none; }   /* 입력칸 (15,12)~(467,32), Main.dll 0x10076203 */
-  #login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000 url(assets/int/441.png) center 35% no-repeat; }   /* 원작 접속 화면 그림 */
-  #login form { text-align: center; margin-top: 46vh; background: rgba(0,0,0,.6); padding: 14px 20px; }
-  #login h1 { font-size: 34px; letter-spacing: 6px; color: #d22; margin: 0 0 6px; }
-  #login p { margin: 0 0 20px; color: #999; font-size: 13px; }
-  #login input { padding: 10px 12px; font: inherit; font-size: 15px; width: 200px; background: #111; color: #fff; border: 1px solid #733; outline: none; }
-  #classes { display: flex; gap: 6px; justify-content: center; margin-top: 16px; }
-  #classes label { cursor: pointer; font-size: 12px; color: #aaa; } #classes img { display: block; width: 70px; height: 70px; border: 2px solid #333; }
-  #classes input { display: none; } #classes input:checked + img { border-color: #d22; } #classes input:checked ~ span { color: #fff; }
-  #login input[type=radio] { width: auto; padding: 0; }
-  #login button { padding: 10px 18px; font: inherit; font-size: 15px; background: #a11; color: #fff; border: 0; cursor: pointer; margin-left: 6px; }
+  #login { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; }
+  #ls { position: relative; width: 800px; height: 600px; transform-origin: center; }
+  #ls .scr { position: absolute; inset: 0; background-repeat: no-repeat; }
+  #ls .tb { position: absolute; top: 513px; height: 62px; background-position: 0 0; cursor: pointer; }
+  #ls .tb:hover, #ls .sb:hover { background-position: 0 -62px; }
+  #ls .tb:active { background-position: 0 -124px; }
+  #ls .sb { position: absolute; left: 250px; width: 300px; height: 24px; cursor: pointer; }
+  #ls .sb:hover { background-position: 0 -24px; } #ls .sb:active { background-position: 0 -48px; }
+  #ls .dlg { position: absolute; display: none; background-repeat: no-repeat; }
+  #ls .fld { position: absolute; height: 20px; padding: 0 4px; background: transparent; border: 0; outline: none; color: #e8e0b0; font: 13px sans-serif; }
+  #ls .okb, #ls .cab { position: absolute; width: 125px; height: 30px; cursor: pointer; background-position: 0 0; }
+  #ls .okb { background-image: url(assets/int/32.png); } #ls .cab { background-image: url(assets/int/1.png); }
+  #ls .okb:hover, #ls .cab:hover { background-position: 0 -30px; }
+  #slots .slot { position: absolute; width: 120px; height: 150px; cursor: pointer; text-align: center; color: #e0c070; font: 13px sans-serif; }
+  #slots .face { width: 120px; height: 120px; background-repeat: no-repeat; }
+  #classes { position: absolute; left: 270px; top: 188px; width: 352px; }
+  #classes label { float: left; width: 114px; height: 110px; margin: 0 3px 3px 0; text-align: center; color: #e0c070; font: 12px sans-serif; cursor: pointer; }
+  #classes input { display: none; }
+  #classes .face { width: 80px; height: 80px; margin: 4px auto 2px; background-size: 160px 80px; background-position: 0 0; background-repeat: no-repeat; }
+  #classes input:checked + .face { background-position: -80px 0; }
+  #startpos { position: absolute; left: 270px; top: 548px; color: #aaa; font: 12px sans-serif; }
+  #msg { position: absolute; left: 0; right: 0; top: 584px; text-align: center; color: #e0c070; font: 13px sans-serif; }
   /* 원작 인터페이스 그림(assets/int)을 그대로 쓴다. 칸과 단추의 위치는 그림에서 잰 값이다 */
   #menubar { display: none; position: fixed; left: 50%; bottom: 0; width: 800px; height: 36px; margin-left: -400px; background: url(assets/int/35.png) 0 -564px; }
   .mb { position: absolute; top: 8px; height: 20px; cursor: pointer; background-position: 0 -20px; }   /* 단추 그림 세 칸: 보통 20~40, 강조 40~60, 눌림 0~20 */
@@ -161,14 +175,43 @@
   <div class="sb" id="sbBuy" style="left:98px;top:367px;background-image:url(assets/int/158.png)"></div><div class="sb" id="sbSell" style="left:160px;top:367px;background-image:url(assets/int/157.png)"></div><div class="sb" id="sbCancel" style="left:224px;top:367px;background-image:url(assets/int/155.png)"></div>
 </div>
 <div id="dead" style="display:none;position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);border:1px solid #733;padding:18px 26px;text-align:center">쓰러졌습니다<br><button id="restart" style="margin-top:10px;padding:8px 16px;background:#a11;color:#fff;border:0;cursor:pointer;font:inherit">다시 시작</button></div>
-<div id="login"><form id="lf">
-  <p>JavaScript 온라인 버전 · 시험판</p>
-  <div id="step1"><input id="nm" maxlength="14" placeholder="로그인 ID" autocomplete="off" autofocus><input id="pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상)" autocomplete="off"><button>Login</button><button type="button" id="newid">New ID</button><span id="loginhelp" title="Help" style="display:inline-block;vertical-align:middle;margin-left:6px;width:137px;height:62px;cursor:pointer;background:url(assets/int/623.png) 0 0"></span>
-  <div style="color:#888;font-size:12px;margin-top:6px">예전 판 캐릭터는 캐릭터 이름을 ID 로, 그 비밀번호로 로그인하면 계정으로 옮겨집니다.</div></div>
-  <div id="step2" style="display:none"><div id="selhead" style="color:#e0b050;margin-bottom:10px"></div><div id="slots" style="display:flex;gap:14px;justify-content:center"></div>
-    <div id="mk" style="display:none;margin-top:14px"><input id="cn" maxlength="14" placeholder="새 캐릭터 이름" autocomplete="off"><div id="classes"></div><div style="color:#aaa;font-size:13px;margin-top:8px">시작 위치: <label><input type="radio" name="beginner" value="1" checked> 초보존</label> <label><input type="radio" name="beginner" value="0"> 주택가2 병원</label></div><button type="button" id="mkok">만들기</button><button type="button" id="mkno">취소</button></div></div>
+<!-- 접속 화면 (Main.dll 0x10007470 의 대화상자들, 800×600 좌표 그대로) -->
+<div id="login"><div id="ls">
+  <!-- 첫 화면: n-if-ch-ba, 단추 y 513 높이 62, 그림은 세 칸 (0, 62, 124) -->
+  <div id="scrTitle" class="scr" style="background-image:url(assets/int/620.png)">
+    <div class="tb" id="tbLogin" style="left:33px;width:115px;background-image:url(assets/int/624.png)"></div>
+    <div class="tb" id="tbNew" style="left:157px;width:123px;background-image:url(assets/int/625.png)"></div>
+    <div class="tb" id="tbProlog" style="left:279px;width:129px;background-image:url(assets/int/626.png)"></div>
+    <div class="tb" id="tbHelp" style="left:408px;width:137px;background-image:url(assets/int/623.png)"></div>
+    <div class="tb" id="tbCredit" style="left:545px;width:128px;background-image:url(assets/int/621.png)"></div>
+    <div class="tb" id="tbExit" style="left:673px;width:110px;background-image:url(assets/int/622.png)"></div>
+    <!-- 로그인 창 iw-lo-ba 350×151 -->
+    <div id="dlgLogin" class="dlg" style="left:225px;top:340px;width:350px;height:151px;background-image:url(assets/int/71.png)">
+      <input id="nm" class="fld" maxlength="14" autocomplete="off" style="left:164px;top:37px;width:168px"><input id="pw" class="fld" type="password" maxlength="64" autocomplete="off" style="left:164px;top:63px;width:168px">
+      <div class="okb" id="lgOk" style="left:42px;top:100px"></div><div class="cab" id="lgCa" style="left:183px;top:100px"></div></div>
+    <!-- 새 ID 창 iw-id-ba 500×329 (Main.dll 0x10009733: 150,126) -->
+    <div id="dlgNew" class="dlg" style="left:150px;top:126px;width:500px;height:329px;background-image:url(assets/int/64.png)">
+      <input id="nid" class="fld" maxlength="14" autocomplete="off" style="left:204px;top:28px;width:276px"><input id="npw" class="fld" type="password" maxlength="64" autocomplete="off" style="left:204px;top:52px;width:276px"><input id="npw2" class="fld" type="password" maxlength="64" autocomplete="off" style="left:204px;top:76px;width:276px">
+      <div class="okb" id="nwOk" style="left:120px;top:332px"></div><div class="cab" id="nwCa" style="left:255px;top:332px"></div></div>
+  </div>
+  <!-- 캐릭터 고르기: if-co-ba, 단추 (250, 456~576) 300×24, 그림은 세 칸 (0, 24, 48) -->
+  <div id="scrSelect" class="scr" style="background-image:url(assets/int/5.png);display:none">
+    <div id="slots"></div>
+    <div class="sb" id="sbStart" style="top:456px;background-image:url(assets/int/27.png)"></div>
+    <div class="sb" id="sbAdd" style="top:480px;background-image:url(assets/int/0.png)"></div>
+    <div class="sb" id="sbDel" style="top:504px;background-image:url(assets/int/15.png)"></div>
+    <div class="sb" id="sbInfo" style="top:528px;background-image:url(assets/int/14.png)"></div>
+    <div class="sb" id="sbOut" style="top:552px;background-image:url(assets/int/30.png)"></div>
+  </div>
+  <!-- 캐릭터 만들기: if-cc-ba, 이름 칸 (395,157)~(560,172), OK (500,540) Cancel (625,540) 125×30 -->
+  <div id="scrCreate" class="scr" style="background-image:url(assets/int/2.png);display:none">
+    <input id="cn" class="fld" maxlength="14" autocomplete="off" style="left:395px;top:155px;width:165px;height:18px">
+    <div id="classes"></div>
+    <div id="startpos">시작 위치: <label><input type="radio" name="beginner" value="1" checked> 초보존</label> <label><input type="radio" name="beginner" value="0"> 주택가2 병원</label></div>
+    <div class="okb" id="mkok" style="left:500px;top:540px"></div><div class="cab" id="mkno" style="left:625px;top:540px"></div>
+  </div>
   <div id="msg"></div>
-</form></div>
+</div></div>
 <script src="sound.js"></script>
 <script src="client.js"></script>
 <script src="ui.js"></script>

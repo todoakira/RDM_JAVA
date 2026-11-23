@@ -582,3 +582,6 @@ Ghidra 로 `svMapServer.exe` 를 풀어 읽었습니다 (DoEventServerAction 0x4
 - **몬스터 기술**:
   - 기술을 가진 몬스터 237종이 원작 고르기(DoAttack)대로 일반 공격과 기술을 섞어 쓴다. 한 사람 기술(약화·피해·달아나기)과 범위 기술을 한다.
   - 아이템 훔치기·지속 피해는 아직이다. 자세히는 docs/mob_skill_notes.md
+- **접속 화면 (원작 그림)**:
+  - 첫 화면(n-if-ch-ba)과 원작 단추, 로그인·새 ID 창, 캐릭터 고르기(if-co-ba 동그라미 세 개), 캐릭터 만들기(if-cc-ba)를 원작 그림과 좌표로 다시 만들었다.
+  - 원작에 없는 안내 글은 F12 로 켠다. 자세히는 docs/login_ui_notes.md
