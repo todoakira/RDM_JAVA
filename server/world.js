@@ -186,7 +186,7 @@ class World {
     if (p.dead || !s || !this.skillReady(p, sid, s)) return;
     const area = s.l >= 10000;
     const ok = area ? (s.n === 0 && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
-      : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF);
+      : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
     const u = id ? this.players.get(id) : null;
     if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
@@ -333,6 +333,28 @@ class World {
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, dmg), now, m), now, { k: 2, sk: sid, area: 1 });
     }
   }
+  // 돌진 (UseSkillMovingAttack 0x451410): 대상 쪽으로 한 칸씩 (STAFFGetNextPIS) 가서 대상 너머 한 칸을 도착점으로 삼는다 (거리 ≤ l, 설 수 있고 빈 칸).
+  //   출발점과 도착점 사이 칸의 몬스터를 친 뒤 시전자를 도착점으로 옮긴다. 도착점을 정하는 쪽은 원작에서 클라이언트라 여기서는 이렇게 고른다
+  castMoving(p, m, s, sid, cost, now) {
+    const dir = G.direction(p, m), cells = [];
+    let cur = { x: p.x, y: p.y, z: p.z }, dest = null;
+    for (let i = 0; i < 40; i++) {
+      const n = G.next(cur, dir); if (G.dist(p, n) > s.l) break;
+      if (G.same(n, m)) { cells.push(n); const b = G.next(n, dir); if (G.dist(p, b) <= s.l && this.canUser(b) && this.free(b, p.id)) dest = b; else dest = cur; break; }
+      cells.push(n); cur = n;
+    }
+    if (!dest) return;
+    const hit = [...this.mobs.values()].filter(o => o.hp > 0 && cells.some(c => G.same(c, o)) && !G.same(o, dest));
+    this.release(p); p.x = dest.x; p.y = dest.y; p.z = dest.z; p.dir = dir; this.take(p);
+    this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir });
+    const X = p.atk, f = SK.MOVING[sid];
+    for (const o of hit) {
+      if (F.rand100() > this.hitChance(p, o, F.hitPct(this.fightDex(p, now), this.mobDex(o, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: o.id, dir, k: 2, sk: sid, miss: 1, hp: o.hp }); continue; }
+      const v = f(X, cost, o === m) + (p.atkExtra || 0);
+      this.applyDamage(p, o, this.mobDamage(p, Math.max(1, SK.damage(v, s.o)), now, o), now, { k: 2, sk: sid });
+    }
+    if (!hit.length) this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
+  }
   // 몬스터 효과 54 면 GetDexterity·GetSpirit 이 0.7배 (CMopServer 0x47ae20, 0x47ae60, 상수 0x48ffc0)
   mobDex(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.dex * 0.7) : m.dex; }
   mobSpi(m, now) { return this.fxOn(m, 54, now) ? Math.trunc(m.spi * 0.7) : m.spi; }
@@ -451,6 +473,7 @@ class World {
     }
     this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);                         // 공격 기술을 쓰면 위장·19·35 가 풀린다 (0x44d873~0x44d8a6)
     const d = G.direction(p, m); if (d !== 5) p.dir = d;
+    if (s.n === 36) { this.castMoving(p, m, s, sid, cost, now); return; }
     const db = SK.MOB_DEBUFF[s.n];
     if (db) { this.castDebuff(p, m, s, sid, db, cost, now); return; }
     const dex = SK.hitStat(sid) === 'dex';

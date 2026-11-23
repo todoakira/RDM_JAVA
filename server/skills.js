@@ -173,6 +173,15 @@ const AREA_DEBUFF = {
   15: { e: 12, hit: 'spi', div: 20, self: 12 }, 17: { e: 13, hit: 'spi', div: 10, self: 13 }, 22: { e: 16, hit: 'spi', div: 20, self: 16 },
   24: { e: 0, hit: 'spi', div: 20, self: 0, dispel: true }, 38: { e: 55, hit: 'spi', div: 20, self: 55 }, 54: { e: 43, hit: 'spi', div: 20, self: 43 },
 };
+// 돌진 기술 (UseSkillMovingAttack 0x451410, 효과 종류 36): 시전자와 도착점 사이 줄 위의 몬스터를 모두 친다.
+//   명중은 싸움 민첩성 대 몬스터 민첩성. X = 근력 공격 + 무기 공격, 끝에 + T+0x30
+//   25 Slash, 45 Dash: 찍은 대상이면 ⌊3X/2⌋, 가는 길의 다른 몬스터는 X (_stricmp 0x452fc7)
+//   323 Cross Blade: 3⌊X/4⌋ + 2 × 마력 소모량, 342 Ghost Spear: 2⌊X/4⌋ + 2 × 마력 소모량 (rm3944 NewMovingAttacks 0x10002fd6)
+//   362 Lunar Blade: ⌊X/2⌋ + 3X (0x453824). 382 Piercing Arrow 는 활 식이라 아직
+const MOVING = {
+  25: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X, 45: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X,
+  323: (X, c) => 3 * Math.floor(X / 4) + 2 * c, 342: (X, c) => 2 * Math.floor(X / 4) + 2 * c, 362: X => Math.floor(X / 2) + 3 * X,
+};
 // 몬스터 쪽 막음 (CMopServer::InitializeMopInstance 0x4793b0~0x4793d9, DoSkillEffect 0x479630):
 //   +0x2cc: 배치 종류 5 (강화형) 또는 그림 0x50·0x54·0x57·0x61·0x62 → 약화가 걸리지 않음. 몬스터에게 효과 23 이 있어도 걸리지 않음
 //   +0x2d0: 그림 0x52·0x5d → 지속이 늘 5초.  +0x2d8: 그림 0x5a → 되돌림
@@ -229,4 +238,4 @@ const areaFormulaKnown = id => !AREA_OWN.has(id);
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };

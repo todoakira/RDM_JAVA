@@ -104,6 +104,16 @@ n = 20 (Dimensional Gate), 23 (Recall), 35 (Warp), 48 (Teleport) 은 이 표에�
 - n=44 (301 Resurrection): 시전자가 지금 체력의 절반을 잃고, 대상이 죽어 있으면 묻는다 (0x109/0x11, 클라이언트 글 0/0/482). 받으면 그 자리에서 살아나 체력 + 그 절반 (ProcessResponseRevival 0x43d620), 거절하면 시전자에게 0/2/390 (0x186).
 - n=26 (19 Cold Cell): 몬스터 효과 18 (정신력, /20) — 몬스터 약화 표에 추가.
 
+## 돌진 (UseSkillMovingAttack 0x451410, 효과 종류 36)
+
+출발점과 도착점 사이 줄(STAFFGetNextPIS) 위의 몬스터를 친다. 도착점은 원작 클라이언트가 보낸다. 여기서는 대상 너머 한 칸으로 정한다(설 수 없으면 대상 앞 칸).
+명중: 싸움 민첩성 대 GetDexterity. X = 근력 공격(T+0x18) + 무기 공격(T+0x2c), 끝에 + T+0x30.
+
+- 25 Slash, 45 Dash: 찍은 대상(_stricmp 0x452fc7)이면 ⌊3X/2⌋, 아니면 X
+- 323 Cross Blade: 3⌊X/4⌋ + 2 × 마력 소모량 / 342 Ghost Spear: 2⌊X/4⌋ + 2 × 마력 소모량 (rm3944 NewCheckForMovingAttack2 0x10002f9f, NewMovingAttacks 0x10002fd6)
+- 362 Lunar Blade: ⌊X/2⌋ + 3X (0x453824)
+- 382 Piercing Arrow: (⌊기본 민첩성/900⌋ + 1) × 무기 공격 × 3/2 + T+0x30 뒤에 활 레벨 갈래 (0x45308c~) — 아직
+
 ## 범위 약화 (UseSkillAttackRange 몬스터 분기표 0x45e348 / 0x45e368)
 
 반경 안 몬스터마다 되돌림(그림 0x5a) → 정신력 명중 → 효과. 피해 없음.
