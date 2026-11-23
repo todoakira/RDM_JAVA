@@ -199,7 +199,7 @@ class World {
     const ok = area ? ((s.n === 0 || s.n === 78) && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
     const u = id ? this.players.get(id) : null;
-    if (!area && u && u !== p && s.l > 0 && s.n === 0 && (s.a === 1 || SK.formulaKnown(sid))) {   // 사람에게 공격 기술 (PK)
+    if (!area && u && u !== p && s.l > 0 && ((s.n === 0 && (s.a === 1 || SK.formulaKnown(sid))) || (s.a === 0 && s.n in SK.USER_DEBUFF))) {   // 사람에게 공격 기술 (PK)
       p.cast = { sid, id, user: 1 }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0; return;
     }
     if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
@@ -638,6 +638,41 @@ class World {
       this.game.sendStat(t); return;
     }
     this.applyDamage(p, t, dmg, now, { k: 2, sk: sid });
+  }
+  // 사람에게 효과 걸기 (CMapServerClient::DoSkillEffect 0x42b2d0). 막히면 false
+  userEffect(t, e, sec, now, caster) {
+    const on = x => this.fxOn(t, x, now);
+    if (on(23) || on(52) || on(76) || on(77)) return false;
+    if (e !== 43 && on(42)) return false;
+    if (SK.USER_BLOCK7.has(e) && on(7)) return false;
+    (t.fx ||= {})[e] = now + sec * 1000;
+    if (e === 15 && caster) t.voodoo = caster.name;
+    if (SK.RECALC_FX.has(e)) { this.game.recalc(t, false); this.game.sendStat(t); }
+    this.sendFx(t); return true;
+  }
+  // 사람에게 거는 약화 기술 (UseSkillAttackSingleUser 의 효과 종류 7·15·16·17·21·22·26·37·38·54·57·65·74, 0x44b50b~)
+  castDebuffUser(p, d, s, sid, db, now) {
+    const PK = this.game.pk;
+    if (!PK.skillGate(p, d)) return;
+    const cost = this.payForSkill(p, s); if (cost < 0) return;
+    PK.skillSide(p, d);
+    const dir = G.direction(p, d); if (dir !== 5) p.dir = dir;
+    let reflect = false;
+    if (this.fxOn(d, 24, now)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(d.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
+    const v44 = x => this.fxOn(d, 44, now) ? x + Math.floor(x / 5) : x;
+    const dex = db.hit === 'dex';
+    const hitOk = F.rand100() <= this.hitChance(p, d, F.hitPct(dex ? this.fightDex(p, now) : p.spi, v44(dex ? this.fightDex(d, now) : (d.spi || 0))), now);
+    if (!hitOk && !this.fxOn(d, 24, now)) { this.near(p, { t: 'atk', id: p.id, tid: d.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: d.hp }); return; }
+    const t = reflect || !hitOk ? p : d;
+    if (db.dmg) {                                               // n=37: 공격 값 = 마력 소모량 + T+0x34 로 먼저 친다 (0x44c2xx DoSkillAttackUser)
+      const av = cost + (p.skSpi || 0);
+      const raw = (av > 1000000 ? Math.floor(av / 100) * s.o : Math.floor(av * s.o / 100)) + (p.skDmg || 0);
+      this.applyDamage(p, t, this.userDamage(p, t, Math.max(1, raw), now), now, { k: 2, sk: sid });
+      if (t.dead || t.hp <= 0) return;
+    } else this.near(p, { t: 'cast', id: p.id, sk: sid, tid: t.id });
+    const m = this.mapId, short = (m >= 0x84 && m <= 0x88) || (m >= 0xb4 && m <= 0xbc);
+    const sec = short && !db.no5 ? 5 : (db.div ? Math.floor(p.spi / db.div) : 0) + s.p;
+    this.userEffect(t, db.e, sec, now, p);
   }
   // 이야기 퀘스트가 걸린 NPC (CMapServerClient::ProcessEvent 0x41ee70 의 종류 27·28·29·41·44). 처리했으면 true
   storyNpc(p, n, kind, e) {
@@ -1095,7 +1130,7 @@ class World {
           p.path = [];
           if (now >= (p.skillAt || 0) && now >= p.nextAt) {
             const sid = p.cast.sid, toUser = !!p.cast.user; p.cast = null; p.skillAt = now + SK.USE_MS;
-            if (toUser) this.castSkillUser(p, m, s, sid, now);
+            if (toUser) { if (s.a === 0 && s.n in SK.USER_DEBUFF) this.castDebuffUser(p, m, s, sid, SK.USER_DEBUFF[s.n], now); else this.castSkillUser(p, m, s, sid, now); }
             else if (s.l >= 10000) this.castArea(p, m, s, sid, now); else this.castSkill(p, m, s, sid, now);
           }
         } else if (now >= p.repathAt) {

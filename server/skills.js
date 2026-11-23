@@ -186,6 +186,18 @@ const MOB_DEBUFF = {
   37: { e: 16, hit: 'dex', div: 10, self: 16, dmg: true }, 38: { e: 55, hit: 'spi', div: 20, self: 55 }, 54: { e: 43, hit: 'spi', div: 50, self: 43 },
   26: { e: 18, hit: 'spi', div: 20, self: 18 }, 57: { e: 47, hit: 'dex', div: 40, self: 47 }, 65: { e: 54, hit: 'dex', div: 20, self: 54 }, 74: { e: 58, hit: 'spi', div: 0, self: 58 },
 };
+// 사람에게 거는 약화 (UseSkillAttackSingleUser 0x448940 의 분기표 0x44d5f0). 효과 종류 n → 사람 효과 e.
+//   지속 = ⌊시전자 정신력(기본+장비) ÷ div⌋ + p 초 (div 0 이면 p). 맵 0x84~0x88·0xb4~0xbc 에서는 5초 (no5 는 예외)
+//   명중 hit: 'spi' 는 양쪽 정신력, 'dex' 는 양쪽 fightDex. dmg 는 먼저 피해를 주고 살아 있으면 건다
+const USER_DEBUFF = {
+  7: { e: 4, hit: 'spi', div: 20 }, 15: { e: 12, hit: 'spi', div: 20 }, 16: { e: 5, hit: 'spi', div: 20 }, 17: { e: 13, hit: 'spi', div: 20 },
+  21: { e: 15, hit: 'spi', div: 20 }, 22: { e: 16, hit: 'spi', div: 40 }, 26: { e: 18, hit: 'spi', div: 20 },
+  37: { e: 16, hit: 'dex', div: 10, dmg: true }, 38: { e: 55, hit: 'dex', div: 20 }, 54: { e: 43, hit: 'spi', div: 20, no5: true },
+  57: { e: 47, hit: 'dex', div: 40 }, 65: { e: 54, hit: 'dex', div: 20 }, 74: { e: 58, hit: 'spi', div: 0 },
+};
+// 사람 효과를 막는 것 (CMapServerClient::DoSkillEffect 0x42b2d0 의 분기 0x42ca74): 대상 효과 23·52·76·77 이면 막힘,
+//   43 을 뺀 나머지는 효과 42 도 막고, 5·12·16·18·55·58 은 효과 7 도 막는다 (+0x435c 검사는 무엇인지 몰라 뺐다)
+const USER_BLOCK7 = new Set([5, 12, 16, 18, 55, 58]);
 // 범위 약화 (UseSkillAttackRange 의 몬스터 분기표 0x45e348/0x45e368): 반경 안 몬스터마다 되돌림 → 정신력 명중 → 효과. 피해는 없다.
 //   n=24 Dispel 은 명중하면 몬스터의 좋은·나쁜 효과를 모두 지운다 (CMopServer::OnGoodSkillExpired·OnBadSkillExpired, 0x45db5b)
 const AREA_DEBUFF = {
@@ -277,4 +289,4 @@ const areaFormulaKnown = id => true;
 // 명중 판정 없이 반드시 맞고, 공격 값 = ⌊레벨² ÷ 6⌋ + 50 (UseSkillAttackSingleMop 0x44f81c, UseSkillAttackRange 0x45d409)
 const specialAttack = level => Math.floor(level * level / 6) + 50;
 
-module.exports = { BOW_DIV, bowValue, AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
+module.exports = { USER_DEBUFF, USER_BLOCK7, BOW_DIV, bowValue, AREA_FORMULA, GATE_MAPS, RECALL_NO, TELE_NO, MOVING, AREA_DEBUFF, MOB_DEBUFF, mobImmune, mobShort, mobReflect, RECALC_FX, guardValue, DRAIN, RANGE_EFFECT_TYPES, areaOf, areaFormulaKnown, specialAttack, SELF_EFFECT, duration, isGun, isGunOnly, isHeavy, isCrit15, isSpin, get, list, usable, spiritReq, SPECIAL, mpCost, hitStat, attackValue, damage, USE_MS, formulaKnown };
