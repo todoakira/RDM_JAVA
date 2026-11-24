@@ -123,7 +123,7 @@ wss.on('connection', ws => {
     else if (m.t === 'mailget') game.mail.getItem(player, m.i | 0, m.slot | 0);
     else if (m.t === 'bonus') game.useBonus(player, m.stat);
     else if (m.t === 'pickup') world.pickupCmd(player, m.id, m.run);
-    else if (m.t === 'drop') world.dropCmd(player, m.what, m.n);
+    else if (m.t === 'drop') world.dropCmd(player, m.what, m.n, { x: m.x, y: m.y, z: m.z });
     else if (m.t === 'give') world.giveCmd(player, m.name, m.what, m.n);
     else if (m.t === 'use') game.useItem(player, m.slot | 0);
     else if (m.t === 'unequip') game.unequip(player, m.slot | 0);

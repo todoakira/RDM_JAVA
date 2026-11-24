@@ -223,8 +223,9 @@ const UI = (() => {
     bank.items.forEach((it, slot) => { const e = cell(it, 34 + (slot % 5) * 40, 69 + Math.floor(slot / 5) * 40); e.title = it.name + (it.desc ? '\n' + it.desc : ''); e.ondblclick = ev => send({ t: 'bankget', slot, n: ev.shiftKey ? it.n : 1 }); box.appendChild(e); });
   }
   // 수·금액 묻기: 원작 메시지 창(입력칸) 으로. 처음 값은 최대값
-  // 소지품에서 끌어 화면에 놓기: 사람 위면 건네기, 빈 곳이면 버리기 (서버 ProcessGiveItem·ProcessDropItem).
-  //  원작 클라이언트의 끄는 방식(아이콘을 집어 드는지 등)은 확인하지 못했다. 여러 개면 수량을 묻는다 (0/0/170)
+  // 끌어 화면에 놓기 (원작 Main.dll): 아이템 창에서 누른 채 끌어 놓으면 창이 놓은 자리의 창에 메시지 0x1710 을 보낸다 (0x100988ce).
+  //  게임 화면이 받으면 (0x10019fd0) 그 자리에 사람이 있으면 건네기, 없으면 그 칸에 버리기. 언제나 수를 묻는다:
+  //  버리기 0/0/17 아이템·19 돈·436 시그, 건네기 18·20·437. 0 이하이거나 가진 것보다 많으면 0/0/42 (0x10088667, 0x1008877f)
   let drag = null;
   function dragStart(ev, slot, it) {
     const sx = ev.clientX, sy = ev.clientY;
@@ -238,12 +239,20 @@ const UI = (() => {
       if (!drag) return; const d = drag; drag = null; d.g.remove();
       const under = document.elementFromPoint(e.clientX, e.clientY);
       if (!under || under.id !== 'cv' || !window.dropTarget) return;
-      const who = window.dropTarget(e.clientX, e.clientY);
-      const go = n => send(who ? { t: 'give', name: who, what: d.slot, n } : { t: 'drop', what: d.slot, n });
-      if ((d.it.n || 1) > 1) ask(M0(170), d.it.n, go); else go(1);
+      const at = window.dropTarget(e.clientX, e.clientY); if (!at) return;
+      const max = d.slot === 'money' ? inv.money : d.slot === 'tau' ? (inv.tau || 0) : (d.it.n || 1);
+      const q = at.name ? { item: 18, money: 20, tau: 437 } : { item: 17, money: 19, tau: 436 };
+      const key = d.slot === 'money' || d.slot === 'tau' ? d.slot : 'item';
+      msgBox(M0(q[key]), ['ok', 'cancel'], (y, v) => {
+        if (!y) return; const n = Math.floor(Number(v));
+        if (!(n >= 1) || n > max) { msgBox(M0(42), ['ok']); return; }
+        send(at.name ? { t: 'give', name: at.name, what: d.slot, n } : { t: 'drop', what: d.slot, n, x: at.x, y: at.y, z: at.z });
+      }, true);
     };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   }
+  // 돈·Tau 도 끌어 놓을 수 있다 (원작 창 종류 4 돈, 0x13 시그)
+  for (const [id, what] of [['cmoney', 'money'], ['ctau', 'tau']]) { const e = el(id); if (e) { e.style.pointerEvents = 'auto'; e.style.cursor = 'grab'; e.onpointerdown = ev => { if (ev.button === 0 && inv && !trade && !bank && !shop && !exch && (what === 'money' ? inv.money : inv.tau) > 0) dragStart(ev, what, { k: 5, i: what === 'money' ? 0 : 2, n: 1, icon: 0, name: '' }); }; } }
   function ask(msg, max, cb) { msgBox(msg, ['ok', 'cancel'], (y, v) => { const n = Math.floor(Number(v)); if (y && n >= 1) cb(Math.min(n, max)); }, true); el('msgin').value = String(max); el('msgin').select(); }
   el('bankput').onclick = () => { if (bank && inv && inv.money) ask(M0(45), inv.money, n => send({ t: 'bankmoney', n, put: 1 })); };
   el('bankmoney').onclick = () => { if (bank && bank.money) ask(M0(69), bank.money, n => send({ t: 'bankmoney', n, put: 0 })); };

@@ -847,11 +847,15 @@ class World {
   //  - 거래 중이면 0/2/0xa0, 성장 창이 열려 있으면 0x182 (성장 창은 아직 없음).
   //  - 이벤트 18 칸(공격 금지 칸) 위에서는 버릴 수 없다 (아무 말 없이 무시).
   //  - what: 'money' | 'tau' | 소지품 칸 번호. 돈은 가진 것보다 많이 달라면 가진 만큼.
-  //  - 원작은 클라이언트가 정한 자리에 떨어뜨린다. 우리 판은 자기 발밑에 떨어뜨린다.
-  dropCmd(p, what, n) {
+  //  - 클라이언트가 고른 칸(화면에서 놓은 자리)에 떨어뜨린다. 거리는 보지 않고, 사람이 설 수 있는 칸이어야 한다 (AddItem 0x462380 GetUserCanExistPIS).
+  //  - 분류 6 아이템은 땅에 놓지 않는다 (AddItem 이 분류 6 을 받지 않는다).
+  dropCmd(p, what, n, at) {
     n = Math.floor(Number(n)); if (p.dead || !(n > 0)) return;
     if (p.trade) return p.send({ t: 'sys', code: 0xa0, args: [] });
     const e = this.eventAt(p.x, p.y); if (e && e[0] === EV_NO_ATTACK) return;
+    const pos = at && Number.isInteger(at.x) && Number.isInteger(at.y) ? { x: at.x, y: at.y, z: at.z ? 1 : 0 } : { x: p.x, y: p.y, z: p.z };
+    if (!this.canUser(pos)) return;
+    if (what !== 'money' && what !== 'tau') { const s = p.inv[what | 0]; if (!s || s.k === 6) return; }
     let it;
     if (what === 'money') { const v = Math.min(n, p.money); if (!v) return; p.money -= v; it = [5, 0, v]; }
     else if (what === 'tau') { const v = Math.min(n, p.tau || 0); if (!v) return; p.tau -= v; it = [5, 2, v]; }
@@ -860,7 +864,7 @@ class World {
       const v = Math.min(n, s.n || 1); s.n = (s.n || 1) - v; if (s.n <= 0) p.inv.splice(slot, 1);
       it = [s.k, s.i, v];
     }
-    this.dropItem(p, it); this.game.sendInv(p); this.game.sendStat(p); this.game.save(p);
+    this.dropItem(pos, it); this.game.sendInv(p); this.game.sendStat(p); this.game.save(p);
   }
   // 건네기 (ProcessGiveItem 0x42f450, CMapServerServer::GiveItemTo 0x462a90)
   //  - 받는 사람은 같은 맵에 있어야 한다. 거리는 보지 않는다 (원작 서버도 보지 않는다).

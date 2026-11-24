@@ -207,14 +207,20 @@ function drawLabels(e, now) {
   if (e.say && now < e.sayUntil) drawBalloon(e.sayLines || (e.sayLines = wrapSay(e.say)), e.sayColor || '#fff', x, y - 12);
 }
 // 화면 좌표에 있는 몬스터 찾기
-// 화면 자리에 있는 다른 사람의 이름 (끌어 놓기 건네기용, ui.js dragStart)
+// 끌어 놓은 자리 (ui.js dragStart). 원작 0x10019fd0: 화면 y 568 이상(아래 막대)은 무시, 그 자리에 사람이 있으면 건네기, 없으면 그 칸에 버리기
 window.dropTarget = (cx, cy) => {
+  if (!map) return null;
   const wx = cx / zoom + camX, wy = cy / zoom + camY; let best = null;
+  if (cy / zoom >= 568) return null;
   for (const e of ents.values()) {
     if (e.mob || e.npc || e.id === myId || e.dead || e.deadAt) continue;
     if (Math.abs(wx - e.px) <= 20 && wy >= e.py - 80 && wy <= e.py + 10 && (!best || e.py > best.py)) best = e;
   }
-  return best ? best.name : null;
+  if (best) return { name: best.name };
+  const x0 = Math.round(wx / map.tw), y0 = Math.round(wy / map.th), x1 = Math.floor(wx / map.tw), y1 = Math.floor(wy / map.th);
+  const d0 = Math.abs(wx - x0 * map.tw) / 2 + Math.abs(wy - y0 * map.th), d1 = Math.abs(wx - (x1 + .5) * map.tw) / 2 + Math.abs(wy - (y1 + .5) * map.th);
+  const [x, y, z] = d0 < d1 ? [x0, y0, 0] : [x1, y1, 1];
+  return { x, y, z };
 };
 function mobAt(wx, wy, npc) {
   let best = null;
