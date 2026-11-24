@@ -47,18 +47,18 @@
 | 0x108 | ProcessTeleportationTo | 구현 | O |
 | 0x10a | ProcessResponseRevival | 구현 | O |
 | 0x110 | ProcessInviteGroup | 구현 | O |
-| 0x112 | ProcessLeaveGroup | 구현 |  |
+| 0x112 | ProcessLeaveGroup | 구현 — 원작 확인: 이름이 있으면 그룹장이 그 사람을 내보내고(16자 이하), 없으면 스스로 나간다 (0x440430). group.js 와 같다 |  |
 | 0x114 | ProcessJoinGroup | 구현 | O |
 | 0x118 | ProcessInformEvent | 구현 | O |
 | 0x12e | ProcessChat | 구현 | O |
 | 0x1ae | ProcessGetMailList | 구현 | O |
 | 0x1b0 | ProcessReadMail | 구현 | O |
-| 0x1b4 | ProcessWriteMail | 구현 |  |
+| 0x1b4 | ProcessWriteMail | 구현 — 원작 확인: 거래 중 0xa0, 성장 창(+0x4394) 열림 0x182 (0x410b10). 0x182 는 성장 창을 만들 때 넣는다 |  |
 | 0x1b6 | ProcessEndWriteMail | 구현 | O |
 | 0x1b8 | ProcessDelMail | 구현 | O |
 | 0x1ba | ProcessStartWritingMail | 구현 | O |
 | 0x1bc | ProcessGetMailItem | 구현 | O |
-| 0x1be | ProcessCancelWritingMail | 구현 |  |
+| 0x1be | ProcessCancelWritingMail | 구현 — 원작 확인: 쓰던 편지를 버린다 (0x410b00) |  |
 | 0x1cc | ProcessAddBankMoney | 구현 | O |
 | 0x1ce | ProcessAddBankItem | 구현 | O |
 | 0x1d0 | ProcessGetBankMoney | 구현 | O |
@@ -75,9 +75,9 @@
 | 0x3ba | ProcessExchangeBuyItem | 구현 | O |
 | 0x3be | ProcessExchangeCancel | 구현 | O |
 | 0x3ca | ProcessTryTrade | 구현 | O |
-| 0x3cc | ProcessResponseAskTrade | 구현 |  |
+| 0x3cc | ProcessResponseAskTrade | 구현 — 원작 확인: 실제 일은 CMapServerServer::ResponseAskTrade 0x443260 이고 trade.js 에 근거가 있다 |  |
 | 0x3ce | ProcessAddTradeItem | 구현 | O |
-| 0x3d0 | ProcessCancelTrade | 구현 |  |
+| 0x3d0 | ProcessCancelTrade | 구현 — 원작 확인: CMapServerServer::CancelTrade 0x444280, trade.js |  |
 | 0x3d2 | ProcessTradeOK | 구현 | O |
 | 0x3f6 | ProcessChangePKMode | 구현 | O |
 | 0x3f8 | ProcessOperatorInvisible | 운영자 기능 (뒤로) |  |
