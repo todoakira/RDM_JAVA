@@ -28,12 +28,12 @@
 | 0x3 | ProcessRegisterUser | 구현 | O |
 | 0x7c | ProcessUserMoving | 구현 | O |
 | 0xca | ProcessUserMoving | 구현 | O |
-| 0xcc | ProcessSetUserPosition | 확인 필요 |  |
+| 0xcc | ProcessSetUserPosition | 해당 없음 — 클라이언트가 자리를 알려 맞추는 것. 우리 판은 서버가 자리를 정한다 (0x43dc50) |  |
 | 0xd2 | ProcessUserAttack | 구현 | O |
 | 0xd4 | ProcessUserAttackRange | 확인 필요 | O |
 | 0xdc | ProcessGetItem | 구현 | O |
-| 0xde | ProcessDropItem | 확인 필요 | O |
-| 0xe0 | ProcessGiveItem | 확인 필요 | O |
+| 0xde | ProcessDropItem | 없음 — 땅에 아이템·돈(4)·시그(0x13) 버리기. 거래 중이면 0xa0, +0x4394 면 0x182, 이벤트 0x12 칸이면 안 됨 (0x42f210) | O |
+| 0xe0 | ProcessGiveItem | 없음 — 가까운 사람에게 아이템·돈·시그 건네기 (GiveItemTo, 0x42f450) | O |
 | 0xe2 | ProcessMoveItem | 구현 | O |
 | 0xe4 | ProcessUseItem | 구현 | O |
 | 0xf2 | ProcessSelectedBattleChar | 없음 |  |
@@ -65,13 +65,13 @@
 | 0x1d2 | ProcessGetBankItem | 구현 | O |
 | 0x1d6 | ProcessCure | 구현 | O |
 | 0x1da | ProcessMoveJail | 구현 | O |
-| 0x1f4 | ProcessGetShopSellList | 확인 필요 |  |
+| 0x1f4 | ProcessGetShopSellList | 다름 — 원작은 군단 아지트 상점이면 세금(GetArmyShopTax 0~100%)을 붙인다 (0x429230). 우리 판에는 세금이 없다 (군단 일) |  |
 | 0x1f6 | ProcessUserBuyItem | 구현 | O |
 | 0x1f8 | ProcessUserSellItem | 구현 | O |
-| 0x1fa | ProcessGetShopBuyList | 확인 필요 |  |
+| 0x1fa | ProcessGetShopBuyList | 다름 — 위와 같은 세금 쪽 (0x42a260) |  |
 | 0x386 | ProcessInformUserSelection | 구현 | O |
 | 0x3b6 | ProcessExchangeSellItem | 구현 | O |
-| 0x3b8 | ProcessExchangeRequestItemList | 확인 필요 |  |
+| 0x3b8 | ProcessExchangeRequestItemList | 다름 — 원작은 한 번에 24 개씩 쪽으로 보낸다 (GetItemForSaleList, 0x40f610). 우리 판 쪽 나누기는 맞춰 보지 않음 |  |
 | 0x3ba | ProcessExchangeBuyItem | 구현 | O |
 | 0x3be | ProcessExchangeCancel | 구현 | O |
 | 0x3ca | ProcessTryTrade | 구현 | O |
