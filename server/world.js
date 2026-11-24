@@ -3,6 +3,7 @@
 // 좌표는 원작 서버와 같다: 칸(가로 48 × 세로 24 픽셀)마다 서는 자리가 둘 있다 (grid.js).
 const fs = require('fs');
 const path = require('path');
+const INOC = require('./inoc');     // 이노큘레이터·아이템가드 (시간제 아이템 효과)
 const F = require('./formulas');     // 원작 서버 실행 파일에서 옮긴 계산식
 const { spriteOf } = require('./sprites');   // 원작 클라이언트에서 옮긴 모습 번호 표
 
@@ -60,6 +61,8 @@ const rnd = n => Math.floor(Math.random() * 32768) % n;   // C 의 rand() % n
 const pos = e => ({ x: e.x, y: e.y, z: e.z });
 // 한 걸음에 걸리는 시간: 대각선(1·3·7·9)과 가로·세로(2·4·6·8)가 다르다
 const stepMs = (dir, run) => CFG.stepFrames[run ? 'run' : 'walk'][dir % 2 ? 0 : 1] * FRAME_MS;
+// 이노큘레이터 종류 0 (스피드): 상태 깃발 +0x4028 |= 0x10 (0x43732a). 아이템 설명이 "이동속도두배" 라서 걸음 시간을 반으로 한다 (클라이언트 쪽 배수는 확인 못 함)
+const stepMsOf = (p, dir, run) => INOC.on(p, 0) ? Math.floor(stepMs(dir, run) / 2) : stepMs(dir, run);
 
 class World {
   constructor(game, mapId) {
@@ -731,6 +734,7 @@ class World {
     const on = x => this.fxOn(t, x, now);
     if (on(23) || on(52) || on(76) || on(77)) return false;
     if (e !== 43 && on(42)) return false;
+    if (INOC.on(t, 6)) return false;                                   // 이노큘레이터 6 (매직쉴드) 이면 약화가 안 걸린다 (DoSkillEffect 0x42b442 등 14 곳)
     if (SK.USER_BLOCK7.has(e) && on(7)) return false;
     (t.fx ||= {})[e] = now + sec * 1000;
     if (e === 15 && caster) t.voodoo = caster.name;
@@ -1412,7 +1416,19 @@ class World {
     // 장비 묶음 덤 (server/equip.js): 몬스터에게 주는 피해 + mobDmgPct% (CMopServer::DecreaseHP 0x478446, 최대 2억),
     //   몬스터에게 받는 피해 − mobDefPct% (최대 80, 적어도 1 은 남김. CMapServerClient::DecreaseHP 0x4393d2)
     if (d.mob && a && !a.mob && a.mobDmgPct > 0) dmg = Math.min(200000000, dmg + pct(dmg, a.mobDmgPct));
-    if (!d.mob && a && a.mob && d.mobDefPct > 0 && dmg > 0) dmg -= Math.min(pct(dmg, Math.min(80, d.mobDefPct)), Math.max(dmg, 1) - 1);
+    //   이노큘레이터 1 (몬스터 방어) 이 켜져 있으면 +15 (최대 80, 0x4393d8)
+    if (!d.mob && a && a.mob && dmg > 0) { let r = Math.min(80, d.mobDefPct || 0); if (INOC.on(d, 1)) r = Math.min(80, r + 15); if (r > 0) dmg -= Math.min(pct(dmg, r), Math.max(dmg, 1) - 1); }
+    // 사람에게 맞을 때 (CMapServerClient::DecreaseHP 0x4394a0):
+    //   줄임 % = 장비 대인 방어 (+0x4378, 최대 90). 레벨 1000 이 1000 미만에게 맞으면 +30, 이노큘레이터 7 이면 +15 (각각 최대 90).
+    //   더함 = 공격자 +0x4370 % (장비 묶음 덤). 피해 += 더함, 그다음 줄임만큼 빼되 1 은 남긴다. 최대 2억.
+    //   공격자 USERDB +0x854 & 0x30 이면 피해의 1/10 을 더 더하는데, 그 칸이 무엇인지 몰라 넣지 않았다.
+    if (!d.mob && a && !a.mob && dmg > 0) {
+      let r = Math.min(90, d.pvpPct || 0);
+      if (d.level === 1000 && a.level < 1000) r = Math.min(90, r + 30);
+      if (INOC.on(d, 7)) r = Math.min(90, r + 15);
+      const cut = r > 0 ? pct(dmg, r) : 0, plus = a.mobDmgPct > 0 ? pct(dmg, a.mobDmgPct) : 0;
+      dmg += plus; if (cut) dmg -= Math.min(cut, Math.max(dmg, 1) - 1); dmg = Math.min(200000000, dmg);
+    }
     if (!d.mob && dmg > 0 && this.fxOn(d, 31, now)) {           // 효과 31 Scarecrow: 처음 세 번은 피해 0, 세 번째에 풀린다 (CMapServerClient::DecreaseHP 0x43922e)
       if ((d.scarecrow || 0) < 3) { dmg = 0; d.scarecrow = (d.scarecrow || 0) + 1; }
       if (d.scarecrow > 2) this.fxOff(d, 31);
@@ -1466,6 +1482,7 @@ class World {
     this.script.tickAmbient(now);
     for (const p of [...this.players.values()]) {
       const dt = now - (p.subqAt || now); p.subqAt = now;
+      if (p.inoc) { const ch = INOC.tick(p, dt); if (ch.length) this.game.inocChanged(p, ch); }   // 이노큘레이터 남은 시간 (OnTimer 0x42e450)
       if (p.subq && p.subq.state) this.game.subq.tick(p, dt);
       this.game.pk.tick(p, now, dt);                                     // PK 모드 켜기, 정당방위, 벌칙 시간
       if (p.dead) continue;
@@ -1527,7 +1544,7 @@ class World {
       else if (running) { const c = F.runCost(p.dex); p.sp = p.sp > c ? p.sp - c : 0; p.regenAt = now + F.REGEN_MS; p.steps = 0; if (++p.spSent % 4 === 0 || !p.sp) this.game.sendStat(p); }
       else p.steps++;
       this.fxOff(p, 34);                                          // 효과 34 Snipe: 움직이면 풀린다 (ProcessUserMoving 0x43da7a)
-      const dir = G.direction(p, n), dur = stepMs(dir, running);
+      const dir = G.direction(p, n), dur = stepMsOf(p, dir, running);
       this.release(p); if (dir !== 5) p.dir = dir; p.x = n.x; p.y = n.y; p.z = n.z; p.nextAt = now + dur; this.take(p);
       this.near(p, { t: 'step', id: p.id, x: n.x, y: n.y, z: n.z, dir: p.dir, dur, run: running ? 1 : 0, last: p.path.length ? 0 : 1 });
       this.script.moved(p); if (p.world !== this) continue;
@@ -1612,7 +1629,8 @@ class Game {
   // 죽었을 때: 경험치 절반, 레벨 16부터는 칸마다 확률로 아이템·장비·돈을 떨어뜨린다
   deathPenalty(p) {
     p.exp = F.expAfterDeath(p.exp);
-    const pct = F.deathDropPct(p.level), w = p.world, roll = () => Math.floor(Math.random() * 100) < pct;
+    // 아이템가드 (이노큘레이터 12) 가 켜져 있으면 아이템·돈을 떨어뜨리지 않는다 (Dead 0x43b01b·0x43b124·0x43b244)
+    const pct = INOC.on(p, 12) ? 0 : F.deathDropPct(p.level), w = p.world, roll = () => Math.floor(Math.random() * 100) < pct;
     if (pct > 0) {
       for (let s = p.inv.length - 1; s >= 0; s--) { const e = p.inv[s]; if (e.k !== 6 && roll()) { p.inv.splice(s, 1); w.dropItem(p, [e.k, e.i, e.n]); } }
       p.equip.forEach((e, s) => { if (e && e.k !== 6 && roll()) { p.equip[s] = null; w.dropItem(p, [e.k, e.i, 1]); } });
@@ -1637,7 +1655,7 @@ class Game {
   recalc(p, heal) {
     // 장비 효과 (InitializeEquipmentEffect 0x4352d0, server/equip.js): 공격·방어·능력치, 고유 장비 식, 묶음 덤
     const isCmd = !!(this.army && this.army.db && Object.values(this.army.db.armies).some(a => a.commander === p.name && a.state > 0));   // CArmy::IsArmyCommander
-    const eo = EQUIP.compute(p, (k, i) => this.itemInfo(k, i), { isCommander: isCmd });
+    const eo = EQUIP.compute(p, (k, i) => this.itemInfo(k, i), { isCommander: isCmd, inoc: [INOC.on(p, 3), INOC.on(p, 10), INOC.on(p, 5), INOC.on(p, 4)] });
     let wAtk = eo.wAtk, armor = eo.def; const range = eo.range, add = eo.add;
     p.atkExtra = eo.x; p.skSpi = eo.s; p.skDmg = eo.k; p.mobDmgPct = eo.mobDmg; p.mobDefPct = eo.mobDef; p.pvpPct = eo.pvp; p.eqFlag36 = eo.flag36;
     // 장비를 뺀 능력치 (사용자 +0x4360~0x436c). 묶음 성장이 반영된 값에 효과가 더해진다:
@@ -1679,7 +1697,7 @@ class Game {
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
-      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, inoc: Array.isArray(p.inoc) && p.inoc.some(v => v > 0) ? p.inoc : null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -1705,7 +1723,7 @@ class Game {
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
-      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'qsk', 'pkCount', 'pkPen', 'pkDecay', 'legal']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'qsk', 'pkCount', 'pkPen', 'pkDecay', 'legal', 'inoc']) if (d[k] !== undefined && d[k] !== null) p[k] = d[k];
       if (d.sigBank) p.sigBank = d.sigBank;
       if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
@@ -2015,12 +2033,25 @@ class Game {
     const f = this.itemInfo(e.k, e.i);
     if (f && (e.k === 1 || e.k === 2 || e.k === 3 || e.k === 6) && f.type !== 14) { this.equipItem(p, slot, f); return; }
     if (e.k === 6 && (e.i === 66 || e.i === 74 || e.i === 67)) { this.useSpecialItem(p, slot, e); return; }
+    if (INOC.itemOf(e.k, e.i)) { this.useInoc(p, slot, e, f); return; }
     if (!f || !(f.hp > 0 || f.mp > 0)) { p.send({ t: 'chat', id: 0, name: '안내', text: `${f ? f.name : '이 아이템'}: 사용 효과는 아직 구현되지 않았습니다.` }); return; }
     const amount = (v, max) => v >= PERCENT_HEAL ? Math.floor(max * (v - PERCENT_HEAL) / 100) : v;
     if (f.hp > 0) p.hp = Math.min(p.maxHp, p.hp + amount(f.hp, p.maxHp));
     if (f.mp > 0) p.mp = Math.min(p.maxMp, p.mp + amount(f.mp, p.maxMp));
     if (--e.n <= 0) p.inv.splice(slot, 1);
     this.sendInv(p); this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp });
+  }
+  // 이노큘레이터·아이템가드 쓰기 (UseItem 0x4308c3~, 0x42d5f0). 아이템을 하나 없애고 남은 시간을 더한다
+  useInoc(p, slot, e, f) {
+    const r = INOC.use(p, e.k, e.i);
+    if (!r) { p.send({ t: 'chat', id: 0, name: '안내', text: `${f ? f.name : '아이템'}: 지금은 쓸 수 없습니다.` }); return; }
+    if (--e.n <= 0) p.inv.splice(slot, 1);
+    this.inocChanged(p, [INOC.itemOf(e.k, e.i)[0]]); this.sendInv(p);
+  }
+  // 상태가 바뀌면: 능력치에 닿는 종류(0·3·4·5·10)는 다시 셈하고, 상태를 보낸다 (패킷 0xf9, 0x43a0f0)
+  inocChanged(p, types) {
+    if (types.some(t => [0, 3, 4, 5, 10].includes(t))) { this.recalc(p, false); this.sendStat(p); }
+    p.send({ t: 'inoc', s: INOC.states(p), ms: p.inoc });
   }
   // 착용: 부위 번호가 곧 칸 번호이고, 반지는 9~13번 칸 중 빈 곳에 낀다
   // 착용 조건: 레벨, 순수 능력치 네 가지, 명성, 직업 (CheckEquipment 0x43439b~0x434528)

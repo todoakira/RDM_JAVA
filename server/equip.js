@@ -165,6 +165,8 @@ function compute(p, itemInfo, opts = {}) {
   // 기본 능력치: 묶음 성장이 있으면 ⌊(기본 − 10) ÷ 표⌋ × (표 + 덤) + 10 (0x4373b9~0x437660)
   const g = GROWTH[Math.max(0, Math.min(8, p.chr | 0))], base = [c.S, c.P, c.D, c.W];
   o.base = base.map((v, q) => (o.grow[q] && g[q] && v > 10) ? Math.floor((v - 10) / g[q]) * (g[q] + o.grow[q]) + 10 : v);
+  // 이노큘레이터 3 근력·10 정신력·5 민첩성·4 기골: 그 능력치에 ⌊(DB 값 − 10) ÷ 표⌋ 를 더한다 (0x437618~0x43779e). opts.inoc = [근력, 정신력, 민첩성, 기골]
+  if (opts.inoc) o.base = o.base.map((v, q) => (opts.inoc[q] && g[q] && base[q] > 10) ? v + Math.floor((base[q] - 10) / g[q]) : v);
   return o;
 }
 
