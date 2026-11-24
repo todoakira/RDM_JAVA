@@ -843,6 +843,58 @@ class World {
     this.ground.set(g.id, g); this.broadcast({ t: 'gadd', g });
     this.after(GROUND_ITEM_MS, () => { if (this.ground.delete(g.id)) this.broadcast({ t: 'gdel', id: g.id }); });
   }
+  // 버리기 (ProcessDropItem 0x42f210, CMapServerClient::DropItem 0x433760)
+  //  - 거래 중이면 0/2/0xa0, 성장 창이 열려 있으면 0x182 (성장 창은 아직 없음).
+  //  - 이벤트 18 칸(공격 금지 칸) 위에서는 버릴 수 없다 (아무 말 없이 무시).
+  //  - what: 'money' | 'tau' | 소지품 칸 번호. 돈은 가진 것보다 많이 달라면 가진 만큼.
+  //  - 원작은 클라이언트가 정한 자리에 떨어뜨린다. 우리 판은 자기 발밑에 떨어뜨린다.
+  dropCmd(p, what, n) {
+    n = Math.floor(Number(n)); if (p.dead || !(n > 0)) return;
+    if (p.trade) return p.send({ t: 'sys', code: 0xa0, args: [] });
+    const e = this.eventAt(p.x, p.y); if (e && e[0] === EV_NO_ATTACK) return;
+    let it;
+    if (what === 'money') { const v = Math.min(n, p.money); if (!v) return; p.money -= v; it = [5, 0, v]; }
+    else if (what === 'tau') { const v = Math.min(n, p.tau || 0); if (!v) return; p.tau -= v; it = [5, 2, v]; }
+    else {
+      const slot = what | 0, s = p.inv[slot]; if (!s) return;
+      const v = Math.min(n, s.n || 1); s.n = (s.n || 1) - v; if (s.n <= 0) p.inv.splice(slot, 1);
+      it = [s.k, s.i, v];
+    }
+    this.dropItem(p, it); this.game.sendInv(p); this.game.sendStat(p); this.game.save(p);
+  }
+  // 건네기 (ProcessGiveItem 0x42f450, CMapServerServer::GiveItemTo 0x462a90)
+  //  - 받는 사람은 같은 맵에 있어야 한다. 거리는 보지 않는다 (원작 서버도 보지 않는다).
+  //  - 받는 사람이 거래 중이면 0xa0, 성장 창이 열려 있으면 0x182.
+  //  - 둘 중 한 사람만 이벤트 10 칸 위에 있으면 0x18 "아이템을 줄 수 없습니다."
+  //  - 돈: 받는 쪽이 40억이 넘으면 0x05. Tau: 0x16f. 같은 아이템이 이미 40억 개면 0x04.
+  //  - 다 못 받으면 (무게·칸) 0x02. 원작은 받은 만큼만 옮긴다.
+  giveCmd(p, name, what, n) {
+    n = Math.floor(Number(n)); if (p.dead || !(n > 0)) return;
+    name = String(name || ''); if (!name || name.length > 16) return;
+    if (p.trade) return p.send({ t: 'sys', code: 0xa0, args: [] });
+    const q = [...this.players.values()].find(u => u.name === name);
+    if (!q || q === p || q.dead) return;
+    const say = c => p.send({ t: 'sys', code: c, args: [] });
+    if (q.trade) return say(0xa0);
+    const ev10 = u => { const e = this.eventAt(u.x, u.y); return !!(e && e[0] === 10); };
+    if (ev10(p) !== ev10(q)) return say(0x18);
+    let k, i, v, slot = -1;
+    if (what === 'money') { k = 5; i = 0; v = Math.min(n, p.money); if (q.money >= F.MONEY_MAX) return say(5); }
+    else if (what === 'tau') { k = 5; i = 2; v = Math.min(n, p.tau || 0); if ((q.tau || 0) >= F.MONEY_MAX) return say(0x16f); }
+    else {
+      slot = what | 0; const s = p.inv[slot]; if (!s) return;
+      k = s.k; i = s.i; v = Math.min(n, s.n || 1);
+      const st = q.inv.find(e => e.k === k && e.i === i); if (st && st.n >= F.MONEY_MAX) return say(4);
+    }
+    if (!(v > 0)) return;
+    const got = this.game.giveItem(q, k, i, v);
+    if (got < v) say(2);
+    if (!got) return;
+    if (k === 5 && i === 0) p.money -= got;
+    else if (k === 5 && i === 2) p.tau -= got;
+    else { const s = p.inv[slot]; s.n = (s.n || 1) - got; if (s.n <= 0) p.inv.splice(slot, 1); }
+    this.game.sendInv(p); this.game.sendStat(p); this.game.save(p); this.game.save(q);
+  }
   // 줍기: 아이템이 놓인 자리까지 걸어가서 줍는다
   pickupCmd(p, id, run) {
     const g = this.ground.get(id); if (p.dead || !g) return;

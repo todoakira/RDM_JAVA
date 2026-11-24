@@ -32,8 +32,8 @@
 | 0xd2 | ProcessUserAttack | 구현 | O |
 | 0xd4 | ProcessUserAttackRange | 확인 필요 | O |
 | 0xdc | ProcessGetItem | 구현 | O |
-| 0xde | ProcessDropItem | 없음 — 땅에 아이템·돈(4)·시그(0x13) 버리기. 거래 중이면 0xa0, +0x4394 면 0x182, 이벤트 0x12 칸이면 안 됨 (0x42f210) | O |
-| 0xe0 | ProcessGiveItem | 없음 — 가까운 사람에게 아이템·돈·시그 건네기 (GiveItemTo, 0x42f450) | O |
+| 0xde | ProcessDropItem | 구현 — 땅에 아이템·돈(4)·시그(0x13) 버리기. 거래 중이면 0xa0, +0x4394 면 0x182, 이벤트 0x12 칸이면 안 됨 (0x42f210). 원작은 클라이언트가 고른 자리, 우리 판은 발밑. 화면에서는 아이콘을 빈 곳으로 끌어 놓는다 | O |
+| 0xe0 | ProcessGiveItem | 구현 — 같은 맵 사람에게 아이템·돈·시그 건네기 (GiveItemTo 0x462a90: 거래 중 0xa0, 이벤트 10 칸 한쪽만 0x18, 돈 넘침 5, Tau 넘침 0x16f, 같은 아이템 40억 4, 다 못 받으면 2). 화면에서는 소지품 아이콘을 사람 위로 끌어 놓는다 (원작 클라이언트 조작은 확인 못 함) | O |
 | 0xe2 | ProcessMoveItem | 구현 | O |
 | 0xe4 | ProcessUseItem | 구현 | O |
 | 0xf2 | ProcessSelectedBattleChar | 없음 |  |

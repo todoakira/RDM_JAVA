@@ -207,6 +207,15 @@ function drawLabels(e, now) {
   if (e.say && now < e.sayUntil) drawBalloon(e.sayLines || (e.sayLines = wrapSay(e.say)), e.sayColor || '#fff', x, y - 12);
 }
 // 화면 좌표에 있는 몬스터 찾기
+// 화면 자리에 있는 다른 사람의 이름 (끌어 놓기 건네기용, ui.js dragStart)
+window.dropTarget = (cx, cy) => {
+  const wx = cx / zoom + camX, wy = cy / zoom + camY; let best = null;
+  for (const e of ents.values()) {
+    if (e.mob || e.npc || e.id === myId || e.dead || e.deadAt) continue;
+    if (Math.abs(wx - e.px) <= 20 && wy >= e.py - 80 && wy <= e.py + 10 && (!best || e.py > best.py)) best = e;
+  }
+  return best ? best.name : null;
+};
 function mobAt(wx, wy, npc) {
   let best = null;
   for (const e of ents.values()) {

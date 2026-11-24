@@ -52,7 +52,8 @@ const UI = (() => {
     for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
       const slot = (invTop + r) * 4 + c, it = inv.items[slot], e = cell(it, 18 + c * 40, 18 + r * 40, slot === invSel);
       if (it) { e.onclick = () => { invSel = slot; drawInvWin(); if (shop && shopMode === 'sell') { shopSel = slot; drawShop(); } }; e.ondblclick = ev => { if (post.writing()) post.attach(slot, it); else if (trade) send({ t: 'tradeadd', where: 'inv', slot, n: it.n }); else if (bank) send({ t: 'bankput', slot, n: ev.shiftKey ? it.n : 1 }); else if (shop) send({ t: 'sell', slot, n: 1 }); else send({ t: 'use', slot }); };
-        e.oncontextmenu = ev => { ev.preventDefault(); if (!bank && !shop) send({ t: 'qput', slot }); }; }   // 오른쪽 클릭: 빠른 창으로 (1/1/119~122)
+        e.oncontextmenu = ev => { ev.preventDefault(); if (!bank && !shop) send({ t: 'qput', slot }); };
+        e.onpointerdown = ev => { if (ev.button === 0 && !trade && !bank && !shop && !exch) dragStart(ev, slot, it); }; }   // 오른쪽 클릭: 빠른 창으로 (1/1/119~122)
       box.appendChild(e);
     }
     arrow(box, 175, 12, () => { invTop--; drawInvWin(); }); arrow(box, 175, 118, () => { invTop++; drawInvWin(); });
@@ -222,6 +223,27 @@ const UI = (() => {
     bank.items.forEach((it, slot) => { const e = cell(it, 34 + (slot % 5) * 40, 69 + Math.floor(slot / 5) * 40); e.title = it.name + (it.desc ? '\n' + it.desc : ''); e.ondblclick = ev => send({ t: 'bankget', slot, n: ev.shiftKey ? it.n : 1 }); box.appendChild(e); });
   }
   // 수·금액 묻기: 원작 메시지 창(입력칸) 으로. 처음 값은 최대값
+  // 소지품에서 끌어 화면에 놓기: 사람 위면 건네기, 빈 곳이면 버리기 (서버 ProcessGiveItem·ProcessDropItem).
+  //  원작 클라이언트의 끄는 방식(아이콘을 집어 드는지 등)은 확인하지 못했다. 여러 개면 수량을 묻는다 (0/0/170)
+  let drag = null;
+  function dragStart(ev, slot, it) {
+    const sx = ev.clientX, sy = ev.clientY;
+    const move = e => {
+      if (!drag && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
+      if (!drag) { drag = { slot, it, g: cell(it, 0, 0) }; drag.g.style.cssText += ';position:fixed;pointer-events:none;z-index:99;opacity:.85'; document.body.appendChild(drag.g); }
+      drag.g.style.left = (e.clientX - 17) + 'px'; drag.g.style.top = (e.clientY - 17) + 'px';
+    };
+    const up = e => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      if (!drag) return; const d = drag; drag = null; d.g.remove();
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      if (!under || under.id !== 'cv' || !window.dropTarget) return;
+      const who = window.dropTarget(e.clientX, e.clientY);
+      const go = n => send(who ? { t: 'give', name: who, what: d.slot, n } : { t: 'drop', what: d.slot, n });
+      if ((d.it.n || 1) > 1) ask(M0(170), d.it.n, go); else go(1);
+    };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  }
   function ask(msg, max, cb) { msgBox(msg, ['ok', 'cancel'], (y, v) => { const n = Math.floor(Number(v)); if (y && n >= 1) cb(Math.min(n, max)); }, true); el('msgin').value = String(max); el('msgin').select(); }
   el('bankput').onclick = () => { if (bank && inv && inv.money) ask(M0(45), inv.money, n => send({ t: 'bankmoney', n, put: 1 })); };
   el('bankmoney').onclick = () => { if (bank && bank.money) ask(M0(69), bank.money, n => send({ t: 'bankmoney', n, put: 0 })); };
