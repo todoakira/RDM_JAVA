@@ -169,7 +169,7 @@ n=24 Dispel: 명중하면 몬스터의 좋은·나쁜 효과를 모두 지움 (O
 ## 아직 안 한 것
 
 - 몬스터 기술과 몬스터 쪽 효과(23 Mind Shield, 24 Red Halo, 52 가 막는 것), 주인공끼리 싸움에서만 쓰이는 갈래.
-- 51 Chain Reaction (rm3944 0x10006528), 63 WindWalker, 74 Quick Reload, 49 MadSpin 의 실제 속도 (클라이언트 쪽).
+- 51 Chain Reaction (전에 적은 rm3944 0x10006528 은 문자열 바꾸기(CRT) 함수였다. 실제 자리는 아직 못 찾음), 63 WindWalker, 74 Quick Reload, 49 MadSpin 의 실제 속도 (클라이언트 쪽).
 - 효과 42 를 거는 기술, 효과 54·70·76 을 거는 경로.
 - 이동 기술 (Dimensional Gate, Recall, Warp, Teleport), 범위 효과(UseSkillRangeEffect), 몬스터 대상 약화 16·17·21·22·26·37·38·54·57·74.
 
