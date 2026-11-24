@@ -1362,6 +1362,30 @@ class World {
   // ---------- 전투 ----------
   // 공격 총알 그림 번호. 주인공은 무기의 +0x57 (Main.dll 0x1002adfc 에서 공격 꾸러미에 싣는다),
   // 몬스터는 공격 1·2 마다 MopInfo 의 총알 번호 (bullet, bullet2). 0 이면 총알 없음
+  // 꿰뚫기 (CMapServerServer::DoAttackThrough 0x46b170): 공격자에서 노린 대상 쪽으로 곧게 뻗은 줄 위의 몬스터·사람을 모두 친다.
+  //  - 사거리 = 무기 사거리 (+0x4334). 효과 11 이고 총이면 +2 (0x46b36e).
+  //  - 노린 대상 자리를 가운데로 사거리 안의 것들을 훑는다 (FirstInDistanceEntry). 줄 위인지는 STAFFGetNextPIS 로 한 칸씩 따라가며 본다.
+  //    우리 판은 "공격자에서 대상 쪽으로 한 칸씩 가다가, 대상에 닿으면 같은 방향으로 계속, 사거리까지" 의 칸에 있는지로 본다 (원작 두 갈래 셈을 줄인 것).
+  //  - 장애물이 없어야 하고 (CrsMap_NoObstacle), 같은 그룹(+0x21b0)은 빼며, 사람은 PK 조건을 따른다.
+  //  - 효과 34 이고 정해진 총이면 사거리를 25 로 하는 갈래(0x46b3e8)는 아직 넣지 않았다.
+  throughAttack(p, t, now) {
+    const R = p.range + (this.fxOn(p, 11, now) ? 2 : 0), line = [];
+    let cur = { x: p.x, y: p.y, z: p.z }, dir = G.direction(p, t), passed = false;
+    for (let i = 0; i < R; i++) {
+      if (!passed) { const d = G.direction(cur, t); if (d !== 5) dir = d; }
+      cur = G.next(cur, dir); line.push(cur);
+      if (cur.x === t.x && cur.y === t.y && cur.z === t.z) passed = true;
+    }
+    const onLine = e => line.some(c => c.x === e.x && c.y === e.y && c.z === e.z);
+    const hits = [];
+    for (const m of this.mobs.values()) if (m.hp > 0 && (m === t || (onLine(m) && G.dist(p, m) <= R && this.noObstacle(p, m)))) hits.push(m);
+    for (const u of this.players.values()) if (u !== p && !u.dead && (u === t || (onLine(u) && G.dist(p, u) <= R && this.noObstacle(p, u))) && !(p.group && u.group === p.group)) hits.push(u);
+    for (const d of hits) {
+      if (d.mob) { if (!this.safe(p.x, p.y)) this.hit(p, d, now); continue; }   // 공격자가 안전 칸이면 몬스터는 치지 않는다 (iStack_94c)
+      const r = this.game.pk.attack(p, d);
+      if (r && r !== 'skip') this.hit(p, d, now);
+    }
+  }
   attackBul(a, kind) {
     if (a.mob) return (kind ? a.info.bullet2 : a.info.bullet) || 0;
     const w = a.equip && a.equip[7], r = w && this.game.itemBul[w.k] && this.game.itemBul[w.k][w.i];
@@ -1501,7 +1525,8 @@ class World {
           p.path = [];
           if (now >= p.atkAt && now >= p.nextAt) {
             const d = G.direction(p, m); if (d !== 5) p.dir = d; p.atkAt = now + this.game.attackMs(p);
-            if (m.mob) this.hit(p, m, now);
+            if (this.fxOn(p, 50, now) && SK.isGun(p.equip[7])) this.throughAttack(p, m, now);   // 효과 50 Dysperse + 총: 꿰뚫기 (ProcessUserAttack 0x43a8c8)
+            else if (m.mob) this.hit(p, m, now);
             else {                                                            // 사람: PK 조건 (DoAttack 0x469dd0)
               const r = this.game.pk.attack(p, m);
               if (r === 'skip') p.target = 0;
