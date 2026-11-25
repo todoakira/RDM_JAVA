@@ -11,7 +11,6 @@ const { spriteOf } = require('./sprites');   // 원작 클라이언트에서 옮
 //   걷기: 대각선 장당 (4, 2)픽셀 → 6장, 가로·세로 장당 6·3픽셀 → 8장. 달리기는 그 두 배 속도.
 const FRAME_MS = 50;
 const CFG = {
-  stepFrames: { walk: [6, 8], run: [3, 4] },   // [대각선, 가로·세로] 한 걸음에 드는 장 수
   maxPath: 4000,          // 길찾기 탐색 한도(칸)
   maxName: 14,
   maxChat: 120,
@@ -60,7 +59,6 @@ function readJson(...p) { const f = path.join(ROOT, ...p); return fs.existsSync(
 const rnd = n => Math.floor(Math.random() * 32768) % n;   // C 의 rand() % n
 const pos = e => ({ x: e.x, y: e.y, z: e.z });
 // 한 걸음에 걸리는 시간: 대각선(1·3·7·9)과 가로·세로(2·4·6·8)가 다르다
-const stepMs = (dir, run) => CFG.stepFrames[run ? 'run' : 'walk'][dir % 2 ? 0 : 1] * FRAME_MS;
 // 걸음 시간 (원작 클라이언트 Main.dll 0x10030be0·0x10030d60·0x10031574):
 //  - 한 걸음: 대각선 (24, 12) 픽셀, 가로 (48, 0), 세로 (0, 24). 장(50ms)마다 속도만큼 옮기고 남은 거리가 속도 이하면 붙는다 → 장 수 = 축마다 ⌈거리 / 속도⌉ 의 큰 쪽.
 //  - s: 걷기 1, 달리기 2 (0x1003244c, 0x10032492).
@@ -1097,7 +1095,10 @@ class World {
       }
     }
     if (n.x < 0 || n.x >= this.w || n.y < 0 || n.y >= this.h) return false;
-    const near = G.dist(m, n) <= 1, dur = stepMs(dir, false);
+    // 몬스터 걸음 시간: 서버는 움직임 종류 1 (걷기) 을 보낸다 (CNPCServer::SendRectMovementInfo 0x483040, local_2 = 1).
+    // 클라이언트는 사람과 같은 셈으로 그린다: 종류 = 동작 + 1 (사람이 보내는 패킷 0xca +7 = 달리기 ? 2 : 1, 0x10005be0), 동작 0 은 s = 1 (0x10032824 표).
+    // 그래서 몬스터도 효과에 따른 걷기 장 수다 (moveMode)
+    const near = G.dist(m, n) <= 1, dur = stepFrames(moveMode(m), dir, false) * FRAME_MS;
     this.release(m); m.x = n.x; m.y = n.y; m.z = n.z; m.dir = dir; if (!m.info.noOccupy) this.take(m);
     this.near(m, near ? { t: 'step', id: m.id, x: n.x, y: n.y, z: n.z, dir, dur, run: 0, last: 1 } : { t: 'pos', id: m.id, x: n.x, y: n.y, z: n.z, dir });
     return true;
