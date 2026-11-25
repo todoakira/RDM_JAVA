@@ -196,7 +196,7 @@ const USER_DEBUFF = {
   57: { e: 47, hit: 'dex', div: 40 }, 65: { e: 54, hit: 'dex', div: 20 }, 74: { e: 58, hit: 'spi', div: 0 },
 };
 // 사람 효과를 막는 것 (CMapServerClient::DoSkillEffect 0x42b2d0 의 분기 0x42ca74): 대상 효과 23·52·76·77 이면 막힘,
-//   43 을 뺀 나머지는 효과 42 도 막고, 5·12·16·18·55·58 은 효과 7 도 막는다 (+0x435c 검사는 무엇인지 몰라 뺐다)
+//   43 을 뺀 나머지는 효과 42 도 막고, 5·12·16·18·55·58 은 효과 7 도 막는다. 4·5·12~16·18·27·43·47·54·55·58 은 장비 +0x435c (분류 6 의 17 번, InitializeEquipmentEffect 0x436d2c) 도 막는다
 const USER_BLOCK7 = new Set([5, 12, 16, 18, 55, 58]);
 // 범위 기술이 사람에게 거는 약화 (UseSkillAttackRange 의 사람 분기 0x45a9c6~0x45b5e8). 모두 정신력 명중
 const AREA_USER_DEBUFF = {

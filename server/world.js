@@ -842,7 +842,8 @@ class World {
     const on = x => this.fxOn(t, x, now);
     if (on(23) || on(52) || on(76) || on(77)) return false;
     if (e !== 43 && on(42)) return false;
-    if (INOC.on(t, 6)) return false;                                   // 이노큘레이터 6 (매직쉴드) 이면 약화가 안 걸린다 (DoSkillEffect 0x42b442 등 14 곳)
+    if (INOC.on(t, 6)) return false;
+    if (t.eqFlag435c && [4, 5, 12, 13, 14, 15, 16, 18, 27, 43, 47, 54, 55, 58].includes(e)) return false;   // 분류 6 의 17 번을 차면 +0x435c: 나쁜 효과가 안 걸린다 (DoSkillEffect 0x42b434 등)                                   // 이노큘레이터 6 (매직쉴드) 이면 약화가 안 걸린다 (DoSkillEffect 0x42b442 등 14 곳)
     if (SK.USER_BLOCK7.has(e) && on(7)) return false;
     (t.fx ||= {})[e] = now + sec * 1000;
     if (e === 15 && caster) t.voodoo = caster.name;
@@ -1746,6 +1747,14 @@ class World {
     }
     const before = d.hp;
     d.hp = Math.max(0, d.hp - dmg); d.hitAt = now;
+    // 공격자가 장비 +0x4358 (분류 6 의 18 번) 이거나 효과 82·83 이면 50% 로 맞은 쪽에 효과 27 을 공격자 DB 기골 ÷ 100 초.
+    //   몬스터는 맞은 뒤 체력이 최대의 절반보다 많을 때 (CMopServer::DecreaseHP 0x478502), 사람은 체력이 공격자 최대 체력의 1/10 이상일 때 (0x439611)
+    if (a && !a.mob && dmg > 0 && (a.eqFlag4358 || this.fxOn(a, 82, now) || this.fxOn(a, 83, now))) {
+      const sec = Math.floor((a.base.pow || 0) / 100);
+      if (d.mob ? d.hp > (d.maxHp >>> 1) && rnd(2) === 1 : before >= Math.floor(a.maxHp / 10) && rnd(2) === 1) {
+        if (d.mob) this.mobEffect(d, 27, sec, a, now); else this.userEffect(d, 27, sec, now, a);
+      }
+    }
     if (!d.mob && d.hp < before) {
       this.fxOff(d, 35);                                         // 효과 35 Hide: 체력이 줄면 풀린다 (0x439349)
       // Voodoo (몬스터 효과 15): 시전자가 잃은 체력만큼 그 몬스터도 잃는다. 단 최대 체력의 1/10 아래로는 내려가지 않고, 이미 그 아래면 그대로 (ProcessVoodoo 0x4601f0)
@@ -1971,7 +1980,7 @@ class Game {
     const isCmd = !!(this.army && this.army.db && Object.values(this.army.db.armies).some(a => a.commander === p.name && a.state > 0));   // CArmy::IsArmyCommander
     const eo = EQUIP.compute(p, (k, i) => this.itemInfo(k, i), { isCommander: isCmd, inoc: [INOC.on(p, 3), INOC.on(p, 10), INOC.on(p, 5), INOC.on(p, 4)] });
     let wAtk = eo.wAtk, armor = eo.def; const range = eo.range, add = eo.add;
-    p.atkExtra = eo.x; p.skSpi = eo.s; p.skDmg = eo.k; p.mobDmgPct = eo.mobDmg; p.mobDefPct = eo.mobDef; p.pvpPct = eo.pvp; p.eqFlag36 = eo.flag36;
+    p.atkExtra = eo.x; p.skSpi = eo.s; p.skDmg = eo.k; p.mobDmgPct = eo.mobDmg; p.mobDefPct = eo.mobDef; p.pvpPct = eo.pvp; p.eqFlag36 = eo.flag36; p.eqFlag435c = eo.flag435c; p.eqFlag4358 = eo.flag4358;
     // 장비를 뺀 능력치 (사용자 +0x4360~0x436c). 묶음 성장이 반영된 값에 효과가 더해진다:
     //   효과 69 Focused Spirit: 정신력 + ⌊(기본 정신력 − 10) ÷ 18⌋ × 23 + 10 − 기본 정신력 (rm3944 NewFocusEffect 0x10002b5c, +0x3f60 = DB 의 정신력)
     //   효과 75 Godly Shield: 기골 + 5000 (NewGshieldEffect 0x10002d36)
