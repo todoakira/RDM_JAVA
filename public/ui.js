@@ -25,7 +25,6 @@ const UI = (() => {
     else if (act === 'quit') location.reload();
     else if (act === 'quick') toggle('winQuick');
     else if (act === 'army') ArmyUI.open(); else if (act === 'help') openHelp(1);
-    else log('아직 구현되지 않은 메뉴입니다.', 'sys');
   }
   function marks() { for (const b of el('menubar').children) { const a = b.dataset.act; b.classList.toggle('on', (a.startsWith('win') || a === 'gauge') && el(a).style.display === 'block' || a === 'skill' && el('winSk').style.display === 'block' || a === 'group' && el('winGroup').style.display === 'block' || a === 'quick' && el('winQuick').style.display === 'block'); } }
   function toggle(id) { const w = el(id); w.style.display = w.style.display === 'block' ? 'none' : 'block'; marks(); if (id === 'winQuest') drawQuest(); if (id === 'winHist') drawHist(); if (id === 'winQuick') drawQuick(); if (id === 'winInv') drawInvWin(); if (id === 'winEq') drawEq(); if (id === 'winChr') drawChr(); if (id === 'winSk') drawSk(); }
