@@ -394,6 +394,7 @@ class World {
     const cost = SK.mpCost(s, p.maxMp);
     if (p.mp < cost) return;                                     // 마력이 모자라면 알림 없이 끝난다 (CMapServerClient::DecreaseMP 0x43973d)
     p.skillAt = now + SK.USE_MS;
+    this.informUseSkill(p);                                      // UseSkillAlone 뒤 InformUseSkill (UseSkill 0x45f521)
     if (s.n === 1) {
       if (sid === 24) { p.mp -= cost; p.hp = p.maxHp; }
       else { const use = Math.min(Math.floor((p.maxHp - Math.min(p.hp, p.maxHp)) / 2), p.mp); p.mp -= use; p.hp = Math.min(p.maxHp, p.hp + use * 2); }
@@ -495,10 +496,18 @@ class World {
   // 기술 한 번 (UseSkill 0x45e3xx → UseSkillAttackSingleMop 0x44d6xx → DoSkillAttackMop 0x45f890)
   // 기술 값 치르기: 특수 기술은 DP 를 0 으로, 일반 기술은 마력을 줄인다 (0x44d825~0x44d846)
   payForSkill(p, s) {
-    if (s.a === 1) { if (p.dp < p.maxDp) return -1; p.dp = 0; this.game.sendStat(p); return 0; }
+    if (s.a === 1) { if (p.dp < p.maxDp) return -1; p.dp = 0; this.game.sendStat(p); this.informUseSkill(p); return 0; }
     const cost = SK.mpCost(s, p.maxMp);
     if (p.mp < cost) return -1;                                  // 알림 없음 (DecreaseMP 0x43973d)
-    p.mp -= cost; this.game.sendStat(p); return cost;
+    p.mp -= cost; this.game.sendStat(p); this.informUseSkill(p); return cost;
+  }
+  // 기술을 쓰면 (CMopServer::InformUseSkill 0x47d9e0): 고치기 횟수가 남고 표시가 없는 산 모습 93 몬스터가
+  //   시야(+1 대각) 안이고 막힘이 없으면 표시(+0x2d4)를 세운다
+  informUseSkill(p) {
+    for (const o of this.mobs.values()) {
+      if (o.info.img !== 93 || !(o.healCnt > 0) || o.recall || o.hp <= 0) continue;
+      if (G.dist(o, p) <= (o.info.sight || 0) && this.noObstacle(o, p)) o.recall = true;
+    }
   }
   // 범위 공격 (UseSkillAttackRange 0x454600)
   castArea(p, target, s, sid, now) {
@@ -1068,7 +1077,14 @@ class World {
   // ---------- 몬스터 ----------
   // 죽은 몬스터는 배치표의 시간 뒤에 다시 난다. 다시 나기가 꺼져 있으면 켜질 때까지 기다린다
   respawnLater(d) {
+    (this.deadMobs ||= new Map()).set(d.sid, d);
     this.after(d.s.regen * 1000, () => {
+      if (this.deadMobs.get(d.sid) !== d) return;                // 불러오기로 이미 되살아났다
+      // 다시 나기 조건 (CMopAddServer::DoWork 0x474f70): 모습 87 은 다시 나지 않는다. 모습 78 은 12월 20~26일에만 (tm_mon = 11, 19 < tm_mday < 27)
+      const img = d.info.img, t = new Date();
+      if (img === 87) return;
+      if (img === 78 && !(t.getMonth() === 11 && t.getDate() > 19 && t.getDate() < 27)) { this.respawnLater(d); return; }
+      this.deadMobs.delete(d.sid);
       if (!this.regenOn) { this.pendingSpawn.push([d.s, d.sid]); return; }
       const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) });
     });
@@ -1096,7 +1112,7 @@ class World {
       item: s.drops[rnd(5)] || null,
       cnt: 0, delay: 0, targetName: '', warpState: 0, warpCnt: 0,
       // 스스로 고치는 횟수 (+0x118, InitializeMopInstance 0x479519~0x479551): 첫 기술이 종류 1 이면 1, 모습 93 이면 1, 모습 98 이면 10
-      healCnt: info.img === 98 ? 10 : info.img === 93 ? 1 : (info.skill && SK.get(info.skill) && SK.get(info.skill).n === 1 ? 1 : 0) };
+      healAt: Date.now(), healCnt: info.img === 98 ? 10 : info.img === 93 ? 1 : (info.skill && SK.get(info.skill) && SK.get(info.skill).n === 1 ? 1 : 0) };
     this.mobs.set(m.id, m); if (!info.noOccupy) this.take(m);
     return m;
   }
@@ -1145,7 +1161,6 @@ class World {
     return xo && yo;
   }
   // 다음에 할 일을 고른다. 돌려주는 값: 0 없음, 1 배회, 2 쫓기, 3·5·6 공격, 4 유인된 쫓기 (CMopServer::FindNextAction 0x47cc60)
-  // 원작에는 기술에 걸린 상태(혼란·은신·도발 등)에 따른 갈래가 더 있다. 기술이 아직 없어서 그 갈래는 옮기지 않았다.
   findNextAction(m) {
     // 몬스터에게 걸린 효과 (FindNextAction 0x47cd9e~0x47ce8b): 13·43 이면 사거리 1. 5·16·18·43 이면 공격 못 함.
     // 거기에 12·13 이면 쫓지 못하고, 12 면 돌아다니지도 못함
@@ -1310,7 +1325,7 @@ class World {
   //   효과 종류: 2 → 사람 효과 5 (몬스터 정신력/30 초), 17 → 13 (/150), 38 → 14 (/30), 42 → 27 (/30), 68 → 58 (p 초)
   //   18·19·67 → 피해: 18 은 몬스터 공격력, 19 는 t=⌊⌊정신력/15⌋×정신력/10⌋+50 에서 ⌊t/40⌋+⌊t/5⌋, 67 은 0. 위력 % 를 곱해 사람 쪽 GetAttack
   //   41 → 몬스터가 효과 26 (정신력/30, 모습 74 는 10초) 을 얻고 다섯 걸음 달아난다. 되돌려지면 몬스터에게 걸린다
-  //   67·39 의 아이템 훔치기와 빗나갔을 때 사람 효과 45 의 반격(몬스터 효과 55)은 아직이다
+  //   67 은 피해 뒤 빠른 창에서, 39 는 장비에서 훔친다 (mobSteal). 빗나가면 사람 효과 45 의 반격 (몬스터 효과 55)
   mobSkill(m, u, s, sid, now) {
     const dir = G.direction(m, u); if (dir !== 5) m.dir = dir;
     let hit = true, refl = false;
@@ -1322,10 +1337,17 @@ class World {
         else { const c = Math.max(20, Math.min(80, Math.floor(Math.min(u.spi || 0, 7000) * 3 / 350) + 20)); if (F.rand100() < c) refl = true; }
       }
     }
-    if (!hit) { this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, miss: 1, hp: u.hp }); return; }
+    if (!hit) {
+      // 빗나갔을 때 사람이 효과 45 면 몬스터에게 효과 55 를 DB 정신력(+0x3f60) ÷ 20 초 (0x4808d6)
+      if (this.fxOn(u, 45, now)) this.mobEffect(m, 55, Math.floor((u.base.spi || 0) / 20), u, now);
+      this.near(m, { t: 'atk', id: m.id, tid: u.id, dir: m.dir, k: 2, sk: sid, miss: 1, hp: u.hp }); return;
+    }
     const spi = m.spi;
     switch (s.n) {
-      case 2: refl ? this.mobEffect(m, 5, Math.floor(spi / 30), null, now) : this.userEffect(u, 5, Math.floor(spi / 30), now); break;
+      case 2:
+        if (refl) this.mobEffect(m, 5, Math.floor(spi / 30), null, now);
+        else if (this.userEffect(u, 5, Math.floor(spi / 30), now) && sid === 203 && !m.recall) { m.recall = true; this.recallSkill(m, { x: u.x, y: u.y, z: u.z }); }   // 기술 203 이 걸리면 그 사람 자리로 부하를 부른다 (0x480a3b~0x480a74)
+        break;
       case 17: refl ? this.mobEffect(m, 13, Math.floor(spi / 150), null, now) : this.userEffect(u, 13, Math.floor(spi / 150), now); break;
       case 38: refl ? this.mobEffect(m, 14, Math.floor(spi / 30), null, now) : this.userEffect(u, 14, Math.floor(spi / 30), now); break;
       case 42: if (!refl) this.userEffect(u, 27, Math.floor(spi / 30), now); break;
@@ -1357,7 +1379,7 @@ class World {
   //   79: 대상이 있으면 (act>1) 아직 안 훔쳤고 체력 51% 미만이며 첫 기술 사거리 안이면 DoItemStealSkill, 체력 26% 미만이면 DoUseItem
   //   80: 자폭 (DoExplosionAttack 0x47a460): 대상이 없으면 단계를 0 으로. 체력 51% 미만이면 단계 −1~−3, 아니면(단계 100 이 아니면) 1~4.
   //       첫 기술 반경(l−10000) 안이면 |단계|(+3) × 65000 을 공격 값으로 범위 기술을 쓴다. 단계가 0 이상일 때 맞기 전 체력이 50% 넘으면 단계 100 (DecreaseHP 0x478416)
-  //   84 의 불러오기, 82 의 동료 회복, 93 의 범위 효과는 몬스터 짝(+0x2e0)을 만드는 LoadMop 부분과 함께 아직이다
+  //   84: 맞기 전 체력이 가득이었으면 불러오기 (recallSkill). 93: 고치기 횟수가 있고 불러오기 표시가 서 있으면 범위 효과 (mobRangeEffect)
   mobSpecial(m, u, act, now) {
     const info = m.info, img = info.img;
     if (!info.skill || this.fxOn(m, 5, now) || this.fxOn(m, 16, now) || this.fxOn(m, 18, now) || this.fxOn(m, 43, now)) return false;
@@ -1384,6 +1406,12 @@ class World {
       if (pct() < 26) return this.mobUsePotion(m);
       return false;
     }
+    // 모습 93: 남은 횟수(+0x118)가 있고 불러오기 표시(+0x2d4)가 서 있으면 첫 기술로 범위 효과 (CMopServer::UseSkillRangeEffect 0x482180)
+    if (img === 93 && m.healCnt > 0 && m.recall) { this.mobRangeEffect(m, s1, info.skill, now, info.skillMs); return true; }
+    if (img === 84 && m.recall) {                               // 맞기 전 체력이 가득이었으면 불러오기 (DoSpecialAction 0x47cb60)
+      if (this.recallSkill(m, null)) { this.near(m, { t: 'cast', id: m.id, sk: info.skill }); m.recall = false; return true; }
+      return false;
+    }
     if (img === 82) {                                           // 우두머리가 혼란 상태면 51% 로 나쁜 효과를 풀어 준다 (DoRestorationSkill 0x47a9d0)
       const L = m.leaderSid && [...this.mobs.values()].find(o => o.sid === m.leaderSid);
       if (!L || L.hp <= 0 || !this.mobDisorder(L, now) || rnd(100) >= 51) return false;
@@ -1404,11 +1432,56 @@ class World {
     }
     return false;
   }
+  // 몬스터 범위 효과 (CMopServer::UseSkillRangeEffect 0x482180): 반경 l − 10000 안의 산 몬스터마다 (자기 포함).
+  //   종류 69 면 한 번 고른 r = rand() % 3 에 따라 효과 8 / 25 / 23 을 몬스터 정신력 ÷ 50 초. 다음 행동까지 기술 간격, 고치기 횟수·불러오기 표시는 0
+  mobRangeEffect(m, s, sid, now, ms) {
+    if (s.l > 10000) {
+      const R = s.l - 10000, r = rnd(3), e = [8, 25, 23][r];
+      for (const o of [...this.mobs.values()]) {
+        if (o.hp <= 0 || G.dist(m, o) > R) continue;
+        if (s.n === 69) this.mobEffect(o, e, Math.floor(m.spi / 50), null, now);
+      }
+    }
+    this.near(m, { t: 'cast', id: m.id, sk: sid, x: m.x, y: m.y, z: m.z, r: Math.max(0, s.l - 10000) });
+    m.delay = Math.ceil((ms || 0) / MOB_TICK); m.healCnt = 0; m.recall = false;
+    return true;
+  }
+  // 불러오기 (CMopServer::DoRecallSkill 0x47a560). 부른 자리(pos, 없으면 부른 몬스터 자리)에서 ±⌊시야/2⌋ 사각형(맵 안으로)을 잡고
+  //   그 안의 무작위 한 칸(자리 1)을 한 번 본다 (GetNearbyPIS 0x47a4e0 → FindEmptyPlace 0x4831b0). 빈 칸이면 몬스터를 그리로 옮긴다
+  //   모습 84: 모습 83·82 가운데 살아 있고 시야보다 멀리 있는 것을 50% 로, 각각 다섯까지
+  //   모습 81: 이 81 을 우두머리로 둔 82 를. 다시 나기가 켜져 있으면 죽은 것도 그 자리에 되살린다
+  recallSkill(m, pos) {
+    const R = m.info.sight || 0, h = Math.floor(R / 2), c = pos || m, W = this.w, H = this.h;
+    const rx = 2 * Math.floor(R / 2) + 1 < W ? [c.x > h ? c.x - h : 0, Math.min(c.x + h, W - 1)] : [0, W - 1];
+    const ry = 2 * Math.floor(R / 2) + 1 < H ? [c.y > h ? c.y - h : 0, Math.min(c.y + h, H - 1)] : [0, H - 1];
+    const spot = () => { const q = { x: rx[0] + rnd(rx[1] - rx[0] + 1), y: ry[0] + rnd(ry[1] - ry[0] + 1), z: 1 }; return this.canMop(q) && this.free(q) ? q : null; };
+    const place = (o, q) => { this.release(o); o.x = q.x; o.y = q.y; o.z = q.z; if (!o.info.noOccupy) this.take(o); this.near(o, { t: 'pos', id: o.id, x: q.x, y: q.y, z: q.z, dir: o.dir }); };
+    let moved = false, nS = 0, nR = 0;
+    if (m.info.img === 84) {
+      for (const o of [...this.mobs.values()]) {
+        const im = o.info.img; if (o.hp <= 0 || !((im === 83 && nS < 5) || (im === 82 && nR < 5))) continue;
+        if (G.dist(m, o) <= R || rnd(2) !== 0) continue;
+        const q = spot(); if (!q) continue;
+        place(o, q); moved = true; if (im === 83) nS++; else nR++;
+        if (nS > 4 && nR > 4) return true;
+      }
+    } else if (m.info.img === 81) {
+      for (const o of [...this.mobs.values()]) if (o.info.img === 82 && o.leaderSid === m.sid) { const q = spot(); if (q && this.regenOn) { place(o, q); moved = true; } }
+      if (this.regenOn) for (const [sid, d] of [...(this.deadMobs || new Map())]) {
+        if (d.info.img !== 82 || d.leaderSid !== m.sid) continue;
+        const q = spot(); if (!q) continue;
+        this.deadMobs.delete(sid); const n = this.spawnMob(d.s, sid); if (!n) continue;
+        place(n, q); this.broadcast({ t: 'madd', m: pubM(n) }); moved = true;
+      }
+    }
+    return moved;
+  }
   // 나쁜 효과 풀기 (CMopServer::OnBadSkillExpired 0x47bca0): 5·4·13·12·15·16·18·14·55·27·54·47·43·58
   mobBadOff(o) { for (const e of [5, 4, 13, 12, 15, 16, 18, 14, 55, 27, 54, 47, 43, 58]) this.fxOff(o, e); }
-  // 혼란 상태 (CMopServer::IsDisorderState 0x47ac40) 는 몬스터 효과 시간 칸 아홉 개(+0x188~+0x1e4)를 본다. 칸과 효과 번호의 짝을 다 풀지 못해
-  //   OnBadSkillExpired 가 푸는 효과 가운데 하나라도 걸려 있으면 혼란으로 본다 (확인 못 함)
-  mobDisorder(o, now) { return [5, 4, 13, 12, 15, 16, 18, 14, 55, 27, 54, 47, 43, 58].some(e => this.fxOn(o, e, now)); }
+  // 혼란 상태 (CMopServer::IsDisorderState 0x47ac40): 몬스터 효과 시간 칸 +0x188·18c·1a8·1ac·1b0·1b4·1b8·1c0·1e4 가운데 하나라도 남아 있으면.
+  //   칸 = 0x188 + 4 × (효과 − 4) 이다 (CMopServer::DoSkillEffect 0x479630 의 분기: 4 → 0x188, 8 → 0x198, 14 → 0x1b0, 23 → 0x1d4, 27 → 0x1e4)
+  //   그래서 효과 4·5·12·13·14·15·16·18·27
+  mobDisorder(o, now) { return [4, 5, 12, 13, 14, 15, 16, 18, 27].some(e => this.fxOn(o, e, now)); }
   // 물약 훔치기 (DoItemStealSkill 0x47a2e0): 대상 빠른 창 8칸 가운데 분류 4 이고 10개 이상인 것마다 ⌊n/10⌋ 을 빼앗는다.
   //   번호 21 미만이거나 34·35 면 몬스터 소지품(같은 칸)에 넣는다. 하나라도 빼앗으면 그림 0x2f, 대상에게 글 0xa8, 다시는 안 훔친다
   mobStealPotions(m, u) {
@@ -1459,7 +1532,7 @@ class World {
   //   반경 안 살아 있는 사람마다: 막힘이 없고 효과 19(숨기)가 아니어야 한다 (종류 73 은 막힘·숨기 무시, 0x4815ef~0x481618)
   //   명중: 종류 43 은 20%, 그 밖은 몬스터 정신력 대 사람 기본 정신력. 효과 24 되돌림은 한 명 판과 같고, 모습 78 은 늘 맞고 되돌림 없음, 모습 98 은 되돌림 없음
   //   값 = 몬스터 공격력, 피해 = 위력 % (값 500만 이상이면 ÷100 먼저) → 사람 쪽 GetAttack. 종류 43 은 사람 효과 16 도, 71 은 27, 73 은 효과 19·35·26 을 먼저 푼다
-  //   되돌려지면 사람이 몬스터를 친다 (DoSkillAttackMop). 종류 70(지속 피해)·72(마력)·모습 98 의 스스로 회복은 아직이다
+  //   되돌려지면 사람이 몬스터를 친다 (DoSkillAttackMop). 70 지속 피해(ProcessCSAttack), 72 마력 0, 모습 98 의 스스로 회복
   //   cont: 지속 피해 목록이 다시 부른 것 (param_8 = 1). 이때 중심은 처음 대상 자리이고 몬스터가 죽었어도 친다
   mobSkillArea(m, target, s, sid, now, cont) {
     let rad = s.l - 10000, center = cont ? { x: target.x, y: target.y, z: target.z } : { x: m.x, y: m.y, z: m.z };
@@ -1468,8 +1541,11 @@ class World {
     if (!G.same(center, m)) { const dir = G.direction(m, center); if (dir !== 5) m.dir = dir; }
     this.near(m, { t: 'cast', id: m.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
     const img = m.info.img, k = s.n, v = m.atk;
-    // 모습 98 이 종류 73 을 쓰면: 체력이 다 차지 않았고 둘에 하나 꼴, 남은 횟수가 있으면 체력을 채운다 (0x48144c~0x4814a4)
-    if (img === 98 && k === 73 && m.hp < m.maxHp && rnd(100) < 50 && m.healCnt > 0) { m.hp = m.maxHp; m.healCnt--; this.near(m, { t: 'hp', id: m.id, hp: m.hp }); }
+    // 모습 98 이 종류 73 을 쓰면: 체력 % 가 50 미만이고 남은 횟수(+0x118)가 있으면 체력을 채운다 (0x48144c~0x4814a4)
+    if (img === 98 && k === 73 && m.healCnt > 0) {
+      const pct = m.hp > 20000000 ? Math.floor(m.hp / Math.floor(m.maxHp / 100)) : Math.floor(m.hp * 100 / m.maxHp);
+      if (pct < 50) { m.hp = m.maxHp; m.healCnt--; this.near(m, { t: 'hp', id: m.id, hp: m.hp }); }
+    }
     const DMG = new Set([0, 43, 45, 70, 71, 72, 73]);           // 피해를 주는 종류 (분기표 0x482118/0x482134)
     for (const u of [...this.players.values()]) {
       if (u.dead || G.dist(center, u) > rad) continue;
@@ -1498,7 +1574,8 @@ class World {
         if (m.hp <= 0) return; continue;
       }
       if (k === 43) this.userEffect(u, 16, Math.floor(m.spi / 150), now);
-      // 71: 원작은 사람 효과 27 을 ⌊USERDB +0x790 ÷ 100⌋ 초 건다 (0x48197e). +0x790 이 무엇인지 몰라 아직 걸지 않는다
+      // 71: 사람 효과 27 을 ⌊USERINFO +0x790 ÷ 100⌋ 초 (0x48197e). USERINFO(+0x37d8) +0x790 = 사용자 +0x3f68 = DB 기골
+      else if (k === 71) this.userEffect(u, 27, Math.floor((u.base.pow || 0) / 100), now);
       else if (k === 72) { u.mp = 0; this.game.sendStat(u); }   // 72: DecreaseMP(지금 마력 USERDB +0x7a0) = 마력 0 (0x4819c1)
       else if (k === 70 && !cont) {                             // 70: 맞은 사람마다 지속 피해 목록에 하나씩 넣는다 (중심 자리, 횟수 2). 1초 넘게 지날 때마다 그 자리에 다시 범위 기술 (AddToCSAttackList 0x481917, ProcessCSAttack 0x482a40)
         (this.mobCS ||= []).push({ m, s, sid, at: now, n: 2, pos: { x: center.x, y: center.y, z: center.z } });
@@ -1515,7 +1592,9 @@ class World {
     const info = m.info, [act, u] = this.findNextAction(m), t200 = T200 * (this.fxOn(m, 55) ? 2 : 1), step = info.speed * t200, canMove = info.speed > 0;
     // 패턴 2: 처음 본 대상을 기억해 두고 계속 그 대상을 쫓는다 (원작은 이때 외치는 말도 내보낸다)
     if (m.pattern === 2 && act >= 2 && !m.targetName && u) m.targetName = u.name;
-    if (info.img === IMG_WARPER) {      // 3초 돌아다니고 근처로 순간이동하기를 세 번, 그다음 3초 멈춘다 (멈춘 뒤의 범위 기술은 아직 없다)
+    // 모습 98: 남은 고치기 횟수가 5 보다 적고 지난번부터 60초가 넘었으면 5 로 (DoNextAction 0x47be90, +0x298)
+    if (info.img === 98 && m.healCnt < 5 && now - (m.healAt || 0) > 60000) { m.healAt = now; m.healCnt = 5; }
+    if (info.img === IMG_WARPER) {      // 3초 돌아다니고 근처로 순간이동하기를 세 번, 그다음 3초 멈춘 뒤 첫 기술을 범위로 쓴다
       if (act !== 1) return;
       const spent = MOB_TICK * T200 * info.speed * m.warpCnt;
       if (m.warpState < 0 || m.warpState > 3) m.warpState = 0;
@@ -1527,7 +1606,10 @@ class World {
           m.warpState++; m.warpCnt = 0;
         }
       } else if (spent < 3000) m.warpCnt++;
-      else { m.warpCnt = 0; m.warpState = 0; m.delay = Math.ceil((info.skillMs || 0) / MOB_TICK); }
+      else {
+        if (info.skill && SK.get(info.skill) && u) this.mobSkillArea(m, u, SK.get(info.skill), info.skill, now);   // UseSkillRange (0x47c5a0)
+        m.warpCnt = 0; m.warpState = 0; m.delay = Math.ceil((info.skillMs || 0) / MOB_TICK);
+      }
       return;
     }
     if (this.mobSpecial(m, u, act, now)) return;
