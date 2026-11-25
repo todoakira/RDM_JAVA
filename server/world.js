@@ -23,7 +23,6 @@ const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 �
 const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패', '장갑', '무기', '벨트', '반지', '반지', '반지', '', ''];
 // NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~86 이 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420b9b)
 const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85, 86];
-const EVENT_NAMES = { 2: '게시판', 4: '메일', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동' };
 // NPC 와 말하려면 거리 < 25 (ProcessTalkToNPC 0x406815). 은행은 20 칸 (ProcessAddBankItem 0x41ddc0)
 const TALK_DIST = 25, BANK_SLOTS = 20;
 const NEW_CHAR = { money: 300, hp: 50, mp: 50, sp: 0, items: [[4, 1, 5], [5, 93, 1], [5, 94, 1], [5, 95, 1]],
@@ -882,12 +881,26 @@ class World {
     }
     return false;
   }
+  // 이동 이벤트 (종류 1, NPC 의 39 도 같다. ProcessEvent 0x41f239). 막히면 false
+  //  맵에 들어온 지 5초가 안 되면 0x8f (+0x4348). 목적지가 여럿이면 GetTickCount() % 개수 로 하나 (0x41f2a0)
+  warp(p, e, now) {
+    if (now - (p.enteredAt || 0) < 5000) { this.game.story.msg(p, 0x8f); return false; }
+    const k = Math.floor((e.length - 1) / 4); if (k < 1) return false;
+    const j = now % k, to = e[1 + j * 4], pos = [e[2 + j * 4], e[3 + j * 4]];
+    if (!this.storyGate(p, to)) return false;
+    const g = this.game.ship.gate(p, to, pos);
+    if (g === false) return false;
+    if (g === 'done') return true;
+    const w = this.game.world(to);
+    if (w) { this.leave(p); w.enter(p, pos[0], pos[1]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
+    return true;
+  }
   // 맵 79 → 83 이동 지점: 카삼 4 를 마쳐야 하고, 회상 이야기를 듣고, 카삼 회상까지 마쳐야 지나간다 (0x41f2f0)
   storyGate(p, to) {
     if (this.mapId !== 79 || to !== 83) return true;
     const s = p.story || 0;
     if (!(s & 0x400)) { this.game.story.msg(p, 0x75); return false; }
-    if (!(s & 0x800)) { this.script.named(p, 'SayKasamRecollect'); return false; }
+    if (!(s & 0x800)) { if (p.pkPen > 0) this.game.pk.sendPenalty(p); else this.script.named(p, 'SayKasamRecollect'); return false; }   // PK 벌칙 중이면 남은 시간 (0x41f2f0~)
     if (!(s & 0x1000)) { this.game.story.msg(p, 0xb0); return false; }
     return true;
   }
@@ -918,9 +931,9 @@ class World {
     if (kind === 6 || kind === 80) { this.game.openBank(p, n); return; }
     if (kind === 20) { this.game.openExchange(p, e[1] || 0, n); return; }
     if (kind === 43) { this.game.pk.jailor(p); return; }
+    if (kind === 1 || kind === 39) { this.warp(p, e, Date.now()); return; }   // 이동 NPC (ProcessEvent 0x41f239)
     if (kind === 2) { this.game.board.open(p, e[1]); return; }        // 게시판 (ProcessEvent case 2)                // 교도관
-    const what = EVENT_NAMES[kind];
-    p.send({ t: 'chat', id: 0, name: n.name, text: what ? `(${what}: 아직 구현되지 않았습니다)` : '...' });
+    // 그 밖의 종류는 원작도 아무 일 없다 (ProcessEvent 의 기본 갈래 0x421f4b). 4 메일·11~16 군단·45 배틀존은 아직 옮기지 않았다 (docs/unsourced.md)
   }
 
   // ---------- 바닥 아이템 ----------
@@ -1738,16 +1751,7 @@ class World {
       if (gt) { this.game.gotoMap(p, gt.to, gt.tx, gt.ty); continue; }
       // 맵 이동 지점을 밟으면 다른 맵으로 넘어간다
       const e = this.eventAt(n.x, n.y);
-      if (e && e[0] === EV_WARP) {
-        // 목적지가 여럿이면 GetTickCount() % 개수 로 하나 (ProcessEvent 0x41f2a0)
-        const k = Math.floor((e.length - 1) / 4), j = k > 1 ? now % k : 0, to = e[1 + j * 4], pos = [e[2 + j * 4], e[3 + j * 4]];
-        if (!this.storyGate(p, to)) { p.goal = null; continue; }
-        const g = this.game.ship.gate(p, to, pos);
-        if (g === false) { p.goal = null; continue; }
-        if (g === 'done') continue;
-        const w = this.game.world(to);
-        if (w) { this.leave(p); w.enter(p, pos[0], pos[1]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
-      }
+      if (e && e[0] === EV_WARP && this.warp(p, e, now) === false) p.goal = null;
     }
     // 몬스터: 250ms마다 한 번씩 세고, 센 수가 대기 값에 이르면 행동한다 (CMopServer::ProcessDoSomethingMop 0x47aff7)
     if (now - this.mobTickAt > 4 * MOB_TICK) this.mobTickAt = now;

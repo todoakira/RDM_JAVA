@@ -97,7 +97,7 @@ const hitStat = id => DEX_HIT.has(id) ? 'dex' : 'spi';
 //   331 (0x44e78e): ⌊(X + 10 × 기본 민첩성) ÷ 2⌋ × 7 + T+0x30
 //   334 (0x44efb6): 4X + T+0x30. 맞은 몬스터가 살아 있으면 몬스터 효과 14 를 3초 (CMopServer::DoSkillEffect 0x479630 case 0xe)
 //   365 (rm3944 0x100030df → 69번 식 자리): 7X + T+0x30
-//   88, 89, 383 은 활·화살 식(무기 정보의 필요 레벨 구간마다 다른 식, 0x44dfc6·0x44e7e1·0x44f063), 385 는 rm3944 0x1000311a 의 식이라 아직 옮기지 않았다.
+//   88, 89, 383 은 활·화살 식(무기 정보의 필요 레벨 구간마다 다른 식, 0x44dfc6·0x44e7e1·0x44f063), 385 는 rm3944 0x1000311a 의 식 (아래 bowValue)
 const HALF = new Set([21, 32, 61]);
 const FORMULA = {
   26: X => X + Math.floor(X / 5), 27: X => X + Math.floor(X / 2), 29: X => 2 * X, 44: X => 2 * X, 30: X => 2 * X + Math.floor(X / 2),
@@ -212,7 +212,7 @@ const AREA_DEBUFF = {
 //   명중은 싸움 민첩성 대 몬스터 민첩성. X = 근력 공격 + 무기 공격, 끝에 + T+0x30
 //   25 Slash, 45 Dash: 찍은 대상이면 ⌊3X/2⌋, 가는 길의 다른 몬스터는 X (_stricmp 0x452fc7)
 //   323 Cross Blade: 3⌊X/4⌋ + 2 × 마력 소모량, 342 Ghost Spear: 2⌊X/4⌋ + 2 × 마력 소모량 (rm3944 NewMovingAttacks 0x10002fd6)
-//   362 Lunar Blade: ⌊X/2⌋ + 3X (0x453824). 382 Piercing Arrow 는 활 식이라 아직
+//   362 Lunar Blade: ⌊X/2⌋ + 3X (0x453824). 382 Piercing Arrow 는 활 식 (bowValue)
 const MOVING = {
   382: () => 0,   // 활 식 (bowValue)
   25: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X, 45: (X, c, isTarget) => isTarget ? Math.floor(3 * X / 2) : X,
