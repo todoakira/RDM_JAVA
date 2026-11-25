@@ -31,7 +31,6 @@ function randomItem(cls, t, lang) {
   return [cls, L[t % L.length], 1];
 }
 const STATS = ['str', 'spi', 'dex', 'pow'];
-const STAT_NAMES = ['근력', '정신력', '민첩성', '기골'];
 const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 칸 14개: 0~8 부위별, 반지는 9·10·11번 (CheckEquipment 0x434576)
 const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패', '장갑', '무기', '벨트', '반지', '반지', '반지', '', ''];
 // NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~86 이 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420b9b)
@@ -53,6 +52,7 @@ const { Events } = require('./events');
 const EQUIP = require('./equip');
 const SUBQ = require('./subquest');
 const SHIP = require('./spaceship');
+const { hospitalMap, DEFAULT_POS } = SHIP;
 const PKM = require('./pk');
 const BOARD = require('./board');
 const ACC = require('./account');
@@ -404,6 +404,7 @@ class World {
       if (e === 8) p.guard = SK.guardValue(p);
       if (e === 19 && this.fxOn(p, 19, now)) { this.fxOff(p, 19); this.near(p, { t: 'cast', id: p.id, sk: sid }); this.game.sendStat(p); return; }   // 숨기 풀기 (0x447dae)
       (p.fx ||= {})[e] = now + SK.duration(p, s) * 1000; (p.fxSk ||= {})[SK.SELF_EFFECT[s.n]] = sid;
+      if (e === 1) p.fx1Val = 0;                                  // 기술로 건 효과 1 은 값 0 (UseSkillAlone 0x4479a0)
       if (e === 17) { p.fxPow17 = p.spi; p.sp = Math.min(F.SP_MAX, p.sp + 2000); }   // Eidolon: 값 = 정신력 합 (+0x4230), 기력 + 2000 (rm3944 NewEidolonFix 0x10002d6e)
       if (e === 31) p.scarecrow = 0;                                                   // Scarecrow: 막은 횟수 (+0x4238) 를 0 으로 (0x42c1a4)
       if (SK.RECALC_FX.has(e)) this.game.recalc(p, false);
@@ -1134,7 +1135,7 @@ class World {
       if (img !== 0x9b && this.fxOn(u, 26)) return false;
       if (this.fxOn(u, 35) || this.fxOn(u, 19)) return false;
     }
-    if (this.fxOn(u, 1) && m.spi <= 2 * (u.bSpi ?? u.base.spi)) return false;
+    if (this.fxOn(u, 1) && m.spi <= (u.fx1Val || 0) + 2 * (u.bSpi ?? u.base.spi)) return false;   // 효과 1 의 값 (+0x432c) + 기본 정신력 × 2 (0x47d752)
     return true;
   }
   // 몬스터 주변의 관리 영역: 가로 ±10칸, 세로 ±13칸 (CMapServerServer::SetManagementRect 0x468220)
@@ -1928,7 +1929,7 @@ class Game {
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
-      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, inoc: Array.isArray(p.inoc) && p.inoc.some(v => v > 0) ? p.inoc : null, subq: p.subq && p.subq.state ? p.subq : null };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, inoc: Array.isArray(p.inoc) && p.inoc.some(v => v > 0) ? p.inoc : null, subq: p.subq && p.subq.state ? p.subq : null, hairColor: p.hairColor || 0, clothColor: p.clothColor || 0 };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -1954,7 +1955,7 @@ class Game {
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
-      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'qsk', 'pkCount', 'pkPen', 'pkDecay', 'legal', 'inoc']) if (d[k] !== undefined && d[k] !== null) p[k] = d[k];
+      for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'qsk', 'pkCount', 'pkPen', 'pkDecay', 'legal', 'inoc', 'hairColor', 'clothColor']) if (d[k] !== undefined && d[k] !== null) p[k] = d[k];
       if (d.sigBank) p.sigBank = d.sigBank;
       if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
@@ -2261,16 +2262,38 @@ class Game {
   }
   useItem(p, slot) {
     const e = p.inv[slot]; if (!e || p.dead) return;
-    const f = this.itemInfo(e.k, e.i);
-    if (f && (e.k === 1 || e.k === 2 || e.k === 3 || e.k === 6) && f.type !== 14) { this.equipItem(p, slot, f); return; }
+    const f = this.itemInfo(e.k, e.i); if (!f) return;
+    if (!this.itemReqOk(p, e, f)) return;
+    if (f.type !== 14) { this.equipItem(p, slot, f); return; }     // 종류가 14 가 아니면 착용 (0x4302f0)
     if (e.k === 6 && (e.i === 66 || e.i === 74 || e.i === 67)) { this.useSpecialItem(p, slot, e); return; }
     if (INOC.itemOf(e.k, e.i)) { this.useInoc(p, slot, e, f); return; }
-    if (!f || !(f.hp > 0 || f.mp > 0)) { p.send({ t: 'chat', id: 0, name: '안내', text: `${f ? f.name : '이 아이템'}: 사용 효과는 아직 구현되지 않았습니다.` }); return; }
-    const amount = (v, max) => v >= PERCENT_HEAL ? Math.floor(max * (v - PERCENT_HEAL) / 100) : v;
-    if (f.hp > 0) p.hp = Math.min(p.maxHp, p.hp + amount(f.hp, p.maxHp));
-    if (f.mp > 0) p.mp = Math.min(p.maxMp, p.mp + amount(f.mp, p.maxMp));
-    if (--e.n <= 0) p.inv.splice(slot, 1);
-    this.sendInv(p); this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp });
+    // 쓰는 아이템 (종류 14). ProcessUseItem 0x430340~ 의 갈래 순서를 따른다
+    const w = p.world, now = Date.now(), take = () => { if (--e.n <= 0) p.inv.splice(slot, 1); this.sendInv(p); };
+    const { k, i } = e;
+    if (k === 4 && i === 45) { take(); w.userEffect(p, 38, 300, now); this.story.msg(p, 0xa3); return; }     // 효과 38 300초 (0x430511, DoSkillEffect 0x42c2c0 이 0xa3)
+    if (k === 5 && i > 30 && i < 61) { take(); p.clothColor = i - 31; w.near(p, { t: 'look', id: p.id, hair: p.hairColor || 0, cloth: p.clothColor }); return; }   // 옷 염색 +0x4155 (0x4303d0)
+    if (k === 5 && i > 60 && i < 91) { take(); p.hairColor = i - 61; w.near(p, { t: 'look', id: p.id, hair: p.hairColor, cloth: p.clothColor || 0 }); return; }  // 머리 염색 +0x4154
+    if (k === 5 && i === 91) { take(); p.hairColor = p.clothColor = 30; w.near(p, { t: 'look', id: p.id, hair: 30, cloth: 30 }); return; }   // 원색약: 둘 다 30
+    if (k === 5 && i > 142 && i < 148) { take(); this.giveItem(p, 5, 0, (i - 142) * 1000000); return; }     // 돈 100만~500만 (0x430460)
+    if (k === 4 && i === 37) { take(); w.userEffect(p, 1, 30, now); p.fx1Val = 1000; return; }               // 효과 1 30초, 값 1000 (0x430723)
+    if (k === 4 && i === 38) { take(); for (const x of [5, 14, 12, 18]) w.fxOff(p, x); return; }             // 0x43076a
+    if (k === 4 && i === 40) { take(); return; }                                                             // 0x4307e0
+    if (k === 4 && i === 41) { take(); w.fxOff(p, 16); return; }                                             // 0x430800
+    if (k === 6 && i === 41) {                                                                               // 귀환: 이 맵들에서만, 맵의 기본 자리로 (0x430e00)
+      if (![0x48, 0x4c, 0x4d, 0x53, 0x54, 0x55, 0x56, 0xb1, 0xb2, 0xb3].includes(w.mapId)) { this.story.msg(p, 0x91); return; }
+      const d = DEFAULT_POS[w.mapId]; take(); if (d) this.gotoMap(p, w.mapId, d[0], d[1]); return;
+    }
+    if (k === 6 && i === 45) { take(); this.gotoMap(p, hospitalMap(p, w.mapId), 8, 14); return; }           // 병원으로 (8,14,1) (0x430f00)
+    if (k === 6 && i === 68) { take(); p.fame = p.fame > 0 ? Math.max(0, p.fame - 100) : Math.min(0, p.fame + 100); this.sendStat(p); return; }   // DecreaseAbsFame 100
+    if (k === 6 && i === 195) { take(); this.story.msg(p, 0x183); return; }
+    if (k === 4 || (k === 5 && i >= 22 && i <= 25)) { take(); this.applyItemEffect(p, f); return; }       // 일반 (CMapServerClient::UseItem 0x432f60)
+  }
+  // CMapServerClient::UseItem 0x432f60: 체력이 0 이 아니면 체력, 그다음 마력. 19억 이상은 초과분 %, 최대값까지
+  applyItemEffect(p, f) {
+    const pctOf = (v, max) => max < 10000001 ? Math.floor((v - PERCENT_HEAL) * max / 100) : (v - PERCENT_HEAL) * Math.floor(max / 100);
+    if (f.hp && p.hp > 0) p.hp = f.hp < PERCENT_HEAL ? Math.min(p.maxHp, p.hp + f.hp) : p.hp + Math.min(pctOf(f.hp, p.maxHp), p.maxHp - p.hp);
+    if (f.mp) p.mp = f.mp < PERCENT_HEAL ? Math.min(p.maxMp, p.mp + f.mp) : Math.min(p.maxMp, p.mp + Math.min(pctOf(f.mp, p.maxMp), p.maxMp - p.mp));
+    this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp });
   }
   // 이노큘레이터·아이템가드 쓰기 (UseItem 0x4308c3~, 0x42d5f0). 아이템을 하나 없애고 남은 시간을 더한다
   useInoc(p, slot, e, f) {
@@ -2286,12 +2309,22 @@ class Game {
   }
   // 착용: 부위 번호가 곧 칸 번호이고, 반지는 9~13번 칸 중 빈 곳에 낀다
   // 착용 조건: 레벨, 순수 능력치 네 가지, 명성, 직업 (CheckEquipment 0x43439b~0x434528)
+  // 쓰기·착용 조건 (ProcessUseItem 0x42fd80, 0x430200~0x4302f0). 안 되면 메시지를 보내고 false
+  //  레벨 < 필요 레벨 → 6. 성장 아이템(분류 6 의 100~194)은 성장 등급마다 필요 레벨 (700·800·850·900·920·930·940·960·980·1000) → 0x1ac(레벨)
+  //  기본 근력·정신력·민첩성·기골 < 필요 → 0x13·0x14·0x15·0x16. 필요 명성이 0 이 아니고 명성이 작으면 → 7. 직업 9 가 아니고 직업 표에 없으면 → 8
+  itemReqOk(p, e, f) {
+    const msg = (c, ...a) => { this.story.msg(p, c, ...a); return false; };
+    if (p.level < (f.req || 0)) return msg(6);
+    if (e.k === 6 && e.i > 99 && e.i < 195) {
+      const g = e.grade || 0, need = g < 10 ? 700 : g < 20 ? 800 : g < 30 ? 850 : g < 40 ? 900 : g < 50 ? 920 : g < 60 ? 930 : g < 70 ? 940 : g < 80 ? 960 : g < 90 ? 980 : 1000;
+      if (p.level < need) return msg(0x1ac, need);
+    }
+    for (let q = 0; q < 4; q++) if ((f.reqStat || [])[q] > p.base[STATS[q]]) return msg(0x13 + q);
+    if (f.fame && p.fame < f.fame) return msg(7);
+    if (p.chr !== 9 && f.cls && !(f.cls & (1 << p.chr))) return msg(8);
+    return true;
+  }
   equipItem(p, invSlot, f) {
-    const no = t => p.send({ t: 'chat', id: 0, name: '안내', text: `${f.name}: ${t}` });
-    if (p.level < (f.req || 0)) return no(`레벨 ${f.req} 이상이어야 합니다.`);
-    for (let q = 0; q < 4; q++) if ((f.reqStat || [])[q] > p.base[STATS[q]]) return no(`${STAT_NAMES[q]} ${f.reqStat[q]} 이상이어야 합니다.`);
-    if (f.fame && f.fame > p.fame) return no(`명성 ${f.fame} 이상이어야 합니다.`);
-    if (f.cls && !(f.cls & (1 << p.chr))) return no('이 직업은 착용할 수 없습니다.');
     let slot = f.type;
     if (f.type === TYPE_RING) slot = RING_SLOTS.find(s => !p.equip[s]) ?? RING_SLOTS[0];
     if (!(slot >= 0 && slot < EQUIP_SLOTS)) return;

@@ -9,8 +9,8 @@
 const LAUNCH = 87, SHIP = 88;
 const isShip = m => m >= 88 && m <= 92;
 const LAND = { 89: 93, 90: 94, 91: 95, 92: 96 };
-// GetDefaultPIS 0x4723a0 (필요한 맵만)
-const DEFAULT_POS = { 9: [8, 22], 12: [8, 22], 13: [8, 22], 14: [8, 22], 22: [8, 22], 81: [9, 23], 88: [51, 159], 89: [8, 23], 90: [8, 23], 91: [8, 23], 92: [8, 23], 93: [10, 64], 94: [29, 129], 95: [17, 106], 96: [15, 65] };
+// GetDefaultPIS 0x4723a0 (맵 0~0xbc 분기표 0x472a38) + rm3944 NewMapFix 0x10003201 (맵 300~316). data/default_pos.json 은 [x, y, z]
+const DEFAULT_POS = (() => { try { return JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'data', 'default_pos.json'), 'utf8')); } catch { return {}; } })();
 
 // GetHospitalMapNumber 0x43c0f0: 지금 맵 → 병원 맵. 'L' 은 레벨로
 const HOSP = (() => {
@@ -48,7 +48,7 @@ class SpaceShip {
   toHospital(w) {
     for (const p of [...w.players.values()]) {
       if (p.dead) { p.dead = false; p.hp = p.maxHp; p.mp = p.maxMp; }
-      const m = hospitalMap(p, w.mapId), pos = DEFAULT_POS[m] || [8, 14];
+      const m = hospitalMap(p, w.mapId), pos = DEFAULT_POS[m];
       this.game.gotoMap(p, m, pos[0], pos[1]);
     }
   }
