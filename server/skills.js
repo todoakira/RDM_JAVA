@@ -11,7 +11,9 @@
 //   n +0x30  효과 종류. 0 = 한 대상 공격 (UseSkillAttackSingleMop 0x44d84b 의 분기표)
 //   o +0x34  위력(%) (DoSkillAttackMop 0x45f94f)
 //   p +0x38  지속 시간 등 (효과 종류마다 다름)
-//   d, e, f, g, m 은 아직 서버 쪽 쓰임새를 확인하지 못했다 (그림·소리 번호로 보이며 클라이언트에서 확인해야 한다)
+//   서버는 아래 값을 쓰지 않는다. 클라이언트(Main.dll, 같은 0x3c 바이트 구조, 읽기 0x1003bcc0)에서의 쓰임:
+//   d +0x04 아이콘 그림 번호 (CRLEManager::GetSurface, 0x100995ed)   e +0x08 날아가는 그림 번호 (0x10023f33)   f +0x09 모든 기술이 0
+//   g +0x0c 시전자의 동작 번호 (SetAction 0x10032250, 0x10023ce3)   m +0x2c 0 이 아니면 대상을 고르는 기술, 이름 뒤에 0/0/0x58 (0x1001ac2f, 0x100955a1)
 const fs = require('fs');
 const path = require('path');
 

@@ -139,8 +139,8 @@ function drawEnt(e, now) {
   let seq = null, i = 0;
   if (e.deadAt) { seq = seqOf(s, ACT.die, e.dir); if (seq) { i = Math.min(seq.length - 1, Math.floor((now - e.deadAt) / ANIM_MS)); if (e.deadAt > 0 && onScreen(e)) Sound.frameSound(s.def, ACT.die, i, e, 'snd' + e.deadAt); } }
   else if (e.act) {
-    let a = ACT[e.act];
-    seq = seqOf(s, a, e.dir); if (!seq && e.act === 'attack2') { a = ACT.attack; seq = seqOf(s, a, e.dir); }
+    let a = typeof e.act === 'number' ? e.act : ACT[e.act];          // 숫자면 기술의 동작 번호 (기술 칸 g, SetAction 0x10032250)
+    seq = seqOf(s, a, e.dir); if (!seq && (e.act === 'attack2' || typeof e.act === 'number')) { a = ACT.attack2; seq = seqOf(s, a, e.dir); if (!seq) { a = ACT.attack; seq = seqOf(s, a, e.dir); } }
     i = Math.floor((now - e.actAt) / ANIM_MS);
     if (!seq || i >= seq.length) { e.act = ''; seq = null; }
     else if (onScreen(e)) Sound.frameSound(s.def, a, i, e, 'snd' + e.actAt);   // 동작 소리 (ExStage SOUND_SET)
@@ -620,7 +620,8 @@ const handlers = {
   askrevive(m) { UI.msgBox(UI.M0(482).replace('%s', m.name), ['yes', 'no'], y => send({ t: 'revive', yes: y ? 1 : 0 })); },   // 0/0/482 (0x109/0x11)
   ask(m) { UI.ask(m.options, k => send({ t: 'evsel', ev: m.ev, k })); },
   cast(m) {
-    const a = ents.get(m.id); if (a) { a.act = 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; }
+    // 시전자의 동작은 기술 칸 g (+0xc) 의 동작 번호다 (Main.dll 0x10023ce3 → SetAction 0x10032250). 몬스터는 기술 칸이 아니라 공격 동작
+    const a = ents.get(m.id), g = !a || a.mob ? 0 : UI.skAct(m.sk); if (a) { a.act = g || 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; }
     const no = UI.skillBul(m.sk);
     if (m.r !== undefined) { const [px, py] = cellPx(m.x, m.y, m.z); addBullet(no, null, { px, py }); }   // 범위 기술: 중심 자리
     else if (m.tid) { const d = ents.get(m.tid); if (d) addBullet(no, a, d); }                       // 약화 등 대상 기술
@@ -680,8 +681,9 @@ document.addEventListener('mousedown', e => {
 });
 const myName = () => { const me = ents.get(myId); return me ? me.name : ''; };
 // 로그인 → 캐릭터 세 칸 → 고르기 (원작 로그인 서버 svIP.exe, 글은 Message 0/1).
-// 화면은 원작 그림 그대로: 고르기 if-co-ba 의 동그라미 세 개 (가운데 x 156·400·644, y 210), 얼굴 if-fa-* (120×120 두 칸: 보통·고름)
-//   동그라미 안 얼굴 자리와 이름 글 자리는 Main.dll 0x10010881 근처를 다 풀지 못해 그림에 맞춰 두었다 (확인 못 함)
+// 화면은 원작 그림 그대로 (Main.dll 0x100153xx 칸 만들기): 칸마다 단추 하나(if-co-* 움직임) + 이름 글 하나뿐, 얼굴 그림은 따로 없다.
+//   단추 (49,31)-(269,418) · (291,31)-(511,418) · (532,31)-(752,418), 이름 글 (49,370)-(267,416) · (291,370)-(511,416) · (532,370)-(752,416)
+//   이름 글꼴 높이 13 · 굵기 700, 색 0xc8c8 (노랑 c8c800) (0x1001891a~0x10018996)
 const FACE = [113, 114, 115, 116, 118, 117, 121, 119, 120];
 const FA = [25, 17, 26, 19, 24, 18, 20, 22, 21];          // 직업 → if-fa-pi·az·sa·de·pa·ca·ha·lu·la
 const CO = [12, 4, 13, 7, 11, 6, 8, 10, 9];              // 직업 → if-co-* (220×1935 = 220×387 다섯 장: 0 = 회색 멈춤, 1~4 = 고른 움직임)
@@ -693,7 +695,7 @@ function scr(id) { for (const s of ['scrTitle', 'scrSelect', 'scrCreate']) $(s).
 function drawSlots() {
   $('slots').innerHTML = slotList.map((c, i) => c ? `<div class="slot" data-i="${i}" style="left:${SLOT_X[i]}px">` +
     `<div class="body" data-anim="${i === selSlot ? 1 : 0}" style="background-image:url(assets/int/${CO[c.chr]}.png)"></div>` +
-    `<div class="nm">${esc(c.name)}<br>Level : ${c.level}</div></div>` : '').join('');   // 원작 "%s\nLevel : %d" (0x10018a62)
+    `<div class="nm" style="width:${i ? 220 : 218}px">${esc(c.name)}<br>Level : ${c.level}</div></div>` : '').join('');   // 원작 "%s\nLevel : %d" (0x10018a62)
   $('slots').querySelectorAll('.slot').forEach(d => {
     d.onclick = () => { selSlot = Number(d.dataset.i); drawSlots(); };
     d.ondblclick = () => { selSlot = Number(d.dataset.i); startGame(); };

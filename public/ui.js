@@ -191,7 +191,7 @@ const UI = (() => {
       showExch();
     });
   }
-  // 교환소에 올리기 (ExchangeSell 창): 물건 이름·그림, Buyer, Price, OK·Cancel. Buyer 칸은 우리 판에서 남길 말로 쓴다 (원작 뜻은 확인 못 함)
+  // 교환소에 올리기 (ExchangeSell 창): 물건 이름·그림, Buyer, Price, OK·Cancel. Buyer 칸은 살 사람 이름 지정: 비어 있지 않으면 그 이름(대소문자 무시)만 살 수 있고 아니면 0x61 (svMapServer ProcessExchangeBuyItem 0x40f6a0, 이름은 꾸러미 0xc 뒤 최대 16바이트 0x40f320)
   let xsItem = null;
   function openXs(it) {
     xsItem = it; el('xsname').textContent = it.name + (it.n > 1 ? ' × ' + it.n : '');
@@ -270,7 +270,8 @@ const UI = (() => {
   function skText(id) {
     const s = skInfo && skInfo[id], t = s && msgs && msgs[2] && msgs[2][s.c] && msgs[2][s.c][s.b];
     if (!t) return { name: '기술 ' + id, desc: '' };
-    const [name, desc = ''] = t.split('@'); return { name, desc };
+    const [name, desc = ''] = t.split('@');
+    return { name: s.m ? name + M0(0x58) : name, desc };            // 대상을 고르는 기술(m ≠ 0)이면 이름 뒤에 0/0/0x58 (Main.dll 0x100955a1)
   }
   function skIcon(id, state) {
     const s = skInfo && skInfo[id]; if (!s) return '';
@@ -307,8 +308,9 @@ const UI = (() => {
   el('winSk').addEventListener('mouseover', e => { const c = e.target.closest('.skc'); const v = c ? Number(c.dataset.sk) : 0; if (v !== skHover) { skHover = v; drawSk(); } });
   el('winSk').addEventListener('mouseleave', () => { skHover = 0; drawSk(); });
   setInterval(() => { if (fxList.length) drawFx(); }, 1000);
-  const isSelfSkill = id => !!(skInfo && skInfo[id] && skInfo[id].l === 0);
-  const isAreaSkill = id => !!(skInfo && skInfo[id] && skInfo[id].l >= 10000);
+  // 대상을 고르지 않는 기술: 기술 칸 m (+0x2c) 이 0 (Main.dll 0x1001ac2f·0x1001213e·0x1001b029). m 이 0 이 아니면 이름 뒤에 0/0/0x58 '(대상 지정)' (0x100955a1)
+  const isSelfSkill = id => !!(skInfo && skInfo[id] && skInfo[id].m === 0 && skInfo[id].l < 10000);
+  const isAreaSkill = id => !!(skInfo && skInfo[id] && skInfo[id].m === 0 && skInfo[id].l >= 10000);
   // 걸려 있는 효과: [효과 번호, 남은 초, 건 기술]. 서버는 끝날 때만 다시 알려 주므로 초는 여기서 센다.
   let fxList = [], fxAt = 0;
   function drawFx(list) {
@@ -350,7 +352,8 @@ const UI = (() => {
   const WINID = id => id === 'skill' ? 'winSk' : id;
   function closeWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display === 'block') toggle(id); }
   function openWin(id) { id = WINID(id); if (id && el(id) && el(id).style.display !== 'block') toggle(id); }
-  // 선택지 창: 메시지 창 그림 iw-me-ba(73) 위에 고를 줄을 늘어놓는다 (원작 창 안의 배치는 아직 확인하지 못함)
+  // 선택지 창 ("Choose" 164,315 · 471×170, Main.dll 0x10007d52): 바탕 im-qs-ba, 줄 다섯은 단추 im-qs-bu (보통 0~25, 눌림 25~50).
+  //   줄 사각형 (17,18)-(453,43), (17,45)-(453,69), (17,71)-(453,97), (17,99)-(453,123), (17,125)-(453,151) (0x10079876~0x10079b4f)
   // 대화 기록 창 (History, iw-hi-ba 400×250, 원작 위치 397,317, Main.dll 0x10082870): 글 칸 (23,12)~(358,215),
   // 아래 단추 System (36) Shout (96) Whisper (147) Group (216) Army (272), 위 220 높이 17. 단추를 누르면 그 종류의 글을 보이거나 감춘다
   const HIST = [], HSHOW = { sys: 1, shout: 1, whisper: 1, grp: 1, army: 1 };
@@ -514,12 +517,12 @@ const UI = (() => {
     let k = 0; return t.replace(/\\n/g, '\n').replace(/%[uds]/g, () => String(args && args[k] !== undefined ? args[k++] : ''));
   }
   // 선택지 창 (Main.dll 0x100797c0): 보기 단추 다섯 개, 왼쪽 17, 위 18·45·71·99·125, 크기 436×25
-  const ASK_TOP = [18, 45, 71, 99, 125];
+  const ASK_TOP = [18, 45, 71, 99, 125], ASK_H = [25, 24, 26, 24, 26];
   function askChoice(options, cb) {
     const box = el('winAsk');
-    box.innerHTML = options.slice(0, 5).map((t, k) => `<div class="askopt" data-k="${k + 1}" style="top:${ASK_TOP[k]}px">${esc(t)}</div>`).join('');
+    box.innerHTML = options.slice(0, 5).map((t, k) => `<div class="askopt" data-k="${k + 1}" style="top:${ASK_TOP[k]}px;height:${ASK_H[k]}px">${esc(t)}</div>`).join('');
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

@@ -584,58 +584,54 @@ class World {
     }
   }
   // 돌진 (UseSkillMovingAttack 0x451410): 대상 쪽으로 한 칸씩 (STAFFGetNextPIS) 가서 대상 너머 한 칸을 도착점으로 삼는다 (거리 ≤ l, 설 수 있고 빈 칸).
-  //   출발점과 도착점 사이 칸의 몬스터를 친 뒤 시전자를 도착점으로 옮긴다. 도착점을 정하는 쪽은 원작에서 클라이언트라 여기서는 이렇게 고른다
-  castMoving(p, m, s, sid, cost, now) {
-    const dir = G.direction(p, m), cells = [];
+  //   도착점을 정하는 쪽은 원작에서 클라이언트라 여기서는 이렇게 고른다. 대상이 몬스터든 사람이든 같은 함수가 처리한다:
+  //   마력은 한 번 (0x4515dc). 출발점에서 l 안이고 막힘이 없는 사람 가운데 출발점→도착점 줄 위에 있는 사람마다 (FirstInDistanceEntry 0x45163e,
+  //   NoObstacle 0x45166a, 줄 따라가기 0x4516ac~0x45174b) 한 대상 공격과 같은 PK 조건·정당방위·명중·되돌림으로 친다 (DoSkillAttackUser 0x452196·0x4529bb·0x452a2b).
+  //   줄 위의 몬스터도 친다 (DoSkillAttackMop). 값은 찍은 대상이면 기술 식, 가는 길의 다른 것은 X (_stricmp 0x4520fa·0x452fc7)
+  castMoving(p, m, s, sid, cost, now) { this.movingAttack(p, m, s, sid, cost, now); }
+  castMovingUser(p, d, s, sid, now) {
+    const cost = this.payForSkill(p, s); if (cost < 0) return;
+    this.movingAttack(p, d, s, sid, cost, now);
+  }
+  movingAttack(p, tgt, s, sid, cost, now) {
+    const dir = G.direction(p, tgt), cells = [];
     let cur = { x: p.x, y: p.y, z: p.z }, dest = null;
     for (let i = 0; i < 40; i++) {
       const n = G.next(cur, dir); if (G.dist(p, n) > s.l) break;
-      if (G.same(n, m)) { cells.push(n); const b = G.next(n, dir); if (G.dist(p, b) <= s.l && this.canUser(b) && this.free(b, p.id)) dest = b; else dest = cur; break; }
+      if (G.same(n, tgt)) { cells.push(n); const b = G.next(n, dir); if (G.dist(p, b) <= s.l && this.canUser(b) && this.free(b, p.id)) { dest = b; cells.push(b); } else dest = cur; break; }
       cells.push(n); cur = n;
     }
     if (!dest) return;
-    const hit = [...this.mobs.values()].filter(o => o.hp > 0 && cells.some(c => G.same(c, o)) && !G.same(o, dest));
+    const start = { x: p.x, y: p.y, z: p.z };
+    const onPath = o => cells.some(c => G.same(c, o));
+    const mobs = [...this.mobs.values()].filter(o => o.hp > 0 && onPath(o) && !G.same(o, dest));
+    const users = [...this.players.values()].filter(u => u !== p && !u.dead && G.dist(start, u) <= s.l && this.noObstacle(start, u) && onPath(u));
+    this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);
     if (sid === 25 || sid === 45) {                             // 시전자가 옮겨지는 것은 Slash·Dash 뿐 (UseSkill 0x45f19b → ProcessUseWarpSkill)
       this.release(p); p.x = dest.x; p.y = dest.y; p.z = dest.z; p.dir = dir; this.take(p);
       this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir });
     } else p.dir = dir;
-    const X = p.atk, f = SK.MOVING[sid];
-    for (const o of hit) {
+    const X = p.atk, f = SK.MOVING[sid] || ((x) => x);
+    const value = isT => (sid === 382 ? SK.bowValue(382, p, this.fightDex(p, now), this.weaponInfo(p)) : f(X, cost, isT)) + (p.atkExtra || 0);
+    for (const o of mobs) {
       if (F.rand100() > this.hitChance(p, o, F.hitPct(this.fightDex(p, now), this.mobDex(o, now)), now)) { this.near(p, { t: 'atk', id: p.id, tid: o.id, dir, k: 2, sk: sid, miss: 1, hp: o.hp }); continue; }
-      const v = (sid === 382 ? SK.bowValue(382, p, this.fightDex(p, now), this.weaponInfo(p)) : f(X, cost, o === m)) + (p.atkExtra || 0);
-      this.applyDamage(p, o, this.mobDamage(p, Math.max(1, SK.damage(v, s.o, p.skDmg || 0)), now, o), now, { k: 2, sk: sid });
+      this.applyDamage(p, o, this.mobDamage(p, Math.max(1, SK.damage(value(o === tgt), s.o, p.skDmg || 0)), now, o), now, { k: 2, sk: sid });
     }
-    if (!hit.length) this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id });
-  }
-  // 돌진 기술로 사람을 찍었을 때 (UseSkillMovingAttack 0x451410 의 사람 분기 0x45187f~0x452a35).
-  //   조건·정당방위는 한 대상 공격과 같고, 찍은 사람만 친다 (가는 길의 다른 사람을 치는지는 확인하지 못함).
-  //   명중은 양쪽 fightDex (대상 효과 44 면 + /5), 효과 24 되돌림·빗나감 되돌림, 값은 몬스터 판과 같은 식 + T+0x30 → DoSkillAttackUser
-  castMovingUser(p, d, s, sid, now) {
     const PK = this.game.pk;
-    if (!PK.skillGate(p, d)) return;
-    const cost = this.payForSkill(p, s); if (cost < 0) return;
-    PK.skillSide(p, d);
-    this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);
-    const dir = G.direction(p, d);
-    let cur = { x: p.x, y: p.y, z: p.z }, dest = null;
-    for (let i = 0; i < 40; i++) {
-      const n = G.next(cur, dir); if (G.dist(p, n) > s.l) break;
-      if (G.same(n, d)) { const b = G.next(n, dir); dest = G.dist(p, b) <= s.l && this.canUser(b) && this.free(b, p.id) ? b : cur; break; }
-      cur = n;
+    for (const d of users) {
+      if (!PK.skillGate(p, d)) continue;
+      PK.skillSide(p, d);
+      let reflect = false;
+      if (this.fxOn(d, 24, now) && !(d.pkPen > 0)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(d.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
+      const dd = this.fightDex(d, now), ok = F.rand100() <= this.hitChance(p, d, F.hitPct(this.fightDex(p, now), this.fxOn(d, 44, now) ? dd + Math.floor(dd / 5) : dd), now);
+      if (!ok && !this.fxOn(d, 24, now)) { this.near(p, { t: 'atk', id: p.id, tid: d.id, dir, k: 2, sk: sid, miss: 1, hp: d.hp }); continue; }
+      const t = !ok || reflect ? p : d, av = value(d === tgt);
+      const raw = (av > 1000000 ? Math.floor(av / 100) * s.o : Math.floor(av * s.o / 100)) + (p.skDmg || 0);
+      const dmg = this.userDamage(p, t, Math.max(1, raw), now);
+      if (this.fxOn(t, 6, now)) { t.mp = Math.max(0, t.mp - (2 * dmg + Math.floor(dmg / 4))); this.near(p, { t: 'atk', id: p.id, tid: t.id, dir, k: 2, sk: sid, dmg, hp: t.hp }); if (!t.mp) this.fxOff(t, 6); this.game.sendStat(t); continue; }
+      this.applyDamage(p, t, dmg, now, { k: 2, sk: sid });
     }
-    if (!dest) return;
-    if (sid === 25 || sid === 45) { this.release(p); p.x = dest.x; p.y = dest.y; p.z = dest.z; p.dir = dir; this.take(p); this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir }); }
-    else p.dir = dir;
-    let reflect = false;
-    if (this.fxOn(d, 24, now) && !(d.pkPen > 0)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(d.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
-    const dd = this.fightDex(d, now), ok = F.rand100() <= this.hitChance(p, d, F.hitPct(this.fightDex(p, now), this.fxOn(d, 44, now) ? dd + Math.floor(dd / 5) : dd), now);
-    if (!ok && !this.fxOn(d, 24, now)) { this.near(p, { t: 'atk', id: p.id, tid: d.id, dir, k: 2, sk: sid, miss: 1, hp: d.hp }); return; }
-    const t = !ok || reflect ? p : d;
-    const av = (sid === 382 ? SK.bowValue(382, p, this.fightDex(p, now), this.weaponInfo(p)) : SK.MOVING[sid](p.atk, cost, true)) + (p.atkExtra || 0);
-    const raw = (av > 1000000 ? Math.floor(av / 100) * s.o : Math.floor(av * s.o / 100)) + (p.skDmg || 0);
-    const dmg = this.userDamage(p, t, Math.max(1, raw), now);
-    if (this.fxOn(t, 6, now)) { t.mp = Math.max(0, t.mp - (2 * dmg + Math.floor(dmg / 4))); this.near(p, { t: 'atk', id: p.id, tid: t.id, dir, k: 2, sk: sid, dmg, hp: t.hp }); if (!t.mp) this.fxOff(t, 6); this.game.sendStat(t); return; }
-    this.applyDamage(p, t, dmg, now, { k: 2, sk: sid });
+    if (!mobs.length && !users.length) this.near(p, { t: 'cast', id: p.id, sk: sid, tid: tgt.id });
   }
   // 든 무기의 아이템 정보 (CrItemInfo::Get: 분류 1 또는 6)
   weaponInfo(p) { const e = p.equip && p.equip[7]; return e ? this.game.itemInfo(e.k, e.i) : null; }
