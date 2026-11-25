@@ -270,19 +270,20 @@ class World {
     const m = id ? this.mobs.get(id) : null, s = SK.get(sid);
     if (p.dead || !s || this.fxOn(p, 39) || !this.skillReady(p, sid, s)) return;   // 효과 39: 기술도 못 쓴다 (ProcessUseSkill 0x43c357)
     const area = s.l >= 10000;
-    const ok = area ? ((s.n === 0 || s.n === 78) && (s.a === 1 || SK.areaFormulaKnown(sid))) || (s.a === 0 && s.n in SK.AREA_DEBUFF)
-      : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
+    // 원작은 분기표에 없는 종류도 받는다 (한 대상: 0x451120 / 0x44c3be, 범위: 효과 없이 방향만). 그래서 사거리만 있으면 쓸 수 있다
+    const ok = area || s.l > 0;
     const u = id ? this.players.get(id) : null;
-    if (!area && u && u !== p && s.l > 0 && ((s.n === 0 && (s.a === 1 || SK.formulaKnown(sid))) || (s.a === 0 && s.n in SK.USER_DEBUFF) || (s.n === 36 && sid in SK.MOVING))) {   // 사람에게 공격 기술 (PK)
+    if (!area && u && u !== p && s.l > 0 && s.n !== 1 && s.n !== 44) {   // 사람에게 공격 기술 (PK). 종류 1·44 는 회복·부활 (UseSkill 0x45ed4f)
       p.cast = { sid, id, user: 1 }; p.target = 0; p.run = !!run; p.pick = 0; p.talk = 0; return;
     }
-    if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
+    if (!area && (s.n === 1 || s.n === 44) && m) return;        // 몬스터에게 회복·부활: 군단 홀 몬스터(0x56)만 받고 나머지는 아무 일 없음 (UseSkill 0x45ed63)
+    if (!area && (s.n === 1 || s.n === 44)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       const t = u || p;
       if (t !== p && (G.dist(p, t) > s.l || !this.noObstacle(p, t))) return;   // 사거리 밖이거나 막히면 알림 없이 끝난다 (UseSkill 0x45ecf0~0x45ed3d)
       p.skillAt = now + SK.USE_MS; this.cureUser(p, t, s, sid, now); return;
     }
-    if (area && s.a === 0 && SK.RANGE_EFFECT_TYPES.has(s.n)) {   // 범위 효과 (UseSkillRangeEffect 0x453b00): 대상은 주인공이거나 없음
+    if (area && SK.RANGE_EFFECT_TYPES.has(s.n)) {   // 범위 효과 (UseSkillRangeEffect 0x453b00): 대상은 주인공이거나 없음
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       p.skillAt = now + SK.USE_MS; this.castRangeEffect(p, id ? this.players.get(id) : null, s, sid, now); return;
     }
@@ -373,8 +374,10 @@ class World {
     const s = SK.get(sid), now = Date.now();
     if (s && s.l >= 10000) { this.skillCmd(p, sid, 0); return; }   // 범위 기술을 대상 없이
     if (p.dead || !s || !SK.list(p).includes(sid)) return;
-    if (s.a === 0 && s.l === 0 && [20, 23, 48].includes(s.n)) { this.moveSkillAsk(p, s); return; }
-    if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) return;
+    if (s.l === 0 && [20, 23, 48].includes(s.n)) { this.moveSkillAsk(p, s); return; }
+    if (s.l !== 0) return;
+    const ev = this.eventAt(p.x, p.y); if (ev && ev[0] === 0x16) { p.send({ t: 'sys', code: 0x7e, args: [] }); return; }   // 이벤트 0x16 자리에서는 자기 기술을 못 쓴다 (UseSkill 0x45e9a6)
+    if (!(s.n === 1 || s.n in SK.SELF_EFFECT)) return;           // UseSkillAlone 분기표에 없는 종류는 아무 일 없음 (0x44814f)
     if (now < (p.skillAt || 0)) return;
     const cost = SK.mpCost(s, p.maxMp);
     if (p.mp < cost) return;                                     // 마력이 모자라면 알림 없이 끝난다 (CMapServerClient::DecreaseMP 0x43973d)
@@ -492,9 +495,10 @@ class World {
     this.fxOff(p, 1); this.fxOff(p, 19);                                            // 위장이 풀린다 (0x454956)
     if (target) { const d = G.direction(p, target); if (d !== 5) p.dir = d; }
     this.near(p, { t: 'cast', id: p.id, sk: sid, x: center.x, y: center.y, z: center.z, r: rad });
-    const adb = s.a === 0 ? SK.AREA_DEBUFF[s.n] : null;
+    const adb = SK.AREA_DEBUFF[s.n] || null, known = s.n === 0 || s.n === 78 || adb;   // 그 밖의 종류는 대상마다 방향만 정하고 효과 없음 (0x45a9d4)
     for (const m of [...this.mobs.values()]) {
       if (m.hp <= 0 || G.dist(center, m) > rad || !this.noObstacle(center, m)) continue;
+      if (!known) continue;
       if (adb) { this.debuffOne(p, m, s, sid, adb, now); continue; }
       let dmg;
       if (s.a === 1) dmg = SK.damage(SK.specialAttack(p.level), s.o, p.skDmg || 0);            // 특수: 반드시 맞음 (0x45d409)
@@ -519,12 +523,12 @@ class World {
   //   특수 기술: 반드시 맞고 ⌊레벨²/6⌋ + 50. 고유 식 기술: 민첩성 명중, 식 값 + T+0x30. 그 밖: 정신력 명중, 마력 소모량 + T+0x34
   //   약화 (AREA_USER_DEBUFF): 정신력 명중 뒤 효과. 되돌려지거나 효과 24 인 대상에게 빗나가면 시전자에게 (0x459ae5~0x45a852)
   areaUsers(p, center, rad, s, sid, cost, now) {
-    const PK = this.game.pk, adb = s.a === 0 ? SK.AREA_USER_DEBUFF[s.n] : null;
-    if (s.a === 0 && !adb && s.n !== 0 && s.n !== 78) return;
+    const PK = this.game.pk, adb = SK.AREA_USER_DEBUFF[s.n] || null, known = s.a === 1 || s.n === 0 || s.n === 78 || adb;
     for (const u of [...this.players.values()]) {
       if (u === p || u.dead || G.dist(center, u) > rad || !this.noObstacle(center, u)) continue;
       if (!PK.skillGate(p, u, true)) continue;
       PK.skillSide(p, u);
+      if (!known) continue;                                      // 분기표에 없는 종류: 정당방위만 남고 효과 없음 (switchD_00454e31_caseD_1)
       let reflect = false;
       if (this.fxOn(u, 24, now) && !(u.pkPen > 0)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(u.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
       const v44 = x => this.fxOn(u, 44, now) ? x + Math.floor(x / 5) : x;
@@ -721,7 +725,22 @@ class World {
   }
   // 나쁜 효과 지우기: 5·12·14·16·18 (UseSkillAlone 0x447b74 과 같은 묶음)
   cureBad(u) { if (u.fx) for (const e of [5, 12, 14, 16, 18]) delete u.fx[e]; }
+  // 모습 78 몬스터가 한 대상 기술을 맞으면 곧바로 둘째 기술을 범위로 쓴다 (UseSkillAttackSingleMop 0x451120 끝, CMopServer::UseSkillRange 0x4813c0).
+  //   다음 행동까지는 그 기술의 i 값(ms)을 몬스터 박자로 나눈 만큼 (올림)
+  mobCounter(p, m, now) {
+    if (m.hp <= 0 || m.info.img !== 78 || !m.info.skill2) return;
+    const s2 = SK.get(m.info.skill2); if (!s2) return;
+    this.mobSkillArea(m, p, s2, m.info.skill2, now);
+    m.delay = Math.ceil((s2.i || 0) / MOB_TICK);
+  }
+  // 종류 54 (한 대상): 시전자에게 효과 57 이 있으면 메시지 0x11e 로 끝나고, 없으면 효과 57 을 ⌊정신력 ÷ 50⌋ + p 초 건다 (0x44d7c5 · 0x448a7c, +0x852 & 0x200)
+  lock57(p, s, now) {
+    if (s.n !== 54) return true;
+    if (this.fxOn(p, 57, now)) { p.send({ t: 'sys', code: 0x11e, args: [] }); return false; }
+    (p.fx ||= {})[57] = now + (Math.floor((p.spi || 0) / 50) + s.p) * 1000; this.sendFx(p); return true;
+  }
   castSkill(p, m, s, sid, now) {
+    if (!this.lock57(p, s, now)) return;
     const cost = this.payForSkill(p, s); if (cost < 0) return;   // 마력은 명중 판정 전에 줄어든다 (DecreaseMP 0x44d835)
     if (s.a === 1) {                                             // 특수 기술: 반드시 맞음 (0x44f81c)
       this.fxOff(p, 1); this.fxOff(p, 19);
@@ -729,11 +748,14 @@ class World {
       this.applyDamage(p, m, this.mobDamage(p, Math.max(1, SK.damage(SK.specialAttack(p.level), s.o, p.skDmg || 0)), now, m), now, { k: 2, sk: sid });
       return;
     }
-    this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);                         // 공격 기술을 쓰면 위장·19·35 가 풀린다 (0x44d873~0x44d8a6)
     const d = G.direction(p, m); if (d !== 5) p.dir = d;
     if (s.n === 36) { this.castMoving(p, m, s, sid, cost, now); return; }
+    if (s.n === 0) { this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35); }       // 종류 0 이면 위장·19·35 가 풀린다 (분기 0 의 0x44d873~0x44d8a6)
     const db = SK.MOB_DEBUFF[s.n];
-    if (db) { this.castDebuff(p, m, s, sid, db, cost, now); return; }
+    if (db) { this.castDebuff(p, m, s, sid, db, cost, now); this.mobCounter(p, m, now); return; }
+    if (s.n !== 0) {                                             // 분기표에 없는 종류 (0x451120): 마력만 쓰고 효과 없이 기술 모습만 보인다
+      this.near(p, { t: 'cast', id: p.id, sk: sid, tid: m.id }); this.mobCounter(p, m, now); return;
+    }
     const dex = SK.hitStat(sid) === 'dex';
     if (F.rand100() > this.hitChance(p, m, F.hitPct(dex ? this.fightDex(p, now) : p.spi, dex ? this.mobDex(m, now) : this.mobSpi(m, now)), now)) {
       this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 2, sk: sid, miss: 1, hp: m.hp }); return;
@@ -751,6 +773,7 @@ class World {
       if (dr.sp) p.sp = Math.min(F.SP_MAX, p.sp + Math.floor(dealt * dr.sp[0] / dr.sp[1]));
       this.game.sendStat(p);
     }
+    this.mobCounter(p, m, now);
   }
   // 사람에게 쓰는 한 대상 공격 기술 (UseSkillAttackSingleUser 0x448940, 효과 종류 0 만). 몬스터 판(castSkill)과 다른 점:
   //   - 대상이 효과 24 면: 되돌림 확률 ⌊min(정신력,7000) × 3 ÷ 350⌋ + 20 (20~80, 0x4489cc~0x448aa0). 되돌려지거나 빗나가면 시전자가 대신 맞는다 (0x449740~0x449797, 특수 기술 0x44b464)
@@ -760,9 +783,14 @@ class World {
   castSkillUser(p, d, s, sid, now) {
     const PK = this.game.pk;
     if (!PK.skillGate(p, d)) return;
+    if (!this.lock57(p, s, now)) return;
     const cost = this.payForSkill(p, s); if (cost < 0) return;
     PK.skillSide(p, d);
     const dir = G.direction(p, d); if (dir !== 5) p.dir = dir;
+    if (s.n !== 0) {                                             // 분기표에 없는 종류 (0x44c3be): 대상이 효과 45 이고 PK 벌칙 시간이 없으면 대상 마력이 0
+      if (this.fxOn(d, 45, now) && !(d.pkPen > 0)) { d.mp = 0; this.game.sendStat(d); }
+      this.near(p, { t: 'cast', id: p.id, sk: sid, tid: d.id }); return;
+    }
     this.fxOff(p, 1); this.fxOff(p, 19); this.fxOff(p, 35);
     let reflect = false;
     if (this.fxOn(d, 24, now)) { const r = Math.max(20, Math.min(80, Math.floor(Math.min(d.spi || 0, 7000) * 3 / 350) + 20)); reflect = F.rand100() < r; }
@@ -803,6 +831,7 @@ class World {
   castDebuffUser(p, d, s, sid, db, now) {
     const PK = this.game.pk;
     if (!PK.skillGate(p, d)) return;
+    if (!this.lock57(p, s, now)) return;
     const cost = this.payForSkill(p, s); if (cost < 0) return;
     PK.skillSide(p, d);
     const dir = G.direction(p, d); if (dir !== 5) p.dir = dir;
@@ -1570,18 +1599,23 @@ class World {
     }
     // 장비 묶음 덤 (server/equip.js): 몬스터에게 주는 피해 + mobDmgPct% (CMopServer::DecreaseHP 0x478446, 최대 2억),
     //   몬스터에게 받는 피해 − mobDefPct% (최대 80, 적어도 1 은 남김. CMapServerClient::DecreaseHP 0x4393d2)
-    if (d.mob && a && !a.mob && a.mobDmgPct > 0) dmg = Math.min(200000000, dmg + pct(dmg, a.mobDmgPct));
+    //   공격자에게 효과 68·69 (USERINFO +0x854 & 0x30) 가 있으면 그 값에 다시 ÷10 을 더한다 (0x47847e)
+    if (d.mob && a && !a.mob && dmg > 0) {
+      if (a.mobDmgPct > 0) dmg += pct(dmg, a.mobDmgPct);
+      if (this.fxOn(a, 68, now) || this.fxOn(a, 69, now)) dmg += Math.floor(dmg / 10);
+      dmg = Math.min(200000000, dmg);
+    }
     //   이노큘레이터 1 (몬스터 방어) 이 켜져 있으면 +15 (최대 80, 0x4393d8)
     if (!d.mob && a && a.mob && dmg > 0) { let r = Math.min(80, d.mobDefPct || 0); if (INOC.on(d, 1)) r = Math.min(80, r + 15); if (r > 0) dmg -= Math.min(pct(dmg, r), Math.max(dmg, 1) - 1); }
     // 사람에게 맞을 때 (CMapServerClient::DecreaseHP 0x4394a0):
     //   줄임 % = 장비 대인 방어 (+0x4378, 최대 90). 레벨 1000 이 1000 미만에게 맞으면 +30, 이노큘레이터 7 이면 +15 (각각 최대 90).
     //   더함 = 공격자 +0x4370 % (장비 묶음 덤). 피해 += 더함, 그다음 줄임만큼 빼되 1 은 남긴다. 최대 2억.
-    //   공격자 USERDB +0x854 & 0x30 이면 피해의 1/10 을 더 더하는데, 그 칸이 무엇인지 몰라 넣지 않았다.
+    //   공격자에게 효과 68·69 (USERINFO +0x854 & 0x30) 가 있으면 더함에 원래 피해의 ÷10 을 보탠다 (0x439560)
     if (!d.mob && a && !a.mob && dmg > 0) {
       let r = Math.min(90, d.pvpPct || 0);
       if (d.level === 1000 && a.level < 1000) r = Math.min(90, r + 30);
       if (INOC.on(d, 7)) r = Math.min(90, r + 15);
-      const cut = r > 0 ? pct(dmg, r) : 0, plus = a.mobDmgPct > 0 ? pct(dmg, a.mobDmgPct) : 0;
+      const cut = r > 0 ? pct(dmg, r) : 0, plus = (a.mobDmgPct > 0 ? pct(dmg, a.mobDmgPct) : 0) + (this.fxOn(a, 68, now) || this.fxOn(a, 69, now) ? Math.floor(dmg / 10) : 0);
       dmg += plus; if (cut) dmg -= Math.min(cut, Math.max(dmg, 1) - 1); dmg = Math.min(200000000, dmg);
     }
     if (!d.mob && dmg > 0 && this.fxOn(d, 31, now)) {           // 효과 31 Scarecrow: 처음 세 번은 피해 0, 세 번째에 풀린다 (CMapServerClient::DecreaseHP 0x43922e)
@@ -1675,7 +1709,7 @@ class World {
           p.goal = null;
           if (now >= (p.skillAt || 0) && now >= p.nextAt) {
             const sid = p.cast.sid, toUser = !!p.cast.user; p.cast = null; p.skillAt = now + SK.USE_MS;
-            if (toUser) { if (s.n === 36) this.castMovingUser(p, m, s, sid, now); else if (s.a === 0 && s.n in SK.USER_DEBUFF) this.castDebuffUser(p, m, s, sid, SK.USER_DEBUFF[s.n], now); else this.castSkillUser(p, m, s, sid, now); }
+            if (toUser) { if (s.n === 36) this.castMovingUser(p, m, s, sid, now); else if (s.n in SK.USER_DEBUFF) this.castDebuffUser(p, m, s, sid, SK.USER_DEBUFF[s.n], now); else this.castSkillUser(p, m, s, sid, now); }
             else if (s.l >= 10000) this.castArea(p, m, s, sid, now); else this.castSkill(p, m, s, sid, now);
           }
         } else p.goal = { x: m.x, y: m.y, z: m.z };
