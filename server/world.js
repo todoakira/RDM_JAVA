@@ -377,7 +377,7 @@ class World {
     if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
     if (now < (p.skillAt || 0)) return;
     const cost = SK.mpCost(s, p.maxMp);
-    if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return; }
+    if (p.mp < cost) return;                                     // 마력이 모자라면 알림 없이 끝난다 (CMapServerClient::DecreaseMP 0x43973d)
     p.skillAt = now + SK.USE_MS;
     if (s.n === 1) {
       if (sid === 24) { p.mp -= cost; p.hp = p.maxHp; }
@@ -481,7 +481,7 @@ class World {
   payForSkill(p, s) {
     if (s.a === 1) { if (p.dp < p.maxDp) return -1; p.dp = 0; this.game.sendStat(p); return 0; }
     const cost = SK.mpCost(s, p.maxMp);
-    if (p.mp < cost) { p.send({ t: 'note', text: '마력이 부족합니다.' }); return -1; }
+    if (p.mp < cost) return -1;                                  // 알림 없음 (DecreaseMP 0x43973d)
     p.mp -= cost; this.game.sendStat(p); return cost;
   }
   // 범위 공격 (UseSkillAttackRange 0x454600)

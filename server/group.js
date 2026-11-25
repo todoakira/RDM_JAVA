@@ -40,7 +40,7 @@ class Groups {
     if (!g || g.leader !== p.name || !name || name.length > 16) return;
     if (g.members.length >= MAX || g.members.includes(name)) return;
     const t = [...p.world.players.values()].find(q => q.name === name);
-    if (!t) { p.send({ t: 'note', text: `${name}: 같은 맵에 없습니다.` }); return; }            // -3: 원작은 알림 없이 끝난다. 이 줄만 이 게임의 안내
+    if (!t) return;                                                                            // -3: 원작은 알림 없이 끝난다
     if (t.group) { this.game.story.msg(p, 0xa7, name); return; }                               // -4
     if (!this.levelOk([...this.players(g).map(q => q.level), t.level])) return;                 // -5: 보통 서버는 알림 없음
     g.invited.add(name);
