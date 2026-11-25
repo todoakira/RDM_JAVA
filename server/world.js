@@ -2073,7 +2073,7 @@ class Game {
     n = Math.min(n, it.n);
     const B = this.bankOf(p);
     let b = B.items.find(q => q.k === it.k && q.i === it.i);
-    if (!b) { if (B.items.length >= BANK_SLOTS) { p.send({ t: 'chat', id: 0, name: '안내', text: '은행에 빈 칸이 없습니다.' }); return; } b = { k: it.k, i: it.i, n: 0 }; B.items.push(b); }
+    if (!b) { if (B.items.length >= BANK_SLOTS) return; b = { k: it.k, i: it.i, n: 0 }; B.items.push(b); }   // 빈 칸이 없으면 아무 일 없음 (ProcessAddBankItem 0x41ddc0)
     b.n += n; it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
     this.sendInv(p); this.sendStat(p); this.sendBank(p); this.save(p);
   }
@@ -2178,9 +2178,18 @@ class Game {
     const f = this.itemInfo(e[0], e[1]), price = this.shopPrice(e); if (!f) return;
     if (e[2] <= 4000000000) n = Math.min(n, e[2]);
     if (n < 1) return;
+    //  남은 무게가 한 개 무게보다 작으면 0xc, 모자라면 들 수 있는 만큼으로 줄인다 (0x4298dd~0x42990d)
+    if (f.weight > 0) {
+      const rem = F.weightMax(p.str) - this.weightOf(p);
+      if (rem < f.weight) { this.story.msg(p, 0xc); return; }
+      if (rem < f.weight * n) n = Math.floor(rem / f.weight);
+    }
+    const st = p.inv.find(x => x.k === e[0] && x.i === e[1]);
+    if (!st && p.inv.length >= F.INV_SLOTS) return;              // 넣을 칸이 없으면 아무 일 없음 (0x42994f)
     const c = cur(p), have = p[c] || 0;
-    if (price * n > have) { if (c === 'tau') this.story.msg(p, 0x170); else p.send({ t: 'chat', id: 0, name: '안내', text: '돈이 모자랍니다.' }); return; }
-    const took = this.giveItem(p, e[0], e[1], n); if (!took) return;
+    if (Math.floor(have / price) < n) { this.story.msg(p, c === 'tau' ? 0x170 : 0xb); return; }   // 돈 ÷ 값 < 개수 (0x429972)
+    if (st && st.n >= 4000000000) { this.story.msg(p, 0xd); return; }                              // 이미 40억 개 (0x429a17)
+    const took = this.giveItem(p, e[0], e[1], n); if (!took) { this.story.msg(p, 0xc); return; }
     p[c] = (p[c] || 0) - price * took; if (e[2] <= 4000000000) e[2] -= took;
     this.sendInv(p);
     p.world.script.bought(p, e[0], e[1], took);
@@ -2190,11 +2199,11 @@ class Game {
     const shop = this.shopOf(p), it = p.inv[slot]; n = Math.floor(Number(n));
     if (!shop || !it || !(n >= 1)) return;
     const e = shop.find(q => q[0] === it.k && q[1] === it.i && (q[4] & 2));
-    if (!e) { p.send({ t: 'chat', id: 0, name: '안내', text: '이 상점에서는 사 주지 않는 물건입니다.' }); return; }
+    if (!e) return;                                              // 사 주지 않는 물건이면 아무 일 없음
     n = Math.min(n, it.n);
     const gain = Math.floor(this.shopPrice(e) / this.sellDiv(p.shop.id)) * n;
     const c = cur(p);
-    if ((p[c] || 0) + gain > F.MONEY_MAX) { if (c === 'tau') this.story.msg(p, 0x171); else p.send({ t: 'chat', id: 0, name: '안내', text: '돈을 더 가질 수 없습니다.' }); return; }
+    if ((p[c] || 0) + gain > F.MONEY_MAX) { this.story.msg(p, c === 'tau' ? 0x171 : 0xe); return; }   // 40억을 넘으면 0xe (0x42aa05)
     it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
     p[c] = (p[c] || 0) + gain; this.sendInv(p); this.sendStat(p);
   }
@@ -2229,7 +2238,7 @@ class Game {
       if (f.weight > 0) take = Math.min(take, Math.floor((F.weightMax(p.str) - this.weightOf(p)) / f.weight));
       const st = p.inv.find(e => e.k === k && e.i === i);
       if (!st && p.inv.length >= F.INV_SLOTS) take = 0;
-      if (take <= 0) { p.send({ t: 'chat', id: 0, name: '안내', text: `${f.name}: ${!st && p.inv.length >= F.INV_SLOTS ? '소지품 칸이 가득 찼습니다.' : '너무 무거워 들 수 없습니다.'}` }); return 0; }
+      if (take <= 0) return 0;                                   // 못 넣으면 0 (AddItem). 알림은 부른 쪽이 정한다
       if (st) st.n += take; else p.inv.push({ k, i, n: take });
     }
     if (take > 0) { p.send({ t: 'got', name: f.name, n: take }); this.sendInv(p); this.sendStat(p); }
@@ -2298,7 +2307,7 @@ class Game {
   // 이노큘레이터·아이템가드 쓰기 (UseItem 0x4308c3~, 0x42d5f0). 아이템을 하나 없애고 남은 시간을 더한다
   useInoc(p, slot, e, f) {
     const r = INOC.use(p, e.k, e.i);
-    if (!r) { p.send({ t: 'chat', id: 0, name: '안내', text: `${f ? f.name : '아이템'}: 지금은 쓸 수 없습니다.` }); return; }
+    if (!r) { this.story.msg(p, 0x184); return; }
     if (--e.n <= 0) p.inv.splice(slot, 1);
     this.inocChanged(p, [INOC.itemOf(e.k, e.i)[0]]); this.sendInv(p);
   }

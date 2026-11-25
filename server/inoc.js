@@ -18,9 +18,9 @@ function itemOf(k, i) { return ITEMS[k + '/' + i] || null; }
 function use(p, k, i) {
   const it = itemOf(k, i); if (!it) return null;
   const [t, sec] = it, a = arr(p);
-  if (t === 12 && a[12] > 0) return false;
-  if (a[t] >= CAP) return false;
-  a[t] = a[t] + sec * 1000; return true;
+  if (t === 12 && a[12] > 0) return false;                     // 아이템가드가 이미 켜져 있으면 쓰지 않는다 (메시지 0x184, 0x430770)
+  if (a[t] < CAP) a[t] = a[t] + sec * 1000;                    // 40억 ms 이상이면 아이템만 없어지고 시간은 그대로 (DoTLEffect 0x42d5fe)
+  return true;
 }
 // 시간 흐르기: 상태가 바뀐 종류 목록
 function tick(p, ms) {
