@@ -58,7 +58,8 @@ class Accounts {
   newChar(k, slot, name) {
     const a = this.db[k]; if (!a) return { code: 6 };
     name = String(name || '').replace(/[\u0000-\u001f<>]/g, '').trim();
-    if (!name || bytes(name) > 14 || name.includes("'")) return { code: 24 };
+    while (bytes(name) > 14) name = name.slice(0, -1);                  // 14 바이트보다 길면 앞 14 바이트만 쓴다 (svIP.exe 0x404abe, CString::Left(14))
+    if (!name || name.includes("'")) return { code: 24 };
     if (!(slot >= 0 && slot < SLOTS) || a.chars[slot]) { slot = a.chars.indexOf(null); if (slot < 0) return { code: 3 }; }
     if (this.oldSave(name) || this.owner(name)) return { code: 17 };
     a.chars[slot] = name; this.save();

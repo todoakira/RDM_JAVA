@@ -11,12 +11,12 @@ const { spriteOf } = require('./sprites');   // 원작 클라이언트에서 옮
 //   걷기: 대각선 장당 (4, 2)픽셀 → 6장, 가로·세로 장당 6·3픽셀 → 8장. 달리기는 그 두 배 속도.
 const FRAME_MS = 50;
 const CFG = {
-  maxPath: 4000,          // 길찾기 탐색 한도(칸)
-  maxName: 14,
-  maxChat: 120,
-  viewX: 26, viewY: 36,   // 이 거리(칸) 안의 일만 알려 준다
+  // 대화: 원작 입력칸(iw-ct-ba +0x8dc)은 길이 한도가 없다 (_DIRECT_EDIT_DESC+0x7c = -1, Main.dll 0x10076298).
+  //  서버로 가는 패킷 본문은 0x2000 바이트까지다 (Nw200 0x10002f8f). 한글은 2바이트로 센다.
+  maxChatBytes: 0x2000,
   startLevel: Math.max(1, Math.min(F.MAX_LEVEL, Number(process.env.START_LEVEL) || 1)),   // 시험용: START_LEVEL=100 npm start
 };
+const cutBytes = (t, n) => { let b = 0, i = 0; for (; i < t.length; i++) { b += t.charCodeAt(i) < 0x80 ? 1 : 2; if (b > n) break; } return t.slice(0, i); };
 const STATS = ['str', 'spi', 'dex', 'pow'];
 const STAT_NAMES = ['근력', '정신력', '민첩성', '기골'];
 const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 칸 14개: 0~8 부위별, 반지는 9·10·11번 (CheckEquipment 0x434576)
@@ -24,9 +24,11 @@ const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패
 // NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~86 이 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420b9b)
 const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85, 86];
 const EVENT_NAMES = { 2: '게시판', 4: '메일', 11: '자유군 공용 컴퓨터', 12: '자유군 아지트 선택', 13: '자유군 금고', 14: '자유군 게시판', 15: '자유군 아지트 컴퓨터', 27: '고고학자 퀘스트', 28: '지리학자 퀘스트', 29: '카삼 퀘스트', 39: '신전', 43: '교도관', 44: '회상 퀘스트', 45: '배틀존 이동' };
+// NPC 와 말하려면 거리 < 25 (ProcessTalkToNPC 0x406815). 은행은 20 칸 (ProcessAddBankItem 0x41ddc0)
 const TALK_DIST = 25, BANK_SLOTS = 20;
 const NEW_CHAR = { money: 300, hp: 50, mp: 50, sp: 0, items: [[4, 1, 5], [5, 93, 1], [5, 94, 1], [5, 95, 1]],
   skills: [[1, 91], [11, 101], [21, 111], [31, 121], [41, 131], [51, 141], [71, 161], [61, 151], [81, 171]],   // 직업 번호 → [기술, 특수 기술]
+  // 첫 자리: 보통 22 (8,14), 초보 안내를 고르면 68 (6,45) (svIP.exe 0x401725 / 0x4016c9, 패킷 0x3ea)
   start: { map: 22, x: 8, y: 14 }, startBeginner: { map: 68, x: 6, y: 45 } };
 const EV_WARP = 1, EV_SAFE = 5;      // 이벤트 종류 (EventNNNNN.rse)
 const GROUND_ITEM_MS = 600000;       // 바닥 아이템이 사라지는 시간: 10분 (CItemServer::RemoveOldItems 0x408b48)
@@ -93,6 +95,7 @@ class World {
     // 이동 가능 여부: 서버 맵이 있으면 그것을(칸마다 자리 0·1 두 비트), 없으면 클라이언트 맵의 값을 쓴다
     const fallback = sv.walkUser ? '' : m.col.replace(/1/g, '3');
     this.walkU = sv.walkUser || fallback; this.walkM = sv.walkMop || fallback;
+    this.walkC = m.walkC || this.walkU;                 // 원작 클라이언트 길찾기가 보는 이동 가능 표 (tools/add_walkc.js)
     this.ev = sv.ev ? Buffer.from(sv.ev, 'base64') : null; this.events = sv.events;
     let safe = '';
     for (let i = 0; i < this.w * this.h; i++) { const e = this.ev && this.events[this.ev[i]]; safe += e && e[0] === EV_SAFE ? '1' : '0'; }
@@ -164,28 +167,64 @@ class World {
     return null;
   }
 
-  // 길찾기 (A*, 여덟 방향). 원작에서는 클라이언트가 길을 찾고 서버는 한 걸음씩 검사한다. 여기서는 서버가 길도 찾는다.
-  findPath(s, t, limit = CFG.maxPath) {
-    const start = this.key(s), goal = this.key(t);
-    if (start === goal) return [];
-    const [tx, ty] = G.px(t);
-    // 걸음 값은 걸리는 장 수(대각선 6, 가로·세로 8). 남은 거리 어림은 그보다 크지 않게 잡는다
-    const hfn = q => { const [x, y] = G.px(q); return 4 * Math.max(Math.abs(x - tx) / 24, Math.abs(y - ty) / 12); };
-    const g = new Map([[start, 0]]), from = new Map(), node = new Map([[start, pos(s)]]), open = [[0, start]], done = new Set();
-    let seen = 0;
-    while (open.length && seen++ < limit) {
-      let bi = 0; for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
-      const k = open.splice(bi, 1)[0][1];
-      if (k === goal) { const out = []; let c = goal; while (c !== start) { out.push(node.get(c)); c = from.get(c); } return out.reverse(); }
-      if (done.has(k)) continue; done.add(k);
-      const cur = node.get(k);
-      for (const d of G.DIRS) {
-        const n = G.next(cur, d), nk = this.key(n);
-        if (nk === k || !this.canUser(n) || (nk !== goal && this.occ.has(nk))) continue;
-        const ng = g.get(k) + (d % 2 ? 6 : 8);
-        if (ng < (g.get(nk) ?? Infinity)) { g.set(nk, ng); from.set(nk, k); node.set(nk, n); open.push([ng + hfn(n), nk]); }
+  // 클라이언트 길찾기가 보는 이동 가능 여부 (Main.dll 0x10036a80: 0 < x < 맵 너비, 0 < y < 맵 높이, 칸의 자리 비트)
+  canClient(x, y, z) { return x > 0 && y > 0 && x < this.w && y < this.h && ((this.walkC.charCodeAt(y * this.w + x) - 48) >> z & 1) === 1; }
+  // 원작 클라이언트의 길찾기를 그대로 옮겼다. 한 걸음 갈 때마다 다시 찾고, 첫 걸음의 방향만 돌려준다 (0 = 못 감).
+  //  FUN_100372c0 / 0x10037180 (찾기), 0x10036e50 (이웃 펼치기), 0x10036d20 (이웃 넣기), 0x10036c80 (닫힌 목록 고치기)
+  //  - 걸음 값은 한 걸음에 1, 어림값은 반칸 단위 거리의 제곱: (2(x−x1) − [z1=1] + [z=1])² + (2(y−y1) − [z1=1] + [z=1])²
+  //  - 열린 목록은 f 오름차순. 같은 f 면 새 것이 앞에 선다. 열린 목록에 있던 것이 나아져도 자리는 그대로 둔다
+  //  - 펼친 횟수가 |dx|×맵 너비 + |dy|×맵 높이 + 3 에 이르면 그때 펼친 칸을 향해 간다
+  nextDir(s, t) {
+    const W = this.w, x1 = t.x, y1 = t.y, z1 = t.z ? 1 : 0;
+    const heur = (x, y, z) => { const a = 2 * (x - x1) - (z1 === 1) + (z === 1), b = 2 * (y - y1) - (z1 === 1) + (z === 1); return a * a + b * b; };
+    const key = (x, y, z) => (y * W + x) * 2 + z;
+    const open = [], openK = new Map(), closedK = new Map();
+    const insert = n => { let i = 0; while (i < open.length && open[i].f < n.f) i++; open.splice(i, 0, n); openK.set(n.k, n); };
+    const st = { x: s.x, y: s.y, z: s.z ? 1 : 0, g: 0, parent: null, kids: new Array(8).fill(null) };
+    st.h = heur(st.x, st.y, st.z); st.f = st.h; st.k = key(st.x, st.y, st.z); insert(st);
+    const fix = n => {                                   // 0x10036c80: 나아진 칸의 아래로 값을 고쳐 내려간다 (쌓는 순서: 나중에 넣은 것 먼저)
+      const stack = [];
+      const walk = q => { for (const c of q.kids) if (c && c.g > q.g + 1) { c.g = q.g + 1; c.f = c.h + c.g; c.parent = q; stack.push(c); } };
+      walk(n); while (stack.length) walk(stack.pop());
+    };
+    const add = (p, x, y, z, slot) => {
+      if (!this.canClient(x, y, z)) return;
+      const g = p.g + 1, k = key(x, y, z);
+      let n = openK.get(k);
+      if (n) { p.kids[slot] = n; if (g < n.g) { n.g = g; n.parent = p; n.f = n.h + g; } return; }
+      n = closedK.get(k);
+      if (n) { p.kids[slot] = n; if (g < n.g) { n.g = g; n.f = n.h + g; n.parent = p; fix(n); } return; }
+      n = { x, y, z, g, parent: p, kids: new Array(8).fill(null), k }; n.h = heur(x, y, z); n.f = n.h + g; insert(n); p.kids[slot] = n;
+    };
+    const expand = p => {
+      const { x, y } = p;
+      if (p.z === 0) {
+        add(p, x - 1, y, 1, 0); add(p, x, y + 1, 0, 1); add(p, x, y, 1, 2); add(p, x - 1, y, 0, 3);
+        add(p, x + 1, y, 0, 4); add(p, x - 1, y - 1, 1, 5); add(p, x, y - 1, 0, 6); add(p, x, y - 1, 1, 7);
+      } else {
+        add(p, x, y + 1, 0, 0); add(p, x, y + 1, 1, 1); add(p, x + 1, y + 1, 0, 2); add(p, x - 1, y, 1, 3);
+        add(p, x + 1, y, 1, 4); add(p, x, y, 0, 5); add(p, x, y - 1, 1, 6); add(p, x + 1, y, 0, 7);
       }
+    };
+    const limit = Math.abs(x1 - st.x) * W + Math.abs(y1 - st.y) * this.h + 3;
+    let r = null;
+    for (let n = 0; ;) {
+      r = open[0]; if (!r) return 0;
+      if (r.x === x1 && r.y === y1 && r.z === z1) break;
+      open.shift(); openK.delete(r.k); closedK.set(r.k, r);
+      expand(r);
+      if (++n >= limit) break;
     }
+    while (r.g > 1) r = r.parent;
+    const par = r.parent; if (!par) return 0;
+    const i = par.kids.findIndex(c => c && c.x === r.x && c.y === r.y && c.z === r.z);
+    if (i < 0) return 0;
+    return i > 3 ? i + 2 : i + 1;
+  }
+  // 가려는 칸을 클라이언트가 못 가면 위·아래·왼쪽·오른쪽 칸 중 처음 되는 곳으로 바꾼다. 다 안 되면 0 (FUN_10005780)
+  clientGoal(t) {
+    const z = t.z ? 1 : 0;
+    for (const [dx, dy] of [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) if (this.canClient(t.x + dx, t.y + dy, z)) return { x: t.x + dx, y: t.y + dy, z };
     return null;
   }
 
@@ -195,7 +234,7 @@ class World {
     const want = x === undefined ? { x: this.spawn[0], y: this.spawn[1], z: 1 } : { x, y, z: 1 };
     const t = this.nearUser(want, 10, true) || this.nearUser(want, 10) || this.nearUser({ x: this.spawn[0], y: this.spawn[1], z: 1 }, 40) || want;
     p.enteredAt = Date.now();                                  // 맵에 들어온 뒤 시간 (+0x4348, OnTimer 가 늘린다)
-    p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.path = []; p.target = 0; p.cast = null; p.nextAt = 0;
+    p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.goal = null; p.target = 0; p.cast = null; p.nextAt = 0;
     this.players.set(p.id, p); this.take(p);
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
       players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
@@ -209,15 +248,14 @@ class World {
 
   moveTo(p, x, y, z, run) {
     if (p.dead || !Number.isInteger(x) || !Number.isInteger(y) || this.fxOn(p, 39)) return;   // 효과 39 (PK 벌칙): 움직일 수 없다 (ProcessUserMoving 0x43da05)
-    const t = this.nearUser({ x, y, z: z ? 1 : 0 }); if (!t) return;
-    const pa = this.findPath(p, t); if (!pa) return;
-    p.path = pa; p.run = !!run; p.target = 0; p.cast = null; p.pick = 0; p.talk = 0;
+    const t = this.clientGoal({ x, y, z: z ? 1 : 0 }); if (!t) return;
+    p.goal = t; p.run = !!run; p.target = 0; p.cast = null; p.pick = 0; p.talk = 0;
   }
   attackCmd(p, id, run) {
     // 사람도 노릴 수 있다 (PK, server/pk.js). 효과 39 면 공격할 수 없다 (ProcessUserAttack 0x43a7a2)
     const m = this.mobs.get(id) || (id !== p.id ? this.players.get(id) : null);
     if (p.dead || !m || this.fxOn(p, 39)) return;
-    p.target = id; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0; p.cast = null;
+    p.target = id; p.run = !!run; p.pick = 0; p.talk = 0; p.cast = null;
   }
   // 기술 쓰기: 지금은 몬스터 한 마리를 노리는 공격 기술(효과 종류 0)만 된다.
   // 사거리 밖이면 걸어가서 쓴다. 원작은 이 걸음을 클라이언트가 하고 서버는 사거리만 확인한다 (UseSkill 0x45ed73)
@@ -236,7 +274,7 @@ class World {
       : s.l > 0 && (s.a === 1 ? s.n === 0 : (s.n === 0 && SK.formulaKnown(sid)) || s.n in SK.MOB_DEBUFF || (s.n === 36 && sid in SK.MOVING));
     const u = id ? this.players.get(id) : null;
     if (!area && u && u !== p && s.l > 0 && ((s.n === 0 && (s.a === 1 || SK.formulaKnown(sid))) || (s.a === 0 && s.n in SK.USER_DEBUFF) || (s.n === 36 && sid in SK.MOVING))) {   // 사람에게 공격 기술 (PK)
-      p.cast = { sid, id, user: 1 }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0; return;
+      p.cast = { sid, id, user: 1 }; p.target = 0; p.run = !!run; p.pick = 0; p.talk = 0; return;
     }
     if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
@@ -254,7 +292,7 @@ class World {
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       p.skillAt = now + SK.USE_MS; this.castArea(p, null, s, sid, now); return;
     }
-    p.cast = { sid, id }; p.target = 0; p.run = !!run; p.repathAt = 0; p.pick = 0; p.talk = 0;
+    p.cast = { sid, id }; p.target = 0; p.run = !!run; p.pick = 0; p.talk = 0;
   }
   // 자기에게 쓰는 기술 (사거리 0)
   // ---------- 이동 기술 ----------
@@ -328,7 +366,7 @@ class World {
     if (!this.canUser(to) || !this.free(to, p.id)) return;
     if (this.payForSkill(p, s) < 0) return;
     this.near(p, { t: 'cast', id: p.id, sk: sid, tid: p.id });
-    this.release(p); p.dir = G.direction(p, to) === 5 ? 2 : G.direction(p, to); p.x = to.x; p.y = to.y; p.z = to.z; p.path = []; this.take(p);
+    this.release(p); p.dir = G.direction(p, to) === 5 ? 2 : G.direction(p, to); p.x = to.x; p.y = to.y; p.z = to.z; p.goal = null; this.take(p);
     this.near(p, { t: 'pos', id: p.id, x: p.x, y: p.y, z: p.z, dir: p.dir });
   }
   selfSkillCmd(p, sid) {
@@ -824,18 +862,18 @@ class World {
     if (!(s & 0x1000)) { this.game.story.msg(p, 0xb0); return false; }
     return true;
   }
-  // NPC에게 말 걸기: 옆까지 걸어가면 그 NPC에 연결된 이벤트가 실행된다
+  // NPC에게 말 걸기: 원작 클라이언트는 NPC 를 누르면 걸어가지 않고 바로 이벤트 패킷 0x118 을 보낸다 (Main.dll 0x100113ec~0x10011422).
+  // 서버는 NPC와의 거리가 25 미만일 때만 받아 준다 (CExtraServer::IsExistExtraEvent 0x406815). 그보다 멀면 아무 일도 없다
   talkCmd(p, id, run) {
     const n = this.npcs.find(q => q.id === id); if (p.dead || !n) return;
-    // 서버는 NPC와의 거리가 25 미만이면 이벤트를 받아 준다 (CExtraServer::IsExistExtraEvent 0x406815). 그보다 멀면 걸어간다
-    if (G.dist(p, n) >= TALK_DIST) { const pa = this.findPath(p, n, 1500); if (!pa) return; pa.pop(); p.path = pa; }
-    p.run = !!run; p.target = 0; p.cast = null; p.pick = 0; p.talk = id;
+    if (G.dist(p, n) >= TALK_DIST) return;
+    p.target = 0; p.cast = null; p.pick = 0; p.goal = null; p.talk = id;
   }
   tryTalk(p) {
     const n = this.npcs.find(q => q.id === p.talk);
     if (!n) { p.talk = 0; return; }
-    if (G.dist(p, n) >= TALK_DIST) { if (!p.path.length) p.talk = 0; return; }
-    p.talk = 0; p.path = [];
+    if (G.dist(p, n) >= TALK_DIST) { if (!p.goal) p.talk = 0; return; }
+    p.talk = 0; p.goal = null;
     // NPC의 이벤트 번호는 맵의 이벤트가 아니라 공용 표(EventInfo.rse)를 가리킨다 (CMapServerClient::ProcessEvent 0x41ee70)
     const e = this.game.gEvents[n.event], kind = e ? e[0] : 0;
     this.game.subq.onNpc(p, n);                                         // 보조 퀘스트: 맡긴 NPC 에게 돌아왔는지, 전할 NPC 인지 (그 뒤에도 원래 일은 한다)
@@ -922,15 +960,15 @@ class World {
   // 줍기: 아이템이 놓인 자리까지 걸어가서 줍는다
   pickupCmd(p, id, run) {
     const g = this.ground.get(id); if (p.dead || !g) return;
-    if (this.fxOn(p, 9)) { p.path = []; p.target = 0; p.cast = null; p.pick = id; p.talk = 0; return; }   // 효과 9: 걸어가지 않고 줍는다
-    const pa = this.findPath(p, g, 1500); if (!pa) return;
-    p.path = pa; p.run = !!run; p.target = 0; p.cast = null; p.pick = id; p.talk = 0;
+    if (this.fxOn(p, 9)) { p.goal = null; p.target = 0; p.cast = null; p.pick = id; p.talk = 0; return; }   // 효과 9: 걸어가지 않고 줍는다
+    const t = this.clientGoal(g); if (!t) return;
+    p.goal = t; p.run = !!run; p.target = 0; p.cast = null; p.pick = id; p.talk = 0;
   }
   tryPickup(p) {
     const g = this.ground.get(p.pick);
     if (!g) { p.pick = 0; return; }
     if (!G.same(g, p) && !this.fxOn(p, 9)) return;              // 효과 9: 떨어진 곳의 아이템도 줍는다 (ProcessGetItem 0x42edda)
-    p.pick = 0; p.path = [];
+    p.pick = 0; p.goal = null;
     const took = this.game.giveItem(p, g.k, g.i, g.n);
     if (took >= g.n) { this.ground.delete(g.id); this.broadcast({ t: 'gdel', id: g.id }); } else g.n -= took;
   }
@@ -940,18 +978,18 @@ class World {
   //  귓속말: 이름이 없으면 0/2/0x11, 감옥(맵 78)에서는 0/2/0xac (ProcessWhisperChat 0x4413f0, ProcessWhisperFailed 0x474030)
   rateOk(p, key, ms) { const q = (p[key] ||= [0, 0, 0]); const now = Date.now(); if (q[0] && now > q[0] && now - q[0] < ms) return false; q.shift(); q.push(now); return true; }
   chat(p, text) {
-    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CFG.maxChat);
+    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim(); text = cutBytes(text, CFG.maxChatBytes);
     if (!text || !this.rateOk(p, 'chatAt', 5000)) return;
     this.near(p, { t: 'chat', id: p.id, name: p.name, text });
   }
   shout(p, text) {
-    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CFG.maxChat);
+    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim(); text = cutBytes(text, CFG.maxChatBytes);
     if (!text || !this.rateOk(p, 'shoutAt', 10000)) return;
     if (p.level < 5) { this.game.story.msg(p, 0x17, 5); return; }
     this.broadcast({ t: 'chat', id: p.id, name: p.name, text, kind: 'shout' });
   }
   whisper(p, to, text) {
-    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CFG.maxChat); to = String(to || '').trim();
+    text = String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim(); text = cutBytes(text, CFG.maxChatBytes); to = String(to || '').trim();
     if (!text || !to || to === p.name) return;
     if (this.mapId === 78) { this.game.story.msg(p, 0xac); return; }
     const q = this.game.findOnline(to);
@@ -1100,7 +1138,7 @@ class World {
     // 그래서 몬스터도 효과에 따른 걷기 장 수다 (moveMode)
     const near = G.dist(m, n) <= 1, dur = stepFrames(moveMode(m), dir, false) * FRAME_MS;
     this.release(m); m.x = n.x; m.y = n.y; m.z = n.z; m.dir = dir; if (!m.info.noOccupy) this.take(m);
-    this.near(m, near ? { t: 'step', id: m.id, x: n.x, y: n.y, z: n.z, dir, dur, run: 0, last: 1 } : { t: 'pos', id: m.id, x: n.x, y: n.y, z: n.z, dir });
+    this.nearMove(m, near ? { t: 'step', id: m.id, x: n.x, y: n.y, z: n.z, dir, dur, run: 0, last: 1 } : { t: 'pos', id: m.id, x: n.x, y: n.y, z: n.z, dir });
     return true;
   }
   // 정한 방향으로 한 걸음 (CMopServer::MoveDir 0x47d880)
@@ -1581,7 +1619,7 @@ class World {
     if (announce) this.broadcast({ t: 'die', id: d.id });
     this.game.pk.killed(d, killer);                                    // 벌칙 (Dead 0x43b2ab)
     if (d.trade) this.game.trades.cancel(d);
-    d.hp = 0; d.dead = true; d.target = 0; d.cast = null; d.path = []; d.pick = 0; d.talk = 0;
+    d.hp = 0; d.dead = true; d.target = 0; d.cast = null; d.goal = null; d.pick = 0; d.talk = 0;
     this.game.deathPenalty(d);
   }
 
@@ -1615,7 +1653,7 @@ class World {
         const m = this.mobs.get(p.target) || this.players.get(p.target);
         if (!m || (!m.mob && m.dead)) p.target = 0;
         else if (G.dist(p, m) <= p.range + (this.fxOn(p, 11, now) && SK.isGun(p.equip[7]) ? 2 : 0)) {   // 효과 11: 총을 들었을 때 사거리 + 2
-          p.path = [];
+          p.goal = null;
           if (now >= p.atkAt && now >= p.nextAt) {
             const d = G.direction(p, m); if (d !== 5) p.dir = d; p.atkAt = now + this.game.attackMs(p);
             if (this.fxOn(p, 50, now) && SK.isGunOnly(p.equip[7])) this.throughAttack(p, m, now);   // 효과 50 Dysperse + 총: 꿰뚫기 (ProcessUserAttack 0x43a8c8)
@@ -1627,35 +1665,30 @@ class World {
               else this.near(p, { t: 'atk', id: p.id, tid: m.id, dir: p.dir, k: 0, miss: 1, hp: m.hp });
             }
           }
-        } else if (now >= p.repathAt) {
-          p.repathAt = now + 400;
-          const pa = this.findPath(p, m, 1500);
-          if (pa) { pa.pop(); p.path = pa; } else p.target = 0;
-        }
+        } else p.goal = { x: m.x, y: m.y, z: m.z };                 // 클라이언트는 걸음마다 대상의 지금 자리로 다시 길을 찾는다
       }
       if (p.fx) { let ch = false, rc = false; for (const e in p.fx) if (p.fx[e] <= now) { delete p.fx[e]; ch = true; if (SK.RECALC_FX.has(+e)) rc = true; } if (rc) { this.game.recalc(p, false); this.game.sendStat(p); } if (ch) this.sendFx(p); }   // 효과 시간 끝 (OnSkillEffectExpired)
       if (p.cast) {
         const m = p.cast.user ? this.players.get(p.cast.id) : this.mobs.get(p.cast.id), s = SK.get(p.cast.sid);
         if (!m || !s || (p.cast.user && m.dead)) p.cast = null;
         else if (s.l >= 10000 ? G.dist(p, m) <= s.l - 10000 : G.dist(p, m) <= s.l && this.noObstacle(p, m)) {
-          p.path = [];
+          p.goal = null;
           if (now >= (p.skillAt || 0) && now >= p.nextAt) {
             const sid = p.cast.sid, toUser = !!p.cast.user; p.cast = null; p.skillAt = now + SK.USE_MS;
             if (toUser) { if (s.n === 36) this.castMovingUser(p, m, s, sid, now); else if (s.a === 0 && s.n in SK.USER_DEBUFF) this.castDebuffUser(p, m, s, sid, SK.USER_DEBUFF[s.n], now); else this.castSkillUser(p, m, s, sid, now); }
             else if (s.l >= 10000) this.castArea(p, m, s, sid, now); else this.castSkill(p, m, s, sid, now);
           }
-        } else if (now >= p.repathAt) {
-          p.repathAt = now + 400;
-          const pa = this.findPath(p, m, 1500);
-          if (pa) { pa.pop(); p.path = pa; } else p.cast = null;
-        }
+        } else p.goal = { x: m.x, y: m.y, z: m.z };
       }
       if (p.pick && now >= p.nextAt) this.tryPickup(p);
       if (p.talk && now >= p.nextAt) { this.tryTalk(p); if (p.world !== this) continue; }
-      if (!p.path.length || now < p.nextAt) continue;
-      const n = p.path.shift();
+      if (!p.goal || now < p.nextAt) continue;
+      if (G.same(p, p.goal)) { p.goal = null; continue; }
+      const nd = this.nextDir(p, p.goal);
+      if (!nd) { p.goal = null; continue; }
+      const n = G.next(p, nd);
       // 갈 수 없거나 누가 서 있는 자리면 멈춘다 (한 자리에는 하나만: CrsMap::Move 0x486480)
-      if (!this.canUser(n) || !this.free(n, p.id)) { p.path = []; continue; }
+      if (!this.canUser(n) || !this.free(n, p.id)) { p.goal = null; continue; }
       // 달리면 걸음마다 기력이 들고 회복 시계가 처음부터 다시 돈다. 걸으면 걸음 수만 센다 (ProcessUserMoving 0x43da90~0x43dc35)
       let running = p.run && p.sp > 0;
       if (running && (this.fxOn(p, 62, now) || INOC.on(p, 11))) { p.steps = 0; }      // 효과 62 Unlimited Stamina (rm3944 NewStaminaEffect 0x100025c4) 나 이노큘레이터 11 (원래 명령 test byte [+0x402e], 0xc0 at 0x43da99): 달려도 기력이 줄지 않는다
@@ -1664,7 +1697,7 @@ class World {
       this.fxOff(p, 34);                                          // 효과 34 Snipe: 움직이면 풀린다 (ProcessUserMoving 0x43da7a)
       const dir = G.direction(p, n), dur = stepMsOf(p, dir, running);
       this.release(p); if (dir !== 5) p.dir = dir; p.x = n.x; p.y = n.y; p.z = n.z; p.nextAt = now + dur; this.take(p);
-      this.near(p, { t: 'step', id: p.id, x: n.x, y: n.y, z: n.z, dir: p.dir, dur, run: running ? 1 : 0, last: p.path.length ? 0 : 1 });
+      this.nearMove(p, { t: 'step', id: p.id, x: n.x, y: n.y, z: n.z, dir: p.dir, dur, run: running ? 1 : 0, last: G.same(n, p.goal) ? 1 : 0 });
       this.script.moved(p); if (p.world !== this) continue;
       // Dimensional Gate 가 연 문 (동적 이벤트 종류 1)
       const gt = [...this.gates.values()].find(g => g.x === n.x && g.y === n.y);
@@ -1674,9 +1707,9 @@ class World {
       if (e && e[0] === EV_WARP) {
         // 목적지가 여럿이면 GetTickCount() % 개수 로 하나 (ProcessEvent 0x41f2a0)
         const k = Math.floor((e.length - 1) / 4), j = k > 1 ? now % k : 0, to = e[1 + j * 4], pos = [e[2 + j * 4], e[3 + j * 4]];
-        if (!this.storyGate(p, to)) { p.path = []; continue; }
+        if (!this.storyGate(p, to)) { p.goal = null; continue; }
         const g = this.game.ship.gate(p, to, pos);
-        if (g === false) { p.path = []; continue; }
+        if (g === false) { p.goal = null; continue; }
         if (g === 'done') continue;
         const w = this.game.world(to);
         if (w) { this.leave(p); w.enter(p, pos[0], pos[1]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
@@ -1691,7 +1724,25 @@ class World {
   }
   broadcast(msg, exceptId) { for (const p of this.players.values()) if (p.id !== exceptId) p.send(msg); }
   // 근처에 있는 접속자에게만 보낸다
-  near(e, msg) { for (const p of this.players.values()) if (Math.abs(p.x - e.x) <= CFG.viewX && Math.abs(p.y - e.y) <= CFG.viewY) p.send(msg); }
+  // 알려 주는 범위 (CMapServerServer::SetManagementRect 0x468220): 가로 ±10, 세로 ±13 칸, 맵 끝에서 자른다.
+  //  맵이 가로 22 칸, 세로 28 칸보다 작으면 그 방향은 맵 전체. 경계는 포함한다 (CrsMap 0x488537)
+  viewRect(e) {
+    const W = this.w, H = this.h, r = [0, 0, W - 1, H - 1];
+    if (W >= 22) { r[0] = e.x < 11 ? 0 : e.x - 10; r[2] = Math.min(e.x + 10, W - 1); }
+    if (H >= 28) { r[1] = e.y < 14 ? 0 : e.y - 13; r[3] = Math.min(e.y + 13, H - 1); }
+    return r;
+  }
+  // 걸음은 그보다 두 칸 넓게 (SendRectMovementInfo 0x468020, 주인공 0x467fe9 · 몬스터 0x483074)
+  moveRect(e) {
+    const r = this.viewRect(e);
+    r[0] = r[0] < 3 ? 0 : r[0] - 2; r[1] = r[1] < 3 ? 0 : r[1] - 2; r[2] += 2; r[3] += 2;
+    if (e.x < 22) r[0] = 0; else if (e.x >= this.w - 22) r[2] = this.w - 1;
+    if (e.y < 28) r[1] = 0; else if (e.y >= this.h - 28) r[3] = this.h - 1;
+    return r;
+  }
+  sendRect(r, msg) { for (const p of this.players.values()) if (p.x >= r[0] && p.x <= r[2] && p.y >= r[1] && p.y <= r[3]) p.send(msg); }
+  near(e, msg) { this.sendRect(this.viewRect(e), msg); }
+  nearMove(e, msg) { this.sendRect(this.moveRect(e), msg); }
 }
 // 명성 단계 (UpdateCIS 0x463c3d, CIS +0x26): 명성 > 0 이면 ⌊(명성−1)/200⌋+1 (최대 5), < 0 이면 −(⌊(−명성−1)/200⌋+1) (최소 −5)
 const fameTier = f => f > 0 ? Math.min(5, Math.trunc((f - 1) / 200) + 1) : f < 0 ? Math.max(-5, Math.trunc((f + 1) / 200) - 1) : 0;
@@ -1836,7 +1887,7 @@ class Game {
   //   레벨 1, 네 능력치 10, 보너스 2, 체력 50, 마력 50, 기력 0, 돈 300, 붕어빵 5개와 주택가 1·2·3 지도, 직업별 기술 둘.
   //   시작 위치는 접속할 때 고른다: 초보존(맵 68의 6, 45) 또는 주택가2 병원(맵 22의 8, 14) (CIPClient::ProcessPacket 0x4016b6)
   join(name, send, auth, chr = 1, beginner = false) {
-    const p = { id: this.nextId++, name, auth, chr, dir: 2, path: [], run: false, nextAt: 0, atkAt: 0, repathAt: 0, hitAt: 0, regenAt: 0, target: 0, pick: 0, talk: 0, sp: F.SP_MAX, steps: 0, spSent: 0, dead: false, exp: 0, inv: [], money: 0, send,
+    const p = { id: this.nextId++, name, auth, chr, dir: 2, goal: null, run: false, nextAt: 0, atkAt: 0, hitAt: 0, regenAt: 0, target: 0, pick: 0, talk: 0, sp: F.SP_MAX, steps: 0, spSent: 0, dead: false, exp: 0, inv: [], money: 0, send,
       level: CFG.startLevel, bonus: F.bonusTotal(CFG.startLevel), hp: 0, fame: 0, equip: new Array(EQUIP_SLOTS).fill(null), bank: { money: 0, items: [] },
       base: { str: F.BASE_STAT, spi: F.BASE_STAT, dex: F.BASE_STAT, pow: F.BASE_STAT } };
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }

@@ -134,6 +134,15 @@ function parseRmm(buf) {
   }
   return { w, h, name, no, rects, tiles };
 }
+// 칸 값 두 dword 를 그대로 (lo = 앞, hi = 뒤)
+function parseRmmRaw(buf) {
+  const r = new Reader(buf);
+  r.str(); const w = r.i32(), h = r.i32(); r.strKr(); r.i32();
+  const rn = r.i32(); for (let k = 0; k < rn; k++) { r.i16(); r.i32(); r.i32(); r.i32(); r.i32(); }
+  const lo = new Uint32Array(w * h), hi = new Uint32Array(w * h);
+  for (let k = 0; k < w * h; k++) { lo[k] = r.u32(); hi[k] = r.u32(); }
+  return { w, h, lo, hi };
+}
 
 // ---- PNG 저장 ----
 const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -151,4 +160,4 @@ function encodePng(w, h, rgba) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 6 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
-module.exports = { Reader, findFile, parseLst, parseRmd, RleFile, parseRmm, encodePng };
+module.exports = { Reader, findFile, parseLst, parseRmd, RleFile, parseRmm, parseRmmRaw, encodePng };
