@@ -517,16 +517,36 @@ function drawInv() { if (typeof UI !== 'undefined') UI.inv(); }
 // ---------- 서버 통신 ----------
 function snapTo(e, x, y, z) { const [px, py] = cellPx(x, y, z); e.x = x; e.y = y; e.z = z; e.px = e.fx = e.tx = px; e.py = e.fy = e.ty = py; e.moving = false; }
 // 이노큘레이터 아이콘 (패킷 0xf9 → 0x1003c9d0): 상태가 0 이 아니게 된 종류를 줄 끝에 더하고, 0 이 되면 뺀다
+// 깜빡일 때 (상태 1: 장 & 7 ≥ 4, 상태 2: 장 % 20 ≥ 10) 원작은 CopyTo 깃발 0x800, 구조 +0x18 = 0x50, +0x1c~+0x2c = 0 으로 그린다 (0x1003cd99~0x1003cdbd).
+//  ExStage 는 화면이 565 RGB 면 Dfx 깃발 2 (0x80 없음, 0x100098e8) 이고, Dfx_p6s 모드 0x800 (0x10010cae → 0x100108d0) 은 이때 +0x18 을 빨강 비율로 쓴다.
+//  바탕 비율(+0x24~+0x2c)이 모두 0 이라 바탕과 섞지 않고 원본 색에 비율만 곱한다 (0x10011310). 그래서 빨강 × 80/100, 초록·파랑 0 이 된다.
 const SI_IMG = [636, 637, 638, 639, 640, 641, 642, 643, 644, 645, 650, 651, 652];
+const siDim = {};
+function siDimSrc(n) {
+  if (siDim[n] !== undefined) return siDim[n];
+  siDim[n] = null; const im = new Image();
+  im.onload = () => {
+    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+    for (let i = 0; i < p.length; i += 4) { const r5 = Math.min(31, Math.floor((p[i] >> 3) * 80 / 100)); p[i] = (r5 << 3) | (r5 >> 2); p[i + 1] = 0; p[i + 2] = 0; }
+    g.putImageData(d, 0, 0); siDim[n] = c.toDataURL();
+  };
+  im.src = `assets/int/${n}.png`; return null;
+}
 let inocOrder = [], inocState = [], inocFrame = 0;
 function drawInoc() {
   const bar = $('inocbar'); if (!bar) return;
   bar.innerHTML = inocOrder.map((t, i) => `<img src="assets/int/${SI_IMG[t]}.png" data-t="${t}" style="left:${38 * i}px">`).join('');
+  inocOrder.forEach(t => siDimSrc(SI_IMG[t]));
   $('chat').classList.toggle('up', inocOrder.length > 0);
 }
 setInterval(() => {
   inocFrame++; const bar = $('inocbar'); if (!bar) return;
-  for (const im of bar.children) { const g = inocState[+im.dataset.t]; const dim = g === 1 ? (inocFrame & 7) >= 4 : g === 2 ? inocFrame % 20 >= 10 : false; im.style.opacity = dim ? (0x50 / 255).toFixed(2) : '1'; }
+  for (const im of bar.children) {
+    const t = +im.dataset.t, g = inocState[t], dim = g === 1 ? (inocFrame & 7) >= 4 : g === 2 ? inocFrame % 20 >= 10 : false;
+    const want = dim && siDim[SI_IMG[t]] ? siDim[SI_IMG[t]] : `assets/int/${SI_IMG[t]}.png`;
+    if (im.getAttribute('src') !== want) im.setAttribute('src', want);
+  }
 }, 50);
 const handlers = {
   inoc(m) {
