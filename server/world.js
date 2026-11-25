@@ -1641,7 +1641,7 @@ class World {
       if (!this.canUser(n) || !this.free(n, p.id)) { p.path = []; continue; }
       // 달리면 걸음마다 기력이 들고 회복 시계가 처음부터 다시 돈다. 걸으면 걸음 수만 센다 (ProcessUserMoving 0x43da90~0x43dc35)
       let running = p.run && p.sp > 0;
-      if (running && this.fxOn(p, 62, now)) { p.steps = 0; }      // 효과 62 Unlimited Stamina: 달려도 기력이 줄지 않는다 (rm3944 NewStaminaEffect 0x100025c4)
+      if (running && (this.fxOn(p, 62, now) || INOC.on(p, 11))) { p.steps = 0; }      // 효과 62 Unlimited Stamina (rm3944 NewStaminaEffect 0x100025c4) 나 이노큘레이터 11 (원래 명령 test byte [+0x402e], 0xc0 at 0x43da99): 달려도 기력이 줄지 않는다
       else if (running) { const c = F.runCost(p.dex); p.sp = p.sp > c ? p.sp - c : 0; p.regenAt = now + F.REGEN_MS; p.steps = 0; if (++p.spSent % 4 === 0 || !p.sp) this.game.sendStat(p); }
       else p.steps++;
       this.fxOff(p, 34);                                          // 효과 34 Snipe: 움직이면 풀린다 (ProcessUserMoving 0x43da7a)
