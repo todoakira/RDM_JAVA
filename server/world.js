@@ -61,8 +61,14 @@ const rnd = n => Math.floor(Math.random() * 32768) % n;   // C 의 rand() % n
 const pos = e => ({ x: e.x, y: e.y, z: e.z });
 // 한 걸음에 걸리는 시간: 대각선(1·3·7·9)과 가로·세로(2·4·6·8)가 다르다
 const stepMs = (dir, run) => CFG.stepFrames[run ? 'run' : 'walk'][dir % 2 ? 0 : 1] * FRAME_MS;
-// 이노큘레이터 종류 0 (스피드): 상태 깃발 +0x4028 |= 0x10 (0x43732a). 아이템 설명이 "이동속도두배" 라서 걸음 시간을 반으로 한다 (클라이언트 쪽 배수는 확인 못 함)
-const stepMsOf = (p, dir, run) => INOC.on(p, 0) ? Math.floor(stepMs(dir, run) / 2) : stepMs(dir, run);
+// 걸음 시간 (원작 클라이언트 Main.dll 0x10030be0·0x10030d60·0x10031574):
+//  - 한 걸음: 대각선 (±24, ±12) 픽셀, 세로 (0, ±24), 가로 (±48, 0). 장마다 속도만큼 옮기고, 남은 거리가 속도 이하면 그 자리에 붙는다.
+//  - 속도 s: 걷기 1, 달리기 2 (0x1003244c, 0x10032492).
+//  - 보통: 대각선 (4s, 2s), 가로·세로 (6s, 3s) → 걷기 6·8 장, 달리기 3·4 장.
+//  - 빠름 (+0x20): 상태 비트 3(효과 3) 이나 비트 36 (+0x4028 & 0x10, 이노큘레이터 스피드 0x43732a) 이 켜지면 (0x10031ce0~0x10031d1a).
+//    대각선 (8s, 4s), 가로·세로 (12s, 6s) → 걷기 3·4 장, 달리기 2·2 장.
+const FAST_FRAMES = { walk: [3, 4], run: [2, 2] };
+const stepMsOf = (p, dir, run) => (INOC.on(p, 0) || (p.fx && p.fx[3] > Date.now())) ? FAST_FRAMES[run ? 'run' : 'walk'][dir % 2 ? 0 : 1] * FRAME_MS : stepMs(dir, run);
 
 class World {
   constructor(game, mapId) {
