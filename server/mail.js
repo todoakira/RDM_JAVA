@@ -62,7 +62,9 @@ class Mail {
     const e = this.game.gEvents[ev]; if (!e || p.dead) return;
     if (e[0] === EV_MAILBOX && this.near(p)) p.send({ t: 'mailopen' });
     else if (e[0] === 11) this.game.army.openComputer(p);
-    else if (e[0] === 2) this.game.board.open(p, e[1]);              // 게시판 (ProcessEvent case 2 → SendOpenBulletinPacket)            // ProcessEvent case 0xb: 군단 컴퓨터
+    else if (e[0] === 2) this.game.board.open(p, e[1]);
+    else if (e[0] === 1 || e[0] === 39) p.world.warp(p, e, Date.now());   // 이동 (0x41f239)
+    else if (e[0] >= 23 && e[0] <= 26) p.world.itemEvent(p, ev, e, Date.now());   // 아이템이 생기는 자리 (ProcessEvent 0x420e44~)              // 게시판 (ProcessEvent case 2 → SendOpenBulletinPacket)            // ProcessEvent case 0xb: 군단 컴퓨터
   }
   // 서버가 보내는 우편 (RMS_SENDMAIL): 받는 사람이 접속해 있으면 알린다
   deliver(to, from, title, text) {

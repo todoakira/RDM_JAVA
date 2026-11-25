@@ -17,6 +17,19 @@ const CFG = {
   startLevel: Math.max(1, Math.min(F.MAX_LEVEL, Number(process.env.START_LEVEL) || 1)),   // 시험용: START_LEVEL=100 npm start
 };
 const cutBytes = (t, n) => { let b = 0, i = 0; for (; i < t.length; i++) { b += t.charCodeAt(i) < 0x80 ? 1 : 2; if (b > n) break; } return t.slice(0, i); };
+// CrItemInfo::GetRandomIIS 0x484eb0: 분류마다 고정된 표에서 GetTickCount() 로 하나. 돈(분류 5 의 0번)은 ((t % 10) + 1) × 100000, 서버 설정 Lang = 1 이면 ÷100
+const RAND_ITEMS = {
+  1: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 24, 33, 34, 35, 36, 37, 38, 39, 40, 41, 52, 53, 54, 73, 81, 82, 83, 84, 13, 14, 15, 16, 17, 18, 42, 55, 64, 65, 66, 67, 74, 85, 86, 87, 88,
+    56, 57, 58, 43, 44, 45, 19, 20, 21, 59, 60, 61, 46, 47, 48, 49, 50, 89, 90, 91, 75, 76, 77, 78, 79, 80, 104, 105, 106],
+  2: [1, 2, 3, 4, 12, 17, 18, 24, 25, 26, 27, 37, 38, 39, 51, 52, 61, 62, 73, 74, 83, 84, 85, 86, 5, 13, 40, 41, 28, 53, 63, 87, 88, 95],
+  4: [1, 2, 3, 4, 5, 6, 7, 8, 21, 22, 23, 24, 25, 26, 27, 28, 34, 35, 36],
+};
+function randomItem(cls, t, lang) {
+  if (cls === -1) cls = [1, 2, 100, 4][t & 3];
+  if (cls === 100) { const v = Math.max(100000, Math.min(1000000, (t % 10 + 1) * 100000)); return [5, 0, lang === 1 ? Math.floor(v / 100) : v]; }
+  const L = RAND_ITEMS[cls]; if (!L) return null;
+  return [cls, L[t % L.length], 1];
+}
 const STATS = ['str', 'spi', 'dex', 'pow'];
 const STAT_NAMES = ['근력', '정신력', '민첩성', '기골'];
 const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 칸 14개: 0~8 부위별, 반지는 9·10·11번 (CheckEquipment 0x434576)
@@ -936,6 +949,16 @@ class World {
     // 그 밖의 종류는 원작도 아무 일 없다 (ProcessEvent 의 기본 갈래 0x421f4b). 4 메일·11~16 군단·45 배틀존은 아직 옮기지 않았다 (docs/unsourced.md)
   }
 
+  // 이벤트 23~26: 누르면 정해 둔 자리 (x, y, 0) 에 아이템 하나가 생긴다. 이벤트마다 '분' 값 × 60000ms 에 한 번 (ProcessEvent 0x420e44~0x42107f, ReadEvent 0x405020)
+  //   23: 돈, 24: 분류 4, 25: rand() 짝수면 분류 1 · 홀수면 분류 2, 26: GetTickCount() & 3 → 1·2·돈·4 (CrItemInfo::GetRandomIIS 0x484eb0)
+  itemEvent(p, no, e, now) {
+    const st = this.game.evTick ||= {}, cool = (e[3] || 0) * 60000;
+    if (st[no] !== undefined && now >= st[no] && now - st[no] < cool) return;
+    st[no] = now;
+    const cls = e[0] === 23 ? 100 : e[0] === 24 ? 4 : e[0] === 25 ? (Math.floor(Math.random() * 0x8000) % 2 === 0 ? 1 : 2) : -1;
+    const it = randomItem(cls, now, this.game.lang); if (!it) return;
+    this.dropItem({ x: e[1], y: e[2], z: 0 }, it);
+  }
   // ---------- 바닥 아이템 ----------
   dropItem(at, it) {
     const info = this.game.itemInfo(it[0], it[1]); if (!info) return;
@@ -1812,6 +1835,7 @@ class Game {
   constructor() {
     this.mopInfo = readJson('data', 'mops.json') || {};
     this.story = new STORY.Story(this); this.subq = new SUBQ.SubQuest(this); this.ship = new SHIP.SpaceShip(this); this.pk = new PKM.PK(this); this.board = new BOARD.Board(this); this.accounts = new ACC.Accounts(this); this.pills = new Pills(); this.groups = new Groups(this); this.trades = new Trades(this); this.mail = new Mail(this); this.army = new Army(this);
+    this.lang = 1;                                               // 서버 설정 rmServer.ini [Info] Lang=1 (+0x3664, 0x445e40)
     this.gEvents = readJson('data', 'events.json') || {}; this.shops = readJson('data', 'shops.json') || {};
     this.items = readJson('data', 'items.json') || {};
     // 클라이언트 아이템 정보에만 있는 무기 총알 번호(+0x57) (tools/client_items.py)
