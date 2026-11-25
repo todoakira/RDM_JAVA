@@ -263,7 +263,7 @@ class World {
   skillReady(p, sid, s) {
     // 효과 58 이면 기술을 쓸 수 없고, 효과 43 이면 특수 기술만 (ProcessUseSkill 0x43c44c~0x43c476)
     if (this.fxOn(p, 58) || (this.fxOn(p, 43) && s.a === 0)) return false;
-    if (s.a === 1) { if (sid !== SK.SPECIAL[p.chr]) return false; if (p.dp < p.maxDp) { p.send({ t: 'note', text: 'DP가 가득 차야 쓸 수 있습니다.' }); return false; } return true; }
+    if (s.a === 1) { if (sid !== SK.SPECIAL[p.chr]) return false; if (p.dp < p.maxDp) return false; return true; }   // DP 가 모자라면 알림 없이 끝난다 (UseSkill 0x45e4f6 → 0x45f52c)
     return SK.list(p).includes(sid);
   }
   skillCmd(p, sid, id, run) {
@@ -279,14 +279,14 @@ class World {
     if (!area && s.a === 0 && (s.n === 1 || s.n === 44) && (u || s.n === 1)) {   // 주인공에게 쓰는 회복·부활 (UseSkillUserCure 0x448700)
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       const t = u || p;
-      if (t !== p && G.dist(p, t) > s.l) { p.send({ t: 'note', text: '너무 멉니다.' }); return; }
+      if (t !== p && (G.dist(p, t) > s.l || !this.noObstacle(p, t))) return;   // 사거리 밖이거나 막히면 알림 없이 끝난다 (UseSkill 0x45ecf0~0x45ed3d)
       p.skillAt = now + SK.USE_MS; this.cureUser(p, t, s, sid, now); return;
     }
     if (area && s.a === 0 && SK.RANGE_EFFECT_TYPES.has(s.n)) {   // 범위 효과 (UseSkillRangeEffect 0x453b00): 대상은 주인공이거나 없음
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
       p.skillAt = now + SK.USE_MS; this.castRangeEffect(p, id ? this.players.get(id) : null, s, sid, now); return;
     }
-    if (!ok) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    if (!ok) return;
     if (!m) {                                                   // 대상 없이 쓰는 범위 기술은 내 자리가 중심
       if (!area) return;
       const now = Date.now(); if (now < (p.skillAt || 0)) return;
@@ -374,7 +374,7 @@ class World {
     if (s && s.l >= 10000) { this.skillCmd(p, sid, 0); return; }   // 범위 기술을 대상 없이
     if (p.dead || !s || !SK.list(p).includes(sid)) return;
     if (s.a === 0 && s.l === 0 && [20, 23, 48].includes(s.n)) { this.moveSkillAsk(p, s); return; }
-    if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) { p.send({ t: 'note', text: '아직 구현하지 않은 기술입니다.' }); return; }
+    if (s.a !== 0 || s.l !== 0 || !(s.n === 1 || s.n in SK.SELF_EFFECT)) return;
     if (now < (p.skillAt || 0)) return;
     const cost = SK.mpCost(s, p.maxMp);
     if (p.mp < cost) return;                                     // 마력이 모자라면 알림 없이 끝난다 (CMapServerClient::DecreaseMP 0x43973d)
