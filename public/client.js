@@ -166,7 +166,7 @@ const FAME_COLOR = { '-5': '#9b0505', '-4': '#af3737', '-3': '#c36969', '-2': '#
 //  - 넓이 = 글자 폭 + 가장 긴 줄 폭 + 10, 높이 = 11×줄 수 + 27 (꼬리 11 포함).
 //  - 글은 (8, 7+12i) 에 쓴다. 자리는 기준점에서 (−넓이/2, −25 − 11×줄 수).
 //  - 조각: 모서리·가장자리 6×6 칸 (0,0)~(19,19), 꼬리 (20,12)~(26,23).
-//  - 50 장(2.5초) 보인다 (0x10030a0d). 캐릭터 깃발 4 가 켜진 것은 100 장인데, 그 깃발 뜻은 확인하지 못했다.
+//  - 50 장(2.5초) 보인다 (0x10030a0d). 캐릭터 깃발(+0x58) 4 = 정보 종류 1(몬스터) 이면 100 장 (AddCharacter 0x10033880: 종류 0 사람 → 2, 1 → 4, 2 NPC → 8, 3 → 0x40).
 const SAY_MS = 50 * 50;
 const balloonImg = new Image(); balloonImg.src = 'assets/int/161.png';
 const bytesKr = ch => ch.charCodeAt(0) > 0x7f ? 2 : 1;
@@ -516,7 +516,24 @@ function drawInv() { if (typeof UI !== 'undefined') UI.inv(); }
 
 // ---------- 서버 통신 ----------
 function snapTo(e, x, y, z) { const [px, py] = cellPx(x, y, z); e.x = x; e.y = y; e.z = z; e.px = e.fx = e.tx = px; e.py = e.fy = e.ty = py; e.moving = false; }
+// 이노큘레이터 아이콘 (패킷 0xf9 → 0x1003c9d0): 상태가 0 이 아니게 된 종류를 줄 끝에 더하고, 0 이 되면 뺀다
+const SI_IMG = [636, 637, 638, 639, 640, 641, 642, 643, 644, 645, 650, 651, 652];
+let inocOrder = [], inocState = [], inocFrame = 0;
+function drawInoc() {
+  const bar = $('inocbar'); if (!bar) return;
+  bar.innerHTML = inocOrder.map((t, i) => `<img src="assets/int/${SI_IMG[t]}.png" data-t="${t}" style="left:${38 * i}px">`).join('');
+  $('chat').classList.toggle('up', inocOrder.length > 0);
+}
+setInterval(() => {
+  inocFrame++; const bar = $('inocbar'); if (!bar) return;
+  for (const im of bar.children) { const g = inocState[+im.dataset.t]; const dim = g === 1 ? (inocFrame & 7) >= 4 : g === 2 ? inocFrame % 20 >= 10 : false; im.style.opacity = dim ? (0x50 / 255).toFixed(2) : '1'; }
+}, 50);
 const handlers = {
+  inoc(m) {
+    inocState = m.s || [];
+    inocState.forEach((g, t) => { const i = inocOrder.indexOf(t); if (g && i < 0) inocOrder.push(t); else if (!g && i >= 0) inocOrder.splice(i, 1); });
+    drawInoc();
+  },
   add(m) { addEnt(m.p); log(`${esc(m.p.name)} 님이 들어왔습니다.`, 'sys'); },
   madd(m) { addEnt(m.m); },
   del(m) { const p = ents.get(m.id); if (p) log(`${esc(p.name)} 님이 나갔습니다.`, 'sys'); ents.delete(m.id); },
@@ -619,7 +636,7 @@ const handlers = {
   chat(m) {
     // 거부한 사람의 귓속말은 보이지 않고, 서버에 알려 보낸 사람에게 0/0/159 가 간다 (원작 서버 ProcessWhisperFailed 0x474030)
     if (m.kind === 'whisper' && m.name !== myName() && (ignoreAll || ignored.has(m.name))) { send({ t: 'whisperfail', from: m.name }); return; }
-    const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayLines = null; p.sayColor = m.kind === 'shout' ? '#ffff00' : m.group ? '#00ff00' : m.kind === 'army' ? '#f09900' : '#fff'; p.sayUntil = performance.now() + SAY_MS; }
+    const p = m.kind !== 'whisper' && ents.get(m.id); if (p) { p.say = m.text; p.sayLines = null; p.sayColor = m.kind === 'shout' ? '#ffff00' : m.group ? '#00ff00' : m.kind === 'army' ? '#f09900' : '#fff'; p.sayUntil = performance.now() + SAY_MS * (p.mob ? 2 : 1); }
     const tag = m.group ? '[그룹] ' : m.kind === 'army' ? '[군단] ' : m.kind === 'shout' ? '[외침] ' : m.kind === 'whisper' ? (m.name === myName() ? `[→${m.to}] ` : '[귓속말] ') : '';
     log(`<span class="who">${esc(tag)}${esc(m.name)}</span>: ${esc(m.text)}`, m.group ? 'grp' : m.kind || undefined);
   },

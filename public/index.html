@@ -15,6 +15,11 @@
   #help { position: fixed; top: 8px; right: 10px; font-size: 12px; text-align: right; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; opacity: .85; line-height: 1.5; }
   /* 화면 대화 줄 (Main.dll 0x10010d2f): 550×350 판에 20줄, 줄 간격 17, 글꼴 높이 12. 판은 (5, 210) 에 붙여 마지막 줄 아래가 y 550.
      줄마다 100 장(50ms × 100 = 5초) 지나면 사라진다 (0x1001c120). 글은 어두운 테두리(0x0a0a0a)로 그린다 */
+  /* 이노큘레이터 아이콘 줄 (Main.dll 0x1003c6b0·0x1003ccf0·0x1003ce10): (8,529) 의 494×35 판, 아이콘 si-NN-ma 35×35 를 켜진 차례대로 x = 38i 에.
+     상태 1 은 8 장마다 4 장, 상태 2 는 20 장마다 10 장 반투명(알파 0x50). 아이콘이 하나라도 있으면 대화 줄이 30 위로 (0x10010d2f) */
+  #inocbar { position: fixed; --x: 8px; --y: 529px; width: 494px; height: 35px; pointer-events: none; z-index: 5; }
+  #inocbar img { position: absolute; top: 0; width: 35px; height: 35px; }
+  #chat.up { --y: 180px; }
   #chat { position: fixed; width: 550px; height: 340px; --x: 5px; --y: 210px; overflow: hidden; pointer-events: none; z-index: 5; }
   #log { position: absolute; left: 0; bottom: 0; width: 550px; font: 12px/17px var(--uf); color: #ffffff; pointer-events: none; }
   #log > div { height: 17px; white-space: nowrap; overflow: hidden; text-shadow: 1px 0 #0a0a0a, -1px 0 #0a0a0a, 0 1px #0a0a0a, 0 -1px #0a0a0a; }
@@ -125,6 +130,7 @@
 <canvas id="cv"></canvas>
 <div id="hud"></div>
 <div id="help">클릭: 이동 · 몬스터 클릭: 공격 · NPC 클릭: 말 걸기<br>M 소리 켜기/끄기 · F1 상태 · F2 캐릭터 · F3 아이템 · F4 장비 · F5 기술 · F6 그룹 · F7 대화 기록<br>Ctrl+Q,W,E,R,T,A,S,D,F,Z,X,C,V: 기술 고르기 · 몬스터 오른쪽 클릭: 기술 쓰기<br>Shift+클릭 또는 R: 달리기<br>Enter: 대화 입력줄 · I: 소지품 · E: 장비 · C: 캐릭터 · +/−: 확대/축소<br>바닥 아이템 클릭: 줍기 · 소지품 두 번 클릭: 사용·착용<br>은행: 물건 두 번 클릭으로 맡기기·찾기(Shift: 전부), 동전 그림 = 돈 맡기기, 금액 = 돈 찾기<br>시험용: /맵 번호 · /아이템 분류 번호 [수량] · /레벨 숫자 · /돈 숫자 · /dp · /퀘스트 진행값<br>Q: 퀘스트 · F8 빠른 창(소지품 오른쪽 클릭으로 넣고 CTRL+1~8) · !외치기 · /이름 귓속말 · @그룹 · `trade 이름: 거래</div>
+<div id="inocbar" class="o"></div>
 <div id="chat" class="o"><div id="log"></div></div>
 <div id="gauge" class="o" style="--x:505px;--y:540px">
   <b style="left:13px;top:2px;width:154px;background:url(assets/int/464.png)"><i id="gh" style="background:url(assets/int/465.png)"></i></b>

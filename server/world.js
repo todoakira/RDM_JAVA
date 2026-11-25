@@ -187,6 +187,7 @@ class World {
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
       players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
     this.game.sendStat(p); this.game.sendInv(p);
+    if (Array.isArray(p.inoc) && p.inoc.some(v => v > 0)) p.send({ t: 'inoc', s: INOC.states(p) });   // 이노큘레이터 상태 (패킷 0xf9)
     this.broadcast({ t: 'add', p: pubP(p) }, p.id);
     this.game.groups.moved(p);
     const K = this.game.pk; K.enterNotice(p, this); K.legalNotice(p); if (p.pkState || p.pkPen > 0) K.send(p);   // PK 안내 (0x162 등), 남은 정당방위 (0xce)
