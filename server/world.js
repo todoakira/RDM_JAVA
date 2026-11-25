@@ -62,13 +62,28 @@ const pos = e => ({ x: e.x, y: e.y, z: e.z });
 // 한 걸음에 걸리는 시간: 대각선(1·3·7·9)과 가로·세로(2·4·6·8)가 다르다
 const stepMs = (dir, run) => CFG.stepFrames[run ? 'run' : 'walk'][dir % 2 ? 0 : 1] * FRAME_MS;
 // 걸음 시간 (원작 클라이언트 Main.dll 0x10030be0·0x10030d60·0x10031574):
-//  - 한 걸음: 대각선 (±24, ±12) 픽셀, 세로 (0, ±24), 가로 (±48, 0). 장마다 속도만큼 옮기고, 남은 거리가 속도 이하면 그 자리에 붙는다.
-//  - 속도 s: 걷기 1, 달리기 2 (0x1003244c, 0x10032492).
-//  - 보통: 대각선 (4s, 2s), 가로·세로 (6s, 3s) → 걷기 6·8 장, 달리기 3·4 장.
-//  - 빠름 (+0x20): 상태 비트 3(효과 3) 이나 비트 36 (+0x4028 & 0x10, 이노큘레이터 스피드 0x43732a) 이 켜지면 (0x10031ce0~0x10031d1a).
-//    대각선 (8s, 4s), 가로·세로 (12s, 6s) → 걷기 3·4 장, 달리기 2·2 장.
-const FAST_FRAMES = { walk: [3, 4], run: [2, 2] };
-const stepMsOf = (p, dir, run) => (INOC.on(p, 0) || (p.fx && p.fx[3] > Date.now())) ? FAST_FRAMES[run ? 'run' : 'walk'][dir % 2 ? 0 : 1] * FRAME_MS : stepMs(dir, run);
+//  - 한 걸음: 대각선 (24, 12) 픽셀, 가로 (48, 0), 세로 (0, 24). 장(50ms)마다 속도만큼 옮기고 남은 거리가 속도 이하면 붙는다 → 장 수 = 축마다 ⌈거리 / 속도⌉ 의 큰 쪽.
+//  - s: 걷기 1, 달리기 2 (0x1003244c, 0x10032492).
+//  - 장마다 픽셀 (대각선 / 곧은 방향, 0x10030d60): 보통 (4s,2s) / (6s,3s), 빠름 (8s,4s) / (12s,6s),
+//    중간 (6s,3s) / (8s,4s), 느림 (2s,s) / (3s, ⌊3s/2⌋).
+//  - 고르는 차례: 중간이고 느림이 아니면 중간 → 빠름이 아니고 느림이면 느림 → 빠름이고 느림이 아니면 빠름 → 그 밖 보통.
+//  - 상태 (0x10031ce0~0x10031d99, rm3944cl NewWalkerEffect 0x100021ae):
+//    빠름 (+0x20) = 효과 3 · 효과 36 (이노큘레이터 스피드, +0x4028 & 0x10) · 효과 63 WindWalker (rm3944 비트 +0x10 & 0x10, 서버 NewSendUseSkill 0x100023df).
+//    중간 (+0x38) = WindWalker 가 아니고 효과 53 (정보 +0x20 & 0x20).
+//    느림 (+0x24) = 효과 14 (+0x1b & 0x40) · 효과 55 (+0x20 & 0x80) · 효과 43 (+0x1f & 8).
+const VEL = { normal: [[4, 2], [6, 3]], fast: [[8, 4], [12, 6]], mid: [[6, 3], [8, 4]], slow: [[2, 1], [3, 1.5]] };
+function stepFrames(mode, dir, run) {
+  const s = run ? 2 : 1, diag = dir % 2 === 1, [vx0, vy0] = VEL[mode][diag ? 0 : 1];
+  const vx = vx0 * s, vy = mode === 'slow' && !diag ? Math.floor(3 * s / 2) : vy0 * s;
+  const [dx, dy] = diag ? [24, 12] : (dir === 4 || dir === 6) ? [48, 0] : [0, 24];
+  return Math.max(dx ? Math.ceil(dx / vx) : 0, dy ? Math.ceil(dy / vy) : 0);
+}
+function moveMode(p, now = Date.now()) {
+  const on = e => !!(p.fx && p.fx[e] > now);
+  const fast = on(3) || INOC.on(p, 0) || on(63), mid = !on(63) && on(53), slow = on(14) || on(43) || on(55);
+  return mid && !slow ? 'mid' : !fast && slow ? 'slow' : fast && !slow ? 'fast' : 'normal';
+}
+const stepMsOf = (p, dir, run) => stepFrames(moveMode(p), dir, run) * FRAME_MS;
 
 class World {
   constructor(game, mapId) {
