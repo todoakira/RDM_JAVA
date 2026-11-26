@@ -798,7 +798,33 @@ const doNew = () => {
 $('tbLogin').onclick = () => showDlg('dlgLogin');
 $('tbNew').onclick = () => showDlg('dlgNew');
 $('tbHelp').onclick = () => UI.help(0);                       // 로그인 도움말 (Message 1/0)
-$('tbProlog').onclick = $('tbCredit').onclick = () => { $('msg').textContent = '아직 구현되지 않았습니다.'; };
+// 프롤로그: 누를 때마다 다음 장면 (상태 1~6 → scene1~6 과 글 0/0/6·0xc6~0xca, 7 이면 닫음. Main.dll 0x1001f07e)
+let prolog = 0;
+function prologStep() {
+  prolog++;
+  if (prolog > 6) { prolog = 0; $('prPic').style.display = $('prTxt').style.display = 'none'; return; }
+  const TXT = [6, 0xc6, 0xc7, 0xc8, 0xc9, 0xca];
+  $('prPic').style.background = `url(assets/int/${445 + prolog}.png)`; $('prPic').style.display = 'block';
+  $('prTxt').textContent = (UI.msg && UI.msg(0, 0, TXT[prolog - 1])) || ''; $('prTxt').style.display = 'block';
+}
+$('tbProlog').onclick = () => { showDlg(null); if (!prolog) prologStep(); };
+$('prPic').onclick = $('prTxt').onclick = prologStep;
+// 크레딧: 그릴 때마다 두 셈 (+0x796e1 0~42, +0x796e2 0~95) 을 하나씩 올린다. 21~24 면 CR-01-BU, 27~41 이면 CR-02-BU,
+//   둘째 셈이 31~39·62~94 면 CR-04-BU. 누르면 닫힌다 (0x10012979). 화면은 20ms 마다 그린다 (주 루프 0x10004b77: 1ms 클럭 × 0x14)
+let credit = null; const CREDIT_MS = 20;
+$('tbCredit').onclick = () => {
+  showDlg(null); prolog = 0; $('prPic').style.display = $('prTxt').style.display = 'none';
+  let c1 = 0, c2 = 0; $('crScr').style.display = 'block';
+  credit = setInterval(() => {
+    const a = $('crA');
+    if (c1 > 20 && c1 < 25) { a.style.background = 'url(assets/int/616.png)'; a.style.display = 'block'; }
+    else if (c1 > 26 && c1 < 42) { a.style.background = 'url(assets/int/617.png)'; a.style.display = 'block'; } else a.style.display = 'none';
+    c1 = c1 === 42 ? 0 : c1 + 1;
+    $('crB').style.display = (c2 > 30 && c2 < 40) || (c2 > 61 && c2 < 95) ? 'block' : 'none';
+    c2 = c2 === 95 ? 0 : c2 + 1;
+  }, CREDIT_MS);
+};
+$('crScr').onclick = () => { clearInterval(credit); credit = null; $('crScr').style.display = 'none'; };
 $('tbExit').onclick = () => { showDlg(null); $('msg').textContent = ''; };
 $('lgOk').onclick = doLogin; $('lgCa').onclick = () => showDlg(null);
 $('nwOk').onclick = doNew; $('nwCa').onclick = () => showDlg(null);

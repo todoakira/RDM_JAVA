@@ -209,6 +209,14 @@
     <div class="tb" id="tbHelp" style="left:408px;width:137px;background-image:url(assets/int/623.png)"></div>
     <div class="tb" id="tbCredit" style="left:545px;width:128px;background-image:url(assets/int/621.png)"></div>
     <div class="tb" id="tbExit" style="left:673px;width:110px;background-image:url(assets/int/622.png)"></div>
+    <!-- 프롤로그 (Main.dll 0x1001f07e): 그림 칸 (3,102)-(797,371) scene1~6, 글 칸 (130,376)-(670,471) 글꼴 13 굵기 500 색 0x57c6f9 (0x100093ff~) -->
+    <!-- 크레딧 (Main.dll 0x10010aee~0x10010c42): 바탕 CR-00-BA (0,0) 800×600, CR-01-BU·CR-02-BU (195,183) 52×53, CR-04-BU (310,138) 431×404 -->
+    <div id="crScr" style="display:none;position:absolute;left:0;top:0;width:800px;height:600px;background:url(assets/int/615.png);cursor:pointer;z-index:5">
+      <div id="crA" style="display:none;position:absolute;left:195px;top:183px;width:52px;height:53px"></div>
+      <div id="crB" style="display:none;position:absolute;left:310px;top:138px;width:431px;height:404px;background:url(assets/int/619.png)"></div>
+    </div>
+    <div id="prPic" style="display:none;position:absolute;left:3px;top:102px;width:794px;height:269px;cursor:pointer"></div>
+    <div id="prTxt" style="display:none;position:absolute;left:130px;top:376px;width:540px;height:95px;color:#f9c657;font:500 13px var(--uf);white-space:pre-wrap;cursor:pointer"></div>
     <!-- 로그인 창 iw-lo-ba 350×151 -->
     <div id="dlgLogin" class="dlg" style="left:225px;top:340px;width:350px;height:151px;background-image:url(assets/int/71.png)">
       <input id="nm" class="fld" maxlength="14" autocomplete="off" style="left:164px;top:37px;width:168px"><input id="pw" class="fld" type="password" maxlength="64" autocomplete="off" style="left:164px;top:63px;width:168px">

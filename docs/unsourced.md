@@ -27,7 +27,7 @@
 
 - NPC 이벤트 11~16 군단(아지트·금고·게시판), 45 배틀존 이동 (ProcessEvent 0x41ee70 의 분기표 0x421f74)
 - 이동 이벤트의 투기장(0x84~0x88)·대전장(0xb4~0xbc) 입장 조건 (GetBattleArenaState / GetBattleMatchState, 메시지 0x139·0x14d)
-- 클라이언트: 첫 화면 Prolog·Credits, 캐릭터 고르기의 정보 고치기(Change User Info), 군단 창의 일부 단추
+- 클라이언트: 캐릭터 고르기의 정보 고치기(Change User Info), 군단 창의 일부 단추
 - 시그너스 돈(SigMoney)은 Tau(5/2)·시그너스 은행·죽을 때 떨어뜨리기로 이미 옮겨져 있음
 
 ## 원작 파일에 내용이 없어 우리가 채운 것
