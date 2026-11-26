@@ -939,11 +939,29 @@ class World {
     const k = Math.floor((e.length - 1) / 4); if (k < 1) return false;
     const j = now % k, to = e[1 + j * 4], pos = [e[2 + j * 4], e[3 + j * 4]];
     if (!this.storyGate(p, to)) return false;
+    if (!this.battleGate(p, to)) return false;
     const g = this.game.ship.gate(p, to, pos);
     if (g === false) return false;
     if (g === 'done') return true;
     const w = this.game.world(to);
     if (w) { this.leave(p); w.enter(p, pos[0], pos[1]); console.log(`[이동] ${p.name}: ${this.name} → ${w.name}`); }
+    return true;
+  }
+  // 투기장(맵 132~136)·대전장(180~188) 이동 (ProcessEvent 0x41f46d~0x41f5d7)
+  //   밖에서 안으로는 이동 지점으로 들어갈 수 없다 (아무 일 없음). 원작은 배틀 리그 전용 서버(-BattleArena·-BattleMatch)에서
+  //   NPC 종류 45 로만 들어갔고, 보통 서버에서는 그 NPC 도 아무 일을 하지 않는다 (0x421b16~0x421cc0).
+  //   안에서 밖으로: 투기장은 진행 상태 ≥ 24, 대전장은 ≥ 29 면 0x14d 로 막는다 (GM +0x4168 은 예외).
+  //   132 에서 133~136 으로는 투기장 상태 < 29 면, 180·181 에서 대전장 안으로는 대전장 상태 < 34 면 0x139 로 막는다.
+  //   진행 상태 = 그날 (시×60 + 분) 을 투기장 90, 대전장 120 으로 나눈 나머지 (GetBattleArenaState 0x474800, GetBattleMatchState 0x4748d0, 시간표가 없을 때)
+  battleGate(p, to) {
+    const cur = this.mapId, inA = m => m >= 0x84 && m <= 0x88, inM = m => m >= 0xb4 && m <= 0xbc;
+    const t = new Date(), mins = t.getHours() * 60 + t.getMinutes(), aState = mins % 90, mState = mins % 120, gm = !!p.gm;
+    if (!inA(cur) && inA(to)) return false;
+    if (inA(cur) && !inA(to)) { if (aState >= 0x18 && !gm) { this.game.story.msg(p, 0x14d); return false; } }
+    else if (cur === 0x84 && inA(to)) { if (aState < 0x1d && !gm) { this.game.story.msg(p, 0x139); return false; } }
+    if (!inM(cur) && inM(to)) return false;
+    if (inM(cur) && !inM(to)) { if (mState >= 0x1d && !gm) { this.game.story.msg(p, 0x14d); return false; } }
+    else if ((cur === 0xb4 || cur === 0xb5) && inM(to)) { if (mState < 0x22 && !gm) { this.game.story.msg(p, 0x139); return false; } }
     return true;
   }
   // 맵 79 → 83 이동 지점: 카삼 4 를 마쳐야 하고, 회상 이야기를 듣고, 카삼 회상까지 마쳐야 지나간다 (0x41f2f0)
