@@ -33,8 +33,8 @@ function randomItem(cls, t, lang) {
 const STATS = ['str', 'spi', 'dex', 'pow'];
 const EQUIP_SLOTS = 14, RING_SLOTS = [9, 10, 11], TYPE_RING = 300;   // 착용 칸 14개: 0~8 부위별, 반지는 9·10·11번 (CheckEquipment 0x434576)
 const SLOT_NAMES = ['모자', '목걸이', '상의', '하의', '신발', '방패', '장갑', '무기', '벨트', '반지', '반지', '반지', '', ''];
-// NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~86 이 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420b9b)
-const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85, 86];
+// NPC 이벤트 종류 (EventInfo.rse 머리말). 31~37, 82~85 가 상점이고 둘째 값이 상점 번호다 (ProcessEvent 0x41f7af~0x420a50). 86 은 성장 창 (0x420b9b)
+const SHOP_KINDS = [31, 32, 33, 34, 35, 36, 37, 82, 83, 84, 85];
 // NPC 와 말하려면 거리 < 25 (ProcessTalkToNPC 0x406815). 은행은 20 칸 (ProcessAddBankItem 0x41ddc0)
 const TALK_DIST = 25, BANK_SLOTS = 20;
 const NEW_CHAR = { money: 300, hp: 50, mp: 50, sp: 0, items: [[4, 1, 5], [5, 93, 1], [5, 94, 1], [5, 95, 1]],
@@ -49,6 +49,7 @@ const crypto = require('crypto');
 const G = require('./grid');
 const SK = require('./skills');
 const { Events, line: msgLine } = require('./events');
+const { sameIIS, iisOf, iisX, growthGrade, isGrowth } = require('./iis');
 const EQUIP = require('./equip');
 const SUBQ = require('./subquest');
 const SHIP = require('./spaceship');
@@ -982,7 +983,9 @@ class World {
     if (kind === 20) { this.game.openExchange(p, e[1] || 0, n); return; }
     if (kind === 43) { this.game.pk.jailor(p); return; }
     if (kind === 1 || kind === 39) { this.warp(p, e, Date.now()); return; }   // 이동 NPC (ProcessEvent 0x41f239)
-    if (kind === 2) { this.game.board.open(p, e[1]); return; }        // 게시판 (ProcessEvent case 2)                // 교도관
+    if (kind === 2) { this.game.board.open(p, e[1]); return; }        // 게시판 (ProcessEvent case 2)
+    // 성장 창 (종류 86, 0x420b9b): 맵 93~108·137~176 에서만 (서버 맵 번호 +0x32c4)
+    if (kind === 86) { const id = this.mapId; if ((id >= 0x5d && id <= 0x6c) || (id >= 0x89 && id <= 0xb0)) this.game.growthOpen(p); return; }                // 교도관
     // 그 밖의 종류는 원작도 아무 일 없다 (ProcessEvent 의 기본 갈래 0x421f4b). 4 메일·11~16 군단·45 배틀존은 아직 옮기지 않았다 (docs/unsourced.md)
   }
 
@@ -1048,10 +1051,10 @@ class World {
     else {
       slot = what | 0; const s = p.inv[slot]; if (!s) return;
       k = s.k; i = s.i; v = Math.min(n, s.n || 1);
-      const st = q.inv.find(e => e.k === k && e.i === i); if (st && st.n >= F.MONEY_MAX) return say(4);
+      const st = q.inv.find(e => sameIIS(e, s)); if (st && st.n >= F.MONEY_MAX) return say(4);
     }
     if (!(v > 0)) return;
-    const got = this.game.giveItem(q, k, i, v);
+    const got = this.game.giveItem(q, k, i, v, s && iisX(s));
     if (got < v) say(2);
     if (!got) return;
     if (k === 5 && i === 0) p.money -= got;
@@ -2148,7 +2151,7 @@ class Game {
     if (!(price >= 1) || price > Math.floor(F.MONEY_MAX / n)) { this.exchTell(p, '값이 올바르지 않습니다.'); return; }
     if (d.list.filter(e => e.seller === p.name).length >= 5) { this.exchTell(p, '다섯 건까지만 올릴 수 있습니다.'); return; }
     it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
-    d.list.push({ id: d.seq++, seller: p.name, k: it.k, i: it.i, n, price, buyer: String(buyer || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 16) });
+    d.list.push({ id: d.seq++, seller: p.name, k: it.k, i: it.i, ...iisX(it), n, price, buyer: String(buyer || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 16) });
     this.exchSave(); this.save(p); this.sendInv(p); this.sendStat(p); this.sendExch(p);
   }
   exchBuy(p, id, n) {
@@ -2158,7 +2161,7 @@ class Game {
     if (e.buyer && e.buyer.toLowerCase() !== p.name.toLowerCase()) { p.send({ t: 'sys', code: 0x61, args: [] }); return; }
     n = Math.min(n, e.n);
     if (n > Math.floor(p.money / e.price)) { this.exchTell(p, '돈이 모자랍니다.'); return; }
-    const took = this.giveItem(p, e.k, e.i, n); if (!took) return;
+    const took = this.giveItem(p, e.k, e.i, n, iisX(e)); if (!took) return;
     p.money -= e.price * took; e.n -= took; if (e.n <= 0) d.list.splice(d.list.indexOf(e), 1);
     (d.owed[e.seller] ||= []).push({ k: e.k, i: e.i, n: took, price: e.price });
     this.exchSave(); this.save(p); this.sendInv(p); this.sendExch(p);
@@ -2179,7 +2182,7 @@ class Game {
     const mine = d.list.filter(e => e.seller === p.name); if (!mine.length) return;
     const w = mine.reduce((a, e) => { const f = this.itemInfo(e.k, e.i); return a + (f ? (f.weight || 0) * e.n : 0); }, 0);
     if (w > F.weightMax(p.str) - this.weightOf(p)) { this.exchTell(p, '무거워서 거둘 수 없습니다.'); return; }
-    for (const e of mine) { const took = this.giveItem(p, e.k, e.i, e.n); e.n -= took; }
+    for (const e of mine) { const took = this.giveItem(p, e.k, e.i, e.n, iisX(e)); e.n -= took; }
     d.list = d.list.filter(e => e.n > 0);
     this.exchSave(); this.save(p); this.sendInv(p); this.sendExch(p);
   }
@@ -2210,14 +2213,14 @@ class Game {
     const it = p.inv[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !it || !(n >= 1)) return;
     n = Math.min(n, it.n);
     const B = this.bankOf(p);
-    let b = B.items.find(q => q.k === it.k && q.i === it.i);
-    if (!b) { if (B.items.length >= BANK_SLOTS) return; b = { k: it.k, i: it.i, n: 0 }; B.items.push(b); }   // 빈 칸이 없으면 아무 일 없음 (ProcessAddBankItem 0x41ddc0)
+    let b = B.items.find(q => sameIIS(q, it));
+    if (!b) { if (B.items.length >= BANK_SLOTS) return; b = iisOf(it, 0); B.items.push(b); }   // 빈 칸이 없으면 아무 일 없음 (ProcessAddBankItem 0x41ddc0)
     b.n += n; it.n -= n; if (it.n <= 0) p.inv.splice(slot, 1);
     this.sendInv(p); this.sendStat(p); this.sendBank(p); this.save(p);
   }
   bankGet(p, slot, n) {
     const B = this.bankOf(p), b = B.items[slot]; n = Math.floor(Number(n)); if (!this.bankOk(p) || !b || !(n >= 1)) return;
-    const took = this.giveItem(p, b.k, b.i, Math.min(n, b.n)); if (!took) return;
+    const took = this.giveItem(p, b.k, b.i, Math.min(n, b.n), iisX(b)); if (!took) return;
     b.n -= took; if (b.n <= 0) B.items.splice(slot, 1);
     this.sendBank(p); this.save(p);
   }
@@ -2363,21 +2366,22 @@ class Game {
   // 분류 5의 0번은 돈이다. 원작에 화폐 단위 이름은 없고 그냥 '돈'이다 (DB 칸 Money). 시그너스에서 쓰는 돈은 따로 있다 (DB 칸 SigMoney, 아직 없음)
   itemInfo(k, i) { return k === 5 && i === 0 ? { name: '돈', icon: 0, money: true } : k === 5 && i === 2 ? { name: 'Tau', icon: 0, tau: true } : (this.items[k] && this.items[k][i]) || null; }
   sendInv(p) {
-    const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, name: f.name, desc: f.desc || '', icon: f.icon, hp: f.hp || 0, mp: f.mp || 0, atk: f.atk || 0, def: f.def || 0, v: f.v || [], req: f.req || 0, reqStat: f.reqStat || [], cls: f.cls || 0, weight: f.weight || 0, wear: f.type !== undefined && f.type !== 14 ? 1 : 0 }; };
+    const view = e => { const f = this.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n || 1, g: e.g, name: f.name, desc: f.desc || '', icon: f.icon, hp: f.hp || 0, mp: f.mp || 0, atk: f.atk || 0, def: f.def || 0, v: f.v || [], req: f.req || 0, reqStat: f.reqStat || [], cls: f.cls || 0, weight: f.weight || 0, wear: f.type !== undefined && f.type !== 14 ? 1 : 0 }; };
     p.send({ t: 'inv', money: p.money, tau: p.tau || 0, items: p.inv.map(view), quick: (p.quick || []).map(e => e ? view(e) : null), equip: p.equip.map((e, s) => e ? { ...view(e), slot: SLOT_NAMES[s] } : null) });
   }
   // 넣을 수 있는 만큼만 넣고 넣은 개수를 돌려준다. 같은 아이템은 종류에 상관없이 한 칸에 겹쳐 쌓인다 (GetAvailableItemIndex 0x431b4b)
-  giveItem(p, k, i, n) {
+  // x: 아이템 한 개마다 붙는 값 (성장 바이트 g = IIS +9~+0xd). 같은 종류라도 이 값이 다르면 겹치지 않는다 (GetAvailableItemIndex 는 IIS 전체를 비교)
+  giveItem(p, k, i, n, x) {
     const f = this.itemInfo(k, i); if (!f) return 0;
     let take = n;
     if (f.money) { take = Math.min(n, F.MONEY_MAX - p.money); p.money += take; }
     else if (f.tau) { take = Math.min(n, F.MONEY_MAX - (p.tau || 0)); p.tau = (p.tau || 0) + take; }   // AddItem 0x431d07: 5/2 는 Tau, 40억까지
     else {
       if (f.weight > 0) take = Math.min(take, Math.floor((F.weightMax(p.str) - this.weightOf(p)) / f.weight));
-      const st = p.inv.find(e => e.k === k && e.i === i);
+      const st = p.inv.find(e => sameIIS(e, { k, i, ...x }));
       if (!st && p.inv.length >= F.INV_SLOTS) take = 0;
       if (take <= 0) return 0;                                   // 못 넣으면 0 (AddItem). 알림은 부른 쪽이 정한다
-      if (st) st.n += take; else p.inv.push({ k, i, n: take });
+      if (st) st.n += take; else p.inv.push(iisOf({ k, i, ...x }, take));
     }
     if (take > 0) { p.send({ t: 'got', name: f.name, n: take }); this.sendInv(p); this.sendStat(p); }
     return take;
@@ -2388,15 +2392,15 @@ class Game {
   quickPut(p, slot) {
     const e = p.inv[slot]; if (!e || p.dead) return;
     const q = p.quick ||= Array(8).fill(null);
-    let k = q.findIndex(x => x && x.k === e.k && x.i === e.i); if (k < 0) k = q.findIndex(x => !x); if (k < 0) return;
-    if (q[k]) q[k].n += e.n; else q[k] = { k: e.k, i: e.i, n: e.n };
+    let k = q.findIndex(x => x && sameIIS(x, e)); if (k < 0) k = q.findIndex(x => !x); if (k < 0) return;
+    if (q[k]) q[k].n += e.n; else q[k] = iisOf(e, e.n);
     p.inv.splice(slot, 1); this.sendInv(p);
   }
   quickGet(p, k) {
     const q = p.quick || [], e = q[k]; if (!e || p.dead) return;
-    const st = p.inv.find(x => x.k === e.k && x.i === e.i);
+    const st = p.inv.find(x => sameIIS(x, e));
     if (!st && p.inv.length >= F.INV_SLOTS) return;
-    if (st) st.n += e.n; else p.inv.push({ k: e.k, i: e.i, n: e.n });
+    if (st) st.n += e.n; else p.inv.push(iisOf(e, e.n));
     q[k] = null; this.sendInv(p);
   }
   quickUse(p, k) {
@@ -2460,6 +2464,71 @@ class Game {
     if (f.mp) p.mp = f.mp < PERCENT_HEAL ? Math.min(p.maxMp, p.mp + f.mp) : Math.min(p.maxMp, p.mp + Math.min(pctOf(f.mp, p.maxMp), p.maxMp - p.mp));
     this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp });
   }
+  // ── 성장 아이템 (분류 6 의 100~194) ──
+  // 열기 (SendOpenItemGrowthWindow 0x40d6b0): 개인 상점을 여는 중이면(+0x437c) 0xa0, 이미 열려 있으면 0x182
+  growthOpen(p) {
+    if (p.pshop) { this.story.msg(p, 0xa0); return; }
+    if (p.growing) { this.story.msg(p, 0x182); return; }
+    p.growing = 1; p.send({ t: 'growth', a: 'open' });                 // 패킷 0x4bd
+  }
+  // 닫기 (ProcessCancelItemGrowth 0x40e050): 0x4c3
+  growthCancel(p) { p.growing = 0; p.send({ t: 'growth', a: 'close' }); }
+  // 필요한 경험치 (GetRequiredGrowthExp 0x40e080): 다음 등급(지금 + 1) 구간마다 레벨 표 한 칸에서 뺀다
+  growthNeed(e) {
+    const n = growthGrade(e) + 1, T = F.expTable;
+    if (n < 11) return T[500] - 100000; if (n < 21) return T[600] - 100000; if (n < 31) return T[700] - 100000;
+    if (n < 41) return T[800] - 150000; if (n < 51) return T[850] - 150000; if (n < 61) return T[899] - 150000;
+    if (n < 71) return T[900] - 150000; if (n < 81) return T[949] - 150000; if (n < 91) return T[950] - 150000;
+    if (n < 100) return T[990] - 150000; return T[1000] - 200000;
+  }
+  // 창에 올리기 (ProcessMoveItemToGrowthWindow 0x40d710): 소지품(칸 종류 2)의 성장 아이템이면 필요 경험치를 알린다 (0x4bf). 아니면 닫는다
+  growthPut(p, slot) {
+    if (p.pshop) { this.growthCancel(p); this.story.msg(p, 0xa0); return; }
+    const e = p.inv[slot]; if (!isGrowth(e)) { this.growthCancel(p); return; }
+    p.send({ t: 'growth', a: 'need', slot, need: this.growthNeed(e) });
+  }
+  // 성장하기 (ProcessTryItemGrowth 0x40d7f0). 결과 0 실패(아이템 하나 없어짐), 2 성공 (0x4c1). 경험치가 모자라면 아무 일 없음
+  growthTry(p, slot) {
+    if (p.pshop) { this.growthCancel(p); this.story.msg(p, 0xa0); return; }
+    const e = p.inv[slot]; if (!isGrowth(e)) return;
+    const need = this.growthNeed(e); if (p.exp < need) return;
+    const r1 = Math.floor(Math.random() * 0x8000), r2 = Math.floor(Math.random() * 0x8000) % 1000;
+    const g = (e.g || [0, 0, 0, 0, 0]).slice(), cur = growthGrade(e), next = cur + 1;
+    const lang3 = this.lang === 3;
+    const bonus = () => { const b = g[0]; return lang3 ? (b <= 1 ? 10 : b <= 3 ? 5 : 0) : (b <= 1 ? 20 : b <= 3 ? 10 : 0); };   // +9 바이트에 따라 '진화' 몫 (천분율)
+    let res = 0, kind = 0;
+    if (next === 10 || (next < 190 && next % 10 !== 0)) {               // 보통 등급: 반드시 성공, 무엇이 오를지만 고른다
+      res = 2; const b = bonus(), q = (1000 - b) >> 2;
+      kind = r2 < b ? 5 : r2 < q + b ? 1 : r2 < b + q * 2 ? 2 : r2 < b + q * 3 ? 3 : 4;
+    } else {                                                            // 10 의 배수 등급: 정해진 확률로만 성공
+      const P = lang3 ? { 19: 700, 29: 600, 39: 500, 49: 400, 59: 200, 69: 50, 79: 30 } : { 19: 900, 29: 800, 39: 600, 49: 500, 59: 300, 69: 100, 79: 50 };
+      const chance = P[cur] ?? (lang3 ? 10 : 30);
+      if (r1 % 1000 < chance) {
+        res = 2; let b = bonus(); if (next > 89) b <<= 2; const q = (1000 - b) >> 2;
+        kind = r2 < b ? 5 : r2 < q ? 1 : r2 < q * 2 ? 2 : r2 < q * 3 ? 3 : 4;   // 이쪽 갈래는 b 를 더하지 않는다 (0x40da1e~)
+      }
+    }
+    p.exp = Math.max(0, p.exp - need); this.sendStat(p);               // 결과와 상관없이 경험치를 쓴다 (SetUserExp, SendExperimentInfo)
+    if (res === 2 && kind) {
+      const it = { k: e.k, i: e.i, g };
+      if (kind === 5) {                                                 // 진화: 100~174 는 +9 를 올리고 번호 +20. 아니면 1~4 중 하나
+        if (e.i < 0xaf) { g[0]++; it.i = e.i + 20; } else kind = Math.floor(Math.random() * 4) + 1;
+      }
+      if (kind >= 1 && kind <= 4) g[kind]++;
+      // 한 개만 바꾼다: 묶음에서 하나를 떼어 새 칸(소지품 → 빠른 창 순)에 두거나, 하나뿐이면 그 자리에서 바꾼다 (DoItemGrowth, MoveUserWindowItem)
+      if ((e.n || 1) < 2) { e.i = it.i; e.g = g; }
+      else {                                                            // 무게는 그대로이므로 칸만 본다. 소지품에 같은 것이나 빈 칸, 없으면 빠른 창 (GetAvailableItemIndex 1 → 3)
+        const ni = { k: it.k, i: it.i, n: 1, g }, st = p.inv.find(x => sameIIS(x, ni)), q = p.quick ||= Array(8).fill(null);
+        const qs = q.findIndex(x => x && sameIIS(x, ni)), qe = q.findIndex(x => !x);
+        if (st) { st.n++; e.n--; } else if (p.inv.length < F.INV_SLOTS) { p.inv.push(ni); e.n--; }
+        else if (qs >= 0) { q[qs].n++; e.n--; } else if (qe >= 0) { q[qe] = ni; e.n--; }
+      }
+    } else if (res === 0) {
+      if (--e.n <= 0) p.inv.splice(slot, 1);                            // RemoveOneItem
+    }
+    this.recalc(p, false); this.sendInv(p);
+    p.growing = 0; p.send({ t: 'growth', a: 'result', res });
+  }
   // 복권 6/197 (0x430f40 → CItemLottery::UseItemLottery, 프로시저 RMS_ITEMLOTTERY_USEITEM): 경품표(tblItemLotteryList1 → data/lottery.json)에서
   //   아직 안 쓴 첫 줄을 골라 복권을 하나 없애고, 그 경품과 복권 번호를 우편으로 보낸다 (보낸이 "레드문", 제목 "[레드문 복권]").
   //   경품표가 비어 있으면 복권은 그대로 둔다. 어느 쪽이든 메시지 0x185
@@ -2508,7 +2577,7 @@ class Game {
     const msg = (c, ...a) => { this.story.msg(p, c, ...a); return false; };
     if (p.level < (f.req || 0)) return msg(6);
     if (e.k === 6 && e.i > 99 && e.i < 195) {
-      const g = e.grade || 0, need = g < 10 ? 700 : g < 20 ? 800 : g < 30 ? 850 : g < 40 ? 900 : g < 50 ? 920 : g < 60 ? 930 : g < 70 ? 940 : g < 80 ? 960 : g < 90 ? 980 : 1000;
+      const g = growthGrade(e), need = g < 10 ? 700 : g < 20 ? 800 : g < 30 ? 850 : g < 40 ? 900 : g < 50 ? 920 : g < 60 ? 930 : g < 70 ? 940 : g < 80 ? 960 : g < 90 ? 980 : 1000;
       if (p.level < need) return msg(0x1ac, need);
     }
     for (let q = 0; q < 4; q++) if ((f.reqStat || [])[q] > p.base[STATS[q]]) return msg(0x13 + q);
@@ -2522,14 +2591,14 @@ class Game {
     if (!(slot >= 0 && slot < EQUIP_SLOTS)) return;
     const e = p.inv[invSlot], old = p.equip[slot];
     if (--e.n <= 0) p.inv.splice(invSlot, 1);
-    p.equip[slot] = { k: e.k, i: e.i };
-    if (old) { const st = p.inv.find(x => x.k === old.k && x.i === old.i); if (st) st.n++; else p.inv.push({ k: old.k, i: old.i, n: 1 }); }
+    p.equip[slot] = iisOf(e); delete p.equip[slot].n;
+    if (old) { const st = p.inv.find(x => sameIIS(x, old)); if (st) st.n++; else p.inv.push(iisOf(old, 1)); }
     this.recalc(p, false); this.sendInv(p); this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp, maxHp: p.maxHp });
   }
   unequip(p, slot) {
     const e = p.equip[slot]; if (!e || p.dead) return;
-    if (!p.inv.find(x => x.k === e.k && x.i === e.i) && p.inv.length >= F.INV_SLOTS) return;
-    p.equip[slot] = null; { const st = p.inv.find(x => x.k === e.k && x.i === e.i); if (st) st.n++; else p.inv.push({ k: e.k, i: e.i, n: 1 }); }
+    if (!p.inv.find(x => sameIIS(x, e)) && p.inv.length >= F.INV_SLOTS) return;
+    p.equip[slot] = null; { const st = p.inv.find(x => sameIIS(x, e)); if (st) st.n++; else p.inv.push(iisOf(e, 1)); }
     this.recalc(p, false); this.sendInv(p); this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp, maxHp: p.maxHp });
   }
   // 시험용: /맵 번호 로 바로 이동

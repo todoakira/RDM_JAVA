@@ -1,4 +1,5 @@
 'use strict';
+const { sameIIS, iisOf } = require('./iis');
 // 우편. 원작 서버(svMapServer.exe)와 DB(tblMail1) 그대로:
 //  - 우편은 받는 사람마다 쌓인다. DB 칸은 Time, Recipient, Sender, ReadOrNot, Title, Line, Content, Item (RMS_SENDMAIL)
 //  - 우체통 (CMapServerServer::IsExistExtraEvent 0x447370, 종류 4): 맵마다 한 곳. 맵 1·3·21·29·37·38 은 서버에 박힌 칸이고 (0x4460e7~),
@@ -83,7 +84,7 @@ class Mail {
   view(e) {
     if (!e) return null;
     const f = this.game.itemInfo(e.k, e.i);
-    return { k: e.k, i: e.i, n: e.n, name: f ? f.name : '?', icon: f ? f.icon : 0, desc: f ? f.desc || '' : '', money: f && f.money ? 1 : 0 };
+    return { k: e.k, i: e.i, n: e.n, g: e.g, name: f ? f.name : '?', icon: f ? f.icon : 0, desc: f ? f.desc || '' : '', money: f && f.money ? 1 : 0 };
   }
   read(p, i) {
     const box = this.list(p.name), m = box[i - 1]; if (!m) return;
@@ -120,7 +121,7 @@ class Mail {
       const e = p.inv[a.slot]; if (!e) continue;
       const left = e.n - take.filter(t => t.e === e).reduce((s, t) => s + t.n, 0);
       const got = Math.min(n, left); if (got <= 0) continue;
-      take.push({ e, n: got }); items.push({ k: e.k, i: e.i, n: got });
+      take.push({ e, n: got }); items.push(iisOf(e, got));
     }
     for (const t of take) t.e.n -= t.n;
     p.inv = p.inv.filter(e => e.n > 0);
@@ -143,9 +144,9 @@ class Mail {
       let fit = e.n;
       if (f.weight > 0) fit = Math.min(fit, Math.floor((F.weightMax(p.str) - this.game.weightOf(p)) / f.weight));
       if (fit <= 0) { this.board(p, 5); return; }
-      const st = p.inv.find(x => x.k === e.k && x.i === e.i);
+      const st = p.inv.find(x => sameIIS(x, e));
       if (!st && p.inv.length >= F.INV_SLOTS) { this.board(p, 7); return; }
-      if (st) st.n += fit; else p.inv.push({ k: e.k, i: e.i, n: fit });
+      if (st) st.n += fit; else p.inv.push(iisOf(e, fit));
       got = fit;
     }
     if (got <= 0) return;

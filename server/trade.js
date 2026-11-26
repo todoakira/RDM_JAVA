@@ -1,4 +1,5 @@
 'use strict';
+const { sameIIS, iisOf, iisX } = require('./iis');
 // 플레이어 사이 거래. 원작 서버(svMapServer.exe) 그대로:
 //  - 신청 (ProcessTryTrade 0x40e910, AskTrade 0x443060): 자기 자신이면 0/2/0x95, 없는 이름이면 0x96, 같은 맵에 없으면 0x97,
 //    상대가 거래 중이면 0x9b, 내가 거래 중이면 0x9a. 상대에게는 "%s has offered to trade." (0x98) 와 예/아니오
@@ -40,7 +41,7 @@ class Trades {
   // 거래 창 내용: 내 쪽과 상대 쪽
   send(p) {
     const q = this.partner(p); if (!p.trade || !q) return;
-    const view = e => { if (!e) return null; const f = this.game.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n, name: f ? f.name : '?', icon: f ? f.icon : 0, desc: f ? f.desc || '' : '' }; };
+    const view = e => { if (!e) return null; const f = this.game.itemInfo(e.k, e.i); return { k: e.k, i: e.i, n: e.n, g: e.g, name: f ? f.name : '?', icon: f ? f.icon : 0, desc: f ? f.desc || '' : '' }; };
     p.send({ t: 'trade', with: q.name, mine: { items: p.trade.items.map(view), money: p.trade.money, tau: p.trade.tau, ok: p.trade.ok }, theirs: { items: q.trade.items.map(view), money: q.trade.money, tau: q.trade.tau, ok: q.trade.ok } });
   }
   both(p) { const q = this.partner(p); this.send(p); if (q) this.send(q); }
@@ -54,8 +55,8 @@ class Trades {
     }
     const list = where === 'quick' ? (p.quick || []) : p.inv, e = list[slot]; if (!e) return;
     n = Math.min(n, e.n);
-    let k = t.items.findIndex(x => x && x.k === e.k && x.i === e.i); if (k < 0) k = t.items.findIndex(x => !x); if (k < 0) return;
-    if (t.items[k]) t.items[k].n += n; else t.items[k] = { k: e.k, i: e.i, n };
+    let k = t.items.findIndex(x => x && sameIIS(x, e)); if (k < 0) k = t.items.findIndex(x => !x); if (k < 0) return;
+    if (t.items[k]) t.items[k].n += n; else t.items[k] = iisOf(e, n);
     e.n -= n; if (e.n <= 0) { if (where === 'quick') list[slot] = null; else list.splice(slot, 1); }
     this.game.recalc(p, false); this.game.sendInv(p); this.game.sendStat(p); this.both(p);
   }
@@ -72,7 +73,7 @@ class Trades {
     if (!fine) { this.msg(p, 0x9f); this.msg(q, 0x9f); this.cancel(p); return; }
     const give = (to, items, money, tau) => {
       to.money += money; to.tau = (to.tau || 0) + tau;
-      for (const e of items) if (e) { const got = this.game.giveItem(to, e.k, e.i, e.n); if (got < e.n) to.world.dropItem(to, [e.k, e.i, e.n - got]); }
+      for (const e of items) if (e) { const got = this.game.giveItem(to, e.k, e.i, e.n, iisX(e)); if (got < e.n) to.world.dropItem(to, [e.k, e.i, e.n - got]); }
     };
     const pi = t.items, qi = u.items, pm = t.money, qm = u.money, pt = t.tau, qt = u.tau;
     p.trade = null; q.trade = null;
@@ -86,7 +87,7 @@ class Trades {
       if (!x || !x.trade) continue;
       const t = x.trade; x.trade = null;
       x.money += t.money; x.tau = (x.tau || 0) + (t.tau || 0);
-      for (const e of t.items) if (e) { const got = this.game.giveItem(x, e.k, e.i, e.n); if (got < e.n) x.world.dropItem(x, [e.k, e.i, e.n - got]); }
+      for (const e of t.items) if (e) { const got = this.game.giveItem(x, e.k, e.i, e.n, iisX(e)); if (got < e.n) x.world.dropItem(x, [e.k, e.i, e.n - got]); }
       if (!quiet) this.msg(x, 0x9e);
       x.send({ t: 'trade', close: 1 }); this.game.recalc(x, false); this.game.sendInv(x); this.game.sendStat(x);
     }

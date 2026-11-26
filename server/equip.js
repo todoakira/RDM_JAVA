@@ -13,6 +13,10 @@
 // 서버 쪽 깃발 +0x368c (PK 서버 여부로 보임)는 0 으로 본다.
 
 const F = (v, d) => Math.floor(v / d);
+const { growthGrade } = require('./iis');
+// 성장 한 점당 [근력, 정신력, 민첩성, 기골] (등급 <20, <40, <60, <80, 그 위)
+const GROW_A = [[30, 40, 40, 50], [40, 50, 50, 60], [50, 60, 60, 70], [60, 70, 70, 80], [70, 80, 80, 90]];
+const GROW_B = [[40, 60, 60, 40], [60, 80, 80, 60], [80, 100, 100, 80], [100, 120, 120, 100], [120, 140, 140, 120]];
 
 // 고유 장비 식. 인자 c = { S, P, D, W, L, C } (기본 근력·정신력·민첩성·기골, 레벨, 직업 +0x37fc)
 // 돌려주는 값: { a?, x?, s?, k?, d?, u?(+0x4378 몫), g?('A'|'B' 성장 표) }. 원작 decompile 의 uVar12=a, local_394=x, local_39c=s, local_384=k, iVar8=d
@@ -140,13 +144,14 @@ function compute(p, itemInfo, opts = {}) {
     if (e.k === 2) o.pvp += 4;
     else if (e.k === 3) o.pvp += f.type === 1 ? 10 : 4;
     if (slot === 7) { o.range = f.range || 1; const s5 = eq[5]; if (s5 && s5.k === e.k && s5.i === e.i) continue; }   // 5번 칸과 같은 물건이면 한 번만
-    let a = f.atk || 0, d = f.def || 0, x = 0, s = 0, k = 0;
+    let a = f.atk || 0, d = f.def || 0, x = 0, s = 0, k = 0, growTable = null;
     if (f.grade === 1 || f.grade === 3) {
       const fn = e.k === 1 ? K1[e.i] : e.k === 3 ? K3[e.i] : e.k === 6 ? K6[e.i] : null;
       if (fn) {
         const r = fn(c);
         if ('a' in r) a = r.a; if ('d' in r) d = r.d;
         x = r.x || 0; s = r.s || 0; k = r.k || 0;
+        if (e.k === 6 && r.g) growTable = r.g;
         if (e.k === 1) o.pvp += 20;
         else if (e.k === 6) { o.pvp += r.u || 0; o.mobDef += r.mobDef || 0; }
       }
@@ -159,6 +164,11 @@ function compute(p, itemInfo, opts = {}) {
     if (k > 0) o.k += cap(k);
     (f.v || []).forEach((v, q) => { o.add[q] += v; });
     if (e.k === 6) k6Extra(e.i, c, o, opts.isCommander);
+    // 성장 바이트 +0xa~+0xd 는 능력치 네 가지에 더한다. 등급(다섯 바이트 합) 구간과 표('A' 방어구·'B' 무기류)에 따라 한 점당 값이 다르다 (0x435ac2, 0x4365f4)
+    if (e.g && growTable) {
+      const G = growthGrade(e), t = growTable === 'A' ? GROW_A : GROW_B, row = t[G < 20 ? 0 : G < 40 ? 1 : G < 60 ? 2 : G < 80 ? 3 : 4];
+      for (let q = 0; q < 4; q++) o.add[q] += (e.g[q + 1] | 0) * row[q];
+    }
   }
   sets(h, o, opts.srv || {});
   o.pvp = Math.min(90, o.pvp);

@@ -134,6 +134,9 @@ wss.on('connection', ws => {
     else if (m.t === 'shopclose') player.shop = null;
     else if (m.t === 'bankmoney') game.bankMoney(player, m.n, !!m.put);
     else if (m.t === 'bankput') game.bankPut(player, m.slot | 0, m.n);
+    else if (m.t === 'growthput' && player.growing) game.growthPut(player, m.slot | 0);
+    else if (m.t === 'growthtry' && player.growing) game.growthTry(player, m.slot | 0);
+    else if (m.t === 'growthcancel' && player.growing) game.growthCancel(player);
     else if (m.t === 'bankget') game.bankGet(player, m.slot | 0, m.n);
     else if (m.t === 'bankclose') player.bankNpc = 0;
     else if (m.t === 'exchsell') game.exchSell(player, m.slot | 0, m.n, m.price, m.buyer);

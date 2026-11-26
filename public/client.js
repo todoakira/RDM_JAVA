@@ -625,6 +625,7 @@ const handlers = {
   // 우편 (서버 패킷 0x1c3 우편함 열기, 0x1af~0x1b3 목록, 0x1b5~0x1b9 읽기, 0x1bb 지우기, 0x1bd 쓰기 시작, 0x1bf 아이템 받기, 0x1c1 우편 알림)
   army(m) { ArmyUI.handle(m); },
   mailopen() { UI.post.open(); },
+  growth(m) { UI.growth(m); },
   maillist(m) { UI.post.list(m); },
   mailread(m) { UI.post.read(m); },
   maildel(m) { UI.post.del(m); },

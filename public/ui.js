@@ -237,6 +237,7 @@ const UI = (() => {
       removeEventListener('pointermove', move); removeEventListener('pointerup', up);
       if (!drag) return; const d = drag; drag = null; d.g.remove();
       const under = document.elementFromPoint(e.clientX, e.clientY);
+      if (under && growth && el('grslot').contains(under) && typeof d.slot === 'number') { growth.slot = d.slot; growth.it = d.it; drawGrowth(); send({ t: 'growthput', slot: d.slot }); return; }   // 성장 창 칸에 놓기 → 0x4be
       if (!under || under.id !== 'cv' || !window.dropTarget) return;
       const at = window.dropTarget(e.clientX, e.clientY); if (!at) return;
       const max = d.slot === 'money' ? inv.money : d.slot === 'tau' ? (inv.tau || 0) : (d.it.n || 1);
@@ -257,6 +258,30 @@ const UI = (() => {
   el('bankmoney').onclick = () => { if (bank && bank.money) ask(M0(69), bank.money, n => send({ t: 'bankmoney', n, put: 0 })); };
   function openBank(m) { bank = { ...m, name: m.name || (bank && bank.name) }; el('winBank').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawBank(); }
   function closeBank(tell) { if (bank && tell) send({ t: 'bankclose' }); bank = null; el('winBank').style.display = 'none'; }
+
+  // ---------- 성장 창 ----------
+  // 열면 (0x4bd) 글 0/0/0x1d9, 아이템을 칸에 놓으면 서버가 필요 경험치를 알리고 (0x4bf) 글 0/0/0x1d1 에 넣는다.
+  // OK: 내 경험치가 모자라면 0/0/0x1dc (서버에 보내지 않음, 0x1002e450), 아니면 0x4c0. 취소·닫기 0x4c2.
+  // 결과 (0x4c1): 2 → 0x1d3, 1 → 0x1d4, 0 → 0x1d5 를 보이고 창을 닫는다
+  let growth = null;
+  function drawGrowth() {
+    const s = el('grslot'); s.innerHTML = '';
+    if (growth && growth.it) { const c = cell(growth.it, 0, 0); c.style.left = '0'; c.style.top = '0'; s.appendChild(c); }
+    el('grtext').textContent = growth && growth.need !== undefined ? M0(0x1d1).replace(/%[a-z]*u|%[a-z]*d/, growth.need.toLocaleString()) : M0(0x1d9);
+  }
+  function growthMsg(m) {
+    if (m.a === 'open') { growth = { slot: -1 }; el('winGrowth').style.display = 'block'; if (el('winInv').style.display !== 'block') toggle('winInv'); drawGrowth(); return; }
+    if (m.a === 'need') { if (growth) { growth.need = m.need; growth.slot = m.slot; drawGrowth(); } return; }
+    if (m.a === 'result') { msgBox(M0(m.res === 2 ? 0x1d3 : m.res === 1 ? 0x1d4 : 0x1d5), ['ok']); }
+    growth = null; el('winGrowth').style.display = 'none';
+  }
+  el('grok').onclick = () => {
+    if (!growth || growth.slot < 0 || growth.need === undefined) return;
+    if (stat && stat.exp < growth.need) { msgBox(M0(0x1dc), ['ok']); return; }
+    send({ t: 'growthtry', slot: growth.slot });
+  };
+  el('grno').onclick = () => { if (growth) send({ t: 'growthcancel' }); growth = null; el('winGrowth').style.display = 'none'; };
+  for (const b of [el('grok'), el('grno')]) { b.onmousedown = () => { b.style.backgroundPosition = '0 -20px'; }; b.onmouseup = b.onmouseleave = () => { b.style.backgroundPosition = '0 0'; }; }
 
   // ---------- 기술 창 (F5) ----------
   // 그림 iw-sk-ba(80). 위 줄 일반 기술, 아래 줄 특수 기술, 한 줄에 3칸, 양 끝 화살표로 넘긴다. 아래쪽은 설명 칸.
@@ -548,5 +573,5 @@ const UI = (() => {
       paint();
     }).catch(() => {});
   }
-  return { web: openWeb, help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { growth: growthMsg, web: openWeb, help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();
