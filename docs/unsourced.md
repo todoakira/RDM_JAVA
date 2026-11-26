@@ -27,9 +27,10 @@
 
 - NPC 이벤트 11~16 군단(아지트·금고·게시판), 45 배틀존 이동 (ProcessEvent 0x41ee70 의 분기표 0x421f74)
 - 이동 이벤트의 투기장(0x84~0x88)·대전장(0xb4~0xbc) 입장 조건 (GetBattleArenaState / GetBattleMatchState, 메시지 0x139·0x14d)
-- 클라이언트: 캐릭터 고르기의 정보 고치기(Change User Info), 군단 창의 일부 단추
+- 클라이언트: 군단 창의 일부 단추
 - 시그너스 돈(SigMoney)은 Tau(5/2)·시그너스 은행·죽을 때 떨어뜨리기로 이미 옮겨져 있음
 
 ## 원작 파일에 내용이 없어 우리가 채운 것
 - 위치 알림·보물 쪽지(패킷 0x3ef)가 연 웹 쪽: 원작은 board.redmoon.co.kr 의 쪽이었고 rmServer.ini 의 MINIMAP 도 빈 주소. 위치 알림은 맵을 줄여 그리고 자리를 찍고, 보물 쪽지는 원작 주소만 보인다.
 - 복권 우편 본문: MDF 의 RMS_ITEMLOTTERY_USEITEM 본문 글이 깨져 있어 복권 번호만 넣었다 (보낸이·제목은 읽힘). 경품표는 data/lottery.json (원작 tblItemLotteryList1 도 운영자가 채우는 표).
+- 캐릭터 고르기의 정보 고치기: 원작은 회원 정보 웹 쪽을 열었다 (svIP 의 redmoon_main.asp 주소). 그 쪽이 없으므로 비밀번호 바꾸기로 대신했다.

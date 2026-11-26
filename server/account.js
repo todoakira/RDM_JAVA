@@ -79,6 +79,13 @@ class Accounts {
     a.chars[slot] = null; this.save();
     return { ok: 1 };
   }
+  // 정보 고치기: 원작은 로그인 서버가 준 회원 정보 웹 쪽(svIP 의 redmoon_main.asp)을 열고 게임을 닫았다. 그 쪽은 없으므로 우리 쪽은 비밀번호 바꾸기만 한다
+  changePw(k, oldPw, newPw) {
+    const a = this.db[k]; if (!a) return { code: 6 };
+    if (!this.check(a, String(oldPw || ''))) return { code: 2 };
+    newPw = String(newPw || ''); if (newPw.length < 4 || newPw.length > 64) return { code: 10 };
+    a.auth = this.newAuth(newPw); this.save(); return { ok: 1 };
+  }
   has(k, name) { const a = this.db[k]; return !!(a && a.chars.includes(name)); }
 }
 module.exports = { Accounts, SLOTS };

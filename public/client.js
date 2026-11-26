@@ -775,6 +775,7 @@ function connect(id, pw, create) {
     }
     if (m.t === 'error') { $('msg').textContent = m.text; ws.onclose = null; ws.close(); return; }
     if (m.t === 'chars') { $('msg').textContent = ''; showChars(m.list); return; }
+    if (m.t === 'chpwok') { $('msg').textContent = '비밀번호를 바꿨습니다.'; return; }
     if (m.t === 'lerr') { let t = (UI.msg && UI.msg(0, 1, m.code)) || '오류'; for (const a of m.args || []) t = t.replace(/%[ud]/, a); $('msg').textContent = t; return; }
     if (ready) await ready;
     if (handlers[m.t] && (myId || m.t === 'stat' || m.t === 'inv')) handlers[m.t](m);
@@ -837,7 +838,14 @@ $('sbDel').onclick = () => {
   // 원작은 가입 때 넣은 생년월일을 받는다 (Message 0/0/51). 우리 계정에는 생년월일이 없어 비밀번호를 받는다 (0/0/10)
   const slot = selSlot; UI.msgBox(UI.M0(10) + '\n' + c.name, ['ok', 'cancel'], (y, pw) => { if (y && pw) send({ t: 'delchar', slot, pw }); }, true); $('msgin').type = 'password';
 };
-$('sbInfo').onclick = () => { $('msg').textContent = '아직 구현되지 않았습니다.'; };
+// 정보 고치기: 원작은 회원 정보 웹 쪽을 열었다. 우리 쪽은 비밀번호 바꾸기 (지금 비밀번호 → 새 비밀번호 두 번)
+$('sbInfo').onclick = () => {
+  const pwBox = (t, cb) => { UI.msgBox(t, ['ok', 'cancel'], (y, v) => { if (y && v) cb(v); }, true); $('msgin').type = 'password'; };
+  pwBox('지금 비밀번호', old => pwBox('새 비밀번호', pw => pwBox('새 비밀번호 한 번 더', pw2 => {
+    if (pw !== pw2) { $('msg').textContent = (UI.msg && UI.msg(0, 1, 10)) || ''; return; }
+    send({ t: 'chpw', old, pw });
+  })));
+};
 $('sbOut').onclick = () => { if (ws) { ws.onclose = null; ws.close(); } scr('scrTitle'); showDlg(null); $('msg').textContent = ''; };
 $('mkok').onclick = () => { const chr = mkChr, beginner = (document.querySelector('input[name=beginner]:checked') || {}).value === '1'; send({ t: 'newchar', slot: mkSlot, name: $('cn').value.trim(), chr, beginner }); };
 $('mkno').onclick = () => scr('scrSelect');

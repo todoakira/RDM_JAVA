@@ -50,6 +50,7 @@ wss.on('connection', ws => {
         pending[A.db[acct].chars[r.slot]] = { chr: Number.isInteger(m.chr) && m.chr >= 0 && m.chr <= 8 ? m.chr : 1, beginner: !!m.beginner };
         send({ t: 'chars', list: A.list(acct) }); return;
       }
+      if (m.t === 'chpw') { const r = A.changePw(acct, m.old, m.pw); if (r.code !== undefined) { err(r.code, r.args); return; } send({ t: 'chpwok' }); return; }
       if (m.t === 'delchar') { const r = A.delChar(acct, m.slot | 0, m.pw); if (r.code !== undefined) { err(r.code, r.args); return; } send({ t: 'chars', list: A.list(acct) }); return; }
       if (m.t !== 'select') return;
       const name = A.db[acct] && A.db[acct].chars[m.slot | 0]; if (!name) return;
