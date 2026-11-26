@@ -1706,12 +1706,72 @@ class World {
       if (r && r !== 'skip') this.hit(p, d, now);
     }
   }
+  // 무기의 범위(+0x56). 수류탄 1/64~67 은 2, 토우런쳐·바주카포 1/69·70·145·146 은 2, 신 무기 6/80~84 는 5
+  weaponShot(p) { const w = p.equip && p.equip[7], r = w && this.game.itemBul[w.k] && this.game.itemBul[w.k][w.i]; return (r && r.shot) || 0; }
+  // 중화기 범위 공격 (ProcessUserAttackRange 0x43a980 → DoAttackRange 0x46ccc0)
+  //  - 사거리 R 와 노린 대상 검사는 꿰뚫기와 같다 (효과 11 총 +2, 효과 34 총 25).
+  //  - 공격력: 1/64~67 은 무기 공격이 0 보다 크면 하지 않고, 아니면 GetSkillAttack(−무기 공격).
+  //           1/69·145 와 그 밖은 ⌊T30/3⌋ + (근력 공격 + 무기 공격) × 2, 1/70·146 은 × 3.
+  //           6/80~84 는 ⌊T30/3⌋ − 아이템 공격 + 근력 공격 + 무기 공격 (음수면 1) + (DB 근력, 81 은 DB 정신력) × 레벨 ÷ 40.
+  //  - 맞을 곳: 효과 51 이고 1/69·70·145·146 이면 노린 대상 둘레 R 안에서 꿰뚫기처럼 줄 위에 있는 것들 (100개까지), 아니면 노린 대상 하나.
+  //    맵 180 에서 2군단이 아니거나 181 에서 1군단이 아닐 때는 이름이 W 로 시작하는 몬스터는 줄에서 뺀다.
+  //  - 맞을 곳마다 그 둘레 +0x56 안의 사람·몬스터를 모두 친다 (같은 그룹·나 자신 빼고, 사람은 PK 조건).
+  //  - 아이템 정보 +4 가 0x13 (수류탄) 이고 안전 칸이 아니면 무기를 하나 쓴다 (RemoveItem 2, 7)
+  rangeAttack(p, t, now) {
+    const w = p.equip[7], f = w && this.game.itemInfo(w.k, w.i), shot = this.weaponShot(p); if (!f || !shot) return;
+    const gun = SK.isGunOnly(w);
+    let R = p.range; if (gun && this.fxOn(p, 11, now)) R += 2; if (gun && this.fxOn(p, 34, now)) R = 25;
+    if (G.dist(p, t) > R) return;
+    if (t.mob ? t.hp <= 0 : (t.dead || (this.fxOn(t, 19, now) && (!(t.pkPen > 0) || !this.fxOn(p, 3, now))))) return;
+    const base = (p.atk || 0), x3 = Math.floor((p.atkExtra || 0) / 3);
+    let atk;
+    if (w.k === 1) {
+      if (w.i >= 0x40 && w.i <= 0x43) { if ((f.atk || 0) > 0) return; atk = this.mobDamage(p, -(f.atk || 0), now, null, false); }
+      else if (w.i === 0x46 || w.i === 0x92) atk = base * 3 + x3;
+      else atk = x3 + base * 2;
+    } else if (w.k === 6) {
+      let v = x3 - (f.atk || 0) + base; if (v < 0) v = 1;
+      const st = w.i === 0x51 ? p.base.spi : (w.i >= 0x50 && w.i <= 0x54 ? p.base.str : 0);
+      atk = v + Math.floor(st * p.level / 40);
+    } else atk = x3 + base * 2;
+    atk = Math.max(0, atk);
+    const pts = [];
+    const line = this.fxOn(p, 51, now) && w.k === 1 && [0x45, 0x46, 0x91, 0x92].includes(w.i);
+    if (line) {
+      const A = { x: p.x, y: p.y, z: p.z }, T = { x: t.x, y: t.y, z: t.z }, same = (a, b) => a.x === b.x && a.y === b.y;
+      const step = (c, to) => G.next(c, G.direction(c, to));
+      const onLine = E => {
+        if (same(E, T)) return true; let cur = { ...A };
+        for (let n = 0; n < 64; n++) { if (G.dist(cur, T) < 1) return false; cur = step(cur, T); if (same(cur, E)) return true; }
+        return false;
+      };
+      const armyMob = m => (this.mapId === 180 && p.army !== 2) || (this.mapId === 181 && p.army !== 1) ? (m.name || '')[0] === 'W' : false;
+      for (const u of this.players.values()) if (pts.length < 100 && u !== p && !u.dead && G.dist(T, u) <= R && this.noObstacle(p, u) && onLine(u)) pts.push({ x: u.x, y: u.y, z: u.z });
+      if (!this.safe(p.x, p.y)) for (const m of this.mobs.values()) if (pts.length < 100 && m.hp > 0 && !armyMob(m) && G.dist(T, m) <= R && this.noObstacle(p, m) && onLine(m)) pts.push({ x: m.x, y: m.y, z: m.z });
+    } else pts.push({ x: t.x, y: t.y, z: t.z });
+    const done = new Set();
+    for (const P of pts) {
+      for (const u of [...this.players.values()]) {
+        if (u === p || u.dead || done.has(u) || G.dist(P, u) > shot || (p.group && u.group === p.group)) continue;
+        const r = this.game.pk.attack(p, u); if (!r || r === 'skip') continue;
+        done.add(u); this.hit(p, u, now, 0, atk);
+      }
+      if (!this.safe(p.x, p.y)) for (const m of [...this.mobs.values()]) {
+        if (m.hp <= 0 || done.has(m) || G.dist(P, m) > shot) continue;
+        done.add(m); this.hit(p, m, now, 0, atk);
+      }
+    }
+    if (f.icon === 0x13 && !this.safe(p.x, p.y)) {                       // 수류탄은 한 번 던지면 하나 줄어든다
+      if (--w.n <= 0 || !w.n) { p.equip[7] = null; }
+      this.game.recalc(p, false); this.game.sendInv(p); this.game.sendStat(p);
+    }
+  }
   attackBul(a, kind) {
     if (a.mob) return (kind ? a.info.bullet2 : a.info.bullet) || 0;
     const w = a.equip && a.equip[7], r = w && this.game.itemBul[w.k] && this.game.itemBul[w.k][w.i];
     return (r && r.bul) || 0;
   }
-  hit(a, d, now, kind = 0) {
+  hit(a, d, now, kind = 0, ov) {   // ov: 공격력을 따로 정할 때 (중화기 범위 공격)
     const bul = this.attackBul(a, kind);
     // 치명타면 반드시 맞고 피해 2배, 아니면 명중 판정. 민첩성은 효과를 더한 값 (fightDex)
     //   주인공 공격 (DoAttackMop 0x46f4f0): 기본 10, CRIT15 무기면 15. 효과 34 Snipe 이고 총이면 + 50 (몬스터 그림 98 이면 + 10)
@@ -1731,7 +1791,7 @@ class World {
     if (!a.mob) { this.fxOff(a, 1); this.fxOff(a, 19); this.fxOff(a, 35); }            // 공격하면 효과 1 위장·19·35 Hide 가 풀린다 (ProcessUserAttack 0x43a931, 0x43a958)
     if (!crit && F.rand100() > this.hitChance(a, d, F.hitPct(aDex, defDex), now)) { this.near(a, { t: 'atk', id: a.id, tid: d.id, dir: a.dir, k: kind, miss: 1, hp: d.hp, bul }); return; }
     // 공격력 = 근력 공격 + 무기 공격 + ⌊T+0x30 / 3⌋ (DoAttackMop 0x46f8a3)
-    let dmg = Math.max(1, F.rollDamage(a.atk + (a.mob ? 0 : Math.floor((a.atkExtra || 0) / 3)), a.minPct) * (crit ? 2 : 1));
+    let dmg = Math.max(1, F.rollDamage(ov !== undefined ? ov : a.atk + (a.mob ? 0 : Math.floor((a.atkExtra || 0) / 3)), a.minPct) * (crit ? 2 : 1));
     if (!d.mob) dmg = this.userDamage(a, d, dmg, now);
     if (a.mob && !d.mob && this.fxOn(d, 6, now)) {             // 효과 6: 체력 대신 마력 (CMopServer::Attack 0x47f58f)
       d.mp = Math.max(0, d.mp - (2 * dmg + Math.floor(dmg / 4))); d.hitAt = now;
@@ -1867,7 +1927,8 @@ class World {
           p.goal = null;
           if (now >= p.atkAt && now >= p.nextAt) {
             const d = G.direction(p, m); if (d !== 5) p.dir = d; p.atkAt = now + this.game.attackMs(p);
-            if (this.fxOn(p, 50, now) && SK.isGunOnly(p.equip[7])) this.throughAttack(p, m, now);   // 효과 50 Dysperse + 총: 꿰뚫기 (ProcessUserAttack 0x43a8c8)
+            if (this.weaponShot(p)) this.rangeAttack(p, m, now);                     // 무기 +0x56 이 있으면 범위 공격 패킷 0xd4 (Main.dll 0x1002af46)
+            else if (this.fxOn(p, 50, now) && SK.isGunOnly(p.equip[7])) this.throughAttack(p, m, now);   // 효과 50 Dysperse + 총: 꿰뚫기 (ProcessUserAttack 0x43a8c8)
             else if (m.mob) this.hit(p, m, now);
             else {                                                            // 사람: PK 조건 (DoAttack 0x469dd0)
               const r = this.game.pk.attack(p, m);
