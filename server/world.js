@@ -48,7 +48,7 @@ const PERCENT_HEAL = 1900000000;     // 회복 수치가 이 값 이상이면 �
 const crypto = require('crypto');
 const G = require('./grid');
 const SK = require('./skills');
-const { Events } = require('./events');
+const { Events, line: msgLine } = require('./events');
 const EQUIP = require('./equip');
 const SUBQ = require('./subquest');
 const SHIP = require('./spaceship');
@@ -123,13 +123,16 @@ class World {
     let skipped = 0, seq = 0;
     // 몬스터 짝 (CMopServer::LoadMop 0x477616~0x4776d5): 불러온 순서대로 모습 81 을 모으고, 모습 82 는 다섯 마리씩 그 81 을 우두머리(+0x2e0)로 삼는다.
     //   다시 날 때도 같은 몬스터 구조체를 쓰므로 이름표(sid)로 잇는다
-    this.leaderOf = {}; const q81 = []; let n82 = 0;
+    this.leaderOf = {}; const q81 = []; let n82 = 0; this.pairOf = {}; this.pairArmed = {}; this.pairPos = {}; const q95 = []; let n96 = 0;
     for (const s of sv.spawns) {
       const info = game.mopInfo[s.kind]; if (!info) continue;
       for (let i = 0; i < s.count; i++) {
         const sid = `+${s.name}_${seq + i}`;
         if (info.img === 81) q81.push(sid);
         else if (info.img === 82 && Math.floor(n82 / 5) < q81.length) { this.leaderOf[sid] = q81[Math.floor(n82 / 5)]; n82++; }
+        // 모습 95('_') 와 96('`') 짝 (0x47769a~0x4776d5): 96 은 불러온 순서대로 아직 짝 없는 95 와 서로 +0x2e0 으로 잇는다
+        else if (info.img === 95) q95.push(sid);
+        else if (info.img === 96 && n96 < q95.length) { const a = q95[n96++]; this.pairOf[a] = sid; this.pairOf[sid] = a; }
       }
       seq += s.count;
     }
@@ -1100,17 +1103,28 @@ class World {
 
   // ---------- 몬스터 ----------
   // 죽은 몬스터는 배치표의 시간 뒤에 다시 난다. 다시 나기가 꺼져 있으면 켜질 때까지 기다린다
-  respawnLater(d) {
+  respawnLater(d, ms) {
     (this.deadMobs ||= new Map()).set(d.sid, d);
-    this.after(d.s.regen * 1000, () => {
+    this.after(ms ?? d.s.regen * 1000, () => {
       if (this.deadMobs.get(d.sid) !== d) return;                // 불러오기로 이미 되살아났다
       // 다시 나기 조건 (CMopAddServer::DoWork 0x474f70): 모습 87 은 다시 나지 않는다. 모습 78 은 12월 20~26일에만 (tm_mon = 11, 19 < tm_mday < 27)
       const img = d.info.img, t = new Date();
       if (img === 87) return;
+      // 짝 몬스터 (DoWork 0x4750e0~): 95·96 은 짝이 있고 짝도 죽어 있어야 다시 난다. 96 은 그 위에 95 가 죽으며 켠 표시(+0x2d4)가 있어야 한다
+      if (img === 95 || img === 96) {
+        const ps = this.pairOf[d.sid], pd = ps && this.deadMobs.get(ps);
+        if (!ps || !pd || (img === 96 && !this.pairArmed[d.sid])) { this.after(1000, () => { if (this.deadMobs.get(d.sid) === d) this.respawnLater(d, 0); }); return; }
+      }
       if (img === 78 && !(t.getMonth() === 11 && t.getDate() > 19 && t.getDate() < 27)) { this.respawnLater(d); return; }
       this.deadMobs.delete(d.sid);
       if (!this.regenOn) { this.pendingSpawn.push([d.s, d.sid]); return; }
-      const n = this.spawnMob(d.s, d.sid); if (n) this.broadcast({ t: 'madd', m: pubM(n) });
+      const pos = d.info.img === 96 && this.pairPos[d.sid]; delete this.pairPos[d.sid]; delete this.pairArmed[d.sid];
+      const n = this.spawnMob(d.s, d.sid, pos); if (!n) return;
+      this.broadcast({ t: 'madd', m: pubM(n) });
+      // 다시 날 때 맵 전체에 그 몬스터 이름으로 외친다 (SendLoudChatByCodePacket 0x468850, Message 0/7): 모습 78 → 0x2b4, 84 → 0x12b, 98 → 0x2b8, 그리고 종류(+0xec) 5 → 0x127
+      const shout = c => { const text = msgLine(c); if (text) this.broadcast({ t: 'chat', id: n.id, name: n.name, text, npc: 1 }); };
+      const L = { 78: 0x2b4, 84: 0x12b, 98: 0x2b8 }[d.info.img]; if (L) shout(L);
+      if (d.s.pattern === 5) shout(0x127);
     });
   }
   // SetMopRegen 0x47ab40
@@ -1124,9 +1138,9 @@ class World {
     for (const m of [...this.mobs.values()]) { this.release(m); this.mobs.delete(m.id); this.broadcast({ t: 'die', id: m.id }); this.respawnLater(m); }
   }
   // 배치표의 영역 좌표를 그대로 써서 자리를 고른다 (CMopServer::LoadMop 0x4773ac)
-  spawnMob(s, sid) {
+  spawnMob(s, sid, pos) {
     const info = this.game.mopInfo[s.kind];
-    const t = this.findFirstEmptyPlace(s.rect, q => this.canMop(q)); if (!t) return null;
+    const t = (pos && this.canMop(pos) && !this.occ.has(this.key(pos)) ? { x: pos.x, y: pos.y, z: pos.z } : null) || this.findFirstEmptyPlace(s.rect, q => this.canMop(q)); if (!t) return null;
     const st = F.mobStats(info, s.pattern);
     const m = { id: this.game.nextId++, mob: 1, sid, leaderSid: this.leaderOf && this.leaderOf[sid], s, info, pattern: s.pattern, home: t, name: s.name, chr: spriteOf(info.img), x: t.x, y: t.y, z: t.z, dir: G.DIRS[rnd(8)],
       str: st.str, spi: st.spi, dex: st.dex, pow: st.pow, atk: st.atk, minPct: st.minPct, maxHp: st.maxHp, hp: st.maxHp, exp: st.exp,
@@ -1796,6 +1810,11 @@ class World {
       this.release(d); this.mobs.delete(d.id);
       if (d.item) this.dropItem(d, d.item);
       this.respawnLater(d);
+      // 95 가 죽으면 짝 96 에 표시를 켜고, 죽은 자리에서 2.5초 뒤 나게 한다 (Dead 0x4787a0: 짝 +0x2d4 = 1, 자리, +0x170 = 지금 + 2500 − 다시 나기 시간)
+      if (d.info.img === 95 && this.pairOf[d.sid]) {
+        const ps = this.pairOf[d.sid]; this.pairArmed[ps] = 1; this.pairPos[ps] = { x: d.x, y: d.y, z: d.z };
+        const pd = this.deadMobs.get(ps); if (pd) this.respawnLater(pd, 2500);
+      }
       if (!a.mob) { if (!this.game.groups.shareExp(a, d, d.exp)) this.game.gainExp(a, d.exp); this.script.killed(a, d.sid, d); this.game.subq.onKill(a, d); }
     } else this.killPlayer(d, false, a);
   }

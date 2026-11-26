@@ -172,4 +172,4 @@ class Events {
     return this.w.npcs.find(n => n.name === name) || [...this.w.mobs.values()].find(m => m.sid === ref) || null;
   }
 }
-module.exports = { Events, SCRIPT };
+module.exports = { Events, SCRIPT, line };
