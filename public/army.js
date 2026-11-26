@@ -368,9 +368,113 @@ const ArmyUI = (() => {
     }
     el('arAbName').value = ''; show(d);
   }
+  // ---- 아지트 고르기 (0x787 → ia-z3-ba 251×276, 0x100426a0): 층 단추 is-id-bu 15×15 스무 개, 기지 단추 B2.
+  //   빈 층을 누르면 0x788, 빌린 층은 단추를 끄고 정보만 보인다 (0x160, 기지 0x168). '자유군 활동비 납부' 는 0x78c
+  let agSel = 0, agInfo = [];
+  function selectAgit(m) {
+    const d = win('arAgit', 502, 251, 276);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      text(d, 90, 77, 110, 12, M0(0xe1)); text(d, 85, 153, 115, 14, M0(0xe2));
+      const ds = text(d, 23, 24, 207, 46, ''); ds.id = 'arAgDesc'; ds.style.whiteSpace = 'pre-line';
+      const b0 = btn(d, 561, 116, 107, 15, 15, () => {}, 'B2'); b0.id = 'arAgB0'; b0.onmouseenter = () => { ds.textContent = agInfo[0]; };
+      for (let k = 1; k <= 20; k++) {
+        const b = btn(d, 561, 48 + 15 * ((k - 1) % 10), 170 + 16 * Math.floor((k - 1) / 10), 15, 15, () => { if (!b.dataset.off) A({ a: 'agitclick', n: k }); }, String(k));
+        b.id = 'arAg' + k; b.style.fontSize = '9px'; b.onmouseenter = () => { ds.textContent = agInfo[k]; };
+      }
+      btn(d, 503, 61, 216, 130, 23, () => A({ a: 'payactivity' }), M0(0xe3).trim());
+      btn(d, 553, 98, 245, 60, 20, () => hide(d));
+      d.onmouseleave = () => { ds.textContent = M0(0x165); };
+    }
+    const war = s => s === 1 ? M0(0x162) : s === 2 ? M0(0x163) : s === 3 ? M0(0x164) : M0(0x161);
+    el('arAgDesc').textContent = M0(0x165);
+    agInfo[0] = m.base ? fmt(M0(0x168), m.base.name, m.base.commander, M0(0x164)) : M0(0x166);
+    el('arAgB0').dataset.off = m.base ? 1 : ''; el('arAgB0').style.opacity = m.base ? .5 : 1;
+    for (const r of m.list) {
+      const b = el('arAg' + r.n); agInfo[r.n] = r.name ? fmt(M0(0x160), r.n, r.name, r.commander, M0(0x164)) : fmt(M0(0x9c), r.n);
+      b.dataset.off = r.name ? 1 : ''; b.style.opacity = r.name ? .5 : 1;
+    }
+    void war; show(d);
+  }
+  // ---- 빌리는 비용 (0x789 → ia-z23-ba 227×141, 0x10044260): 보증금·임대료 칸, 확인 → 0x78a
+  function agitRent(m) {
+    const d = win('arAgRent', 497, 227, 141);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      const a = input(d, 122, 27, 73, 18, 12); a.id = 'arAgDep'; a.readOnly = true;
+      const b = input(d, 122, 70, 73, 18, 12); b.id = 'arAgRnt'; b.readOnly = true;
+      btn(d, 560, 59, 105, 47, 20, () => { A({ a: 'agitrent', n: +d.dataset.n }); hide(d); });
+      btn(d, 553, 109, 105, 60, 20, () => hide(d));
+    }
+    d.dataset.n = m.n; el('arAgDep').value = m.deposit.toLocaleString(); el('arAgRnt').value = m.rent.toLocaleString(); show(d);
+  }
+  // ---- 금고 (0x767 → ia-z28-ba 137×104, 0x10067b10): 금고(0x768) · 창고(0x76a)
+  function safe() {
+    const d = win('arSafe', 501, 137, 104);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      btn(d, 481, 20, 18, 97, 23, () => A({ a: 'safemoney' }), M0(0x13e).trim());
+      btn(d, 481, 20, 44, 97, 23, () => A({ a: 'safeitems' }), M0(0x13f).trim());
+      btn(d, 553, 38, 75, 60, 20, () => hide(d));
+    }
+    show(d);
+  }
+  // ---- 자금 관리 (0x769 → ia-z40-ba 186×186, 0x100450d0): 세 칸. 돈을 칸에 끌어 놓으면 0/0/0x43 → 0x76c, 칸을 누르면 0/0/0x45 → 0x76e
+  let sMoney = [0, 0, 0];
+  function safeMoney(m) {
+    const d = win('arSafeM', 516, 186, 186);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      [16, 59, 104].forEach((y, i) => {
+        text(d, 30, y, 129, 12, fmt(M0(0x140), i + 1));
+        const v = text(d, 87, y + 20, 72, 16, '0'); v.id = 'arSm' + i; v.style.cursor = 'pointer'; v.style.textAlign = 'right'; v.dataset.slot = i + 1;
+        v.onclick = () => { if (sMoney[i] > 0) UI.askNum(M0(0x45), sMoney[i], n => A({ a: 'safemoneymove', slot: i + 1, n, put: 0 })); };
+      });
+      btn(d, 553, 63, 156, 60, 20, () => hide(d));
+    }
+    if (m.money) sMoney = m.money.slice();
+    if (m.slot) sMoney[m.slot - 1] = m.money1;
+    sMoney.forEach((v, i) => { el('arSm' + i).textContent = v.toLocaleString(); }); show(d);
+  }
+  // ---- 물품 관리 (0x76b → ia-z27-ba 442×461, 0x10063010): 10×10 칸 (35×35, 40 간격). 끌어 놓으면 0/0/0x44 → 0x770, 두 번 누르면 꺼내기
+  let sItems = [];
+  function safeItems(m) {
+    const d = win('arSafeI', 500, 442, 461);
+    if (!d.dataset.ok) {
+      d.dataset.ok = 1;
+      const g = document.createElement('div'); g.id = 'arSiGrid'; g.style.cssText = 'position:absolute;left:23px;top:25px;width:395px;height:395px'; d.appendChild(g);
+      btn(d, 553, 190, 431, 60, 20, () => hide(d));
+    }
+    sItems = m.items; const g = el('arSiGrid'); g.innerHTML = '';
+    for (const it of sItems) {
+      const c = UI.cell(it, 40 * (it.slot % 10), 40 * Math.floor(it.slot / 10)); c.title = it.name + (it.desc ? '\n' + it.desc : '');
+      c.ondblclick = ev => A({ a: 'safeget', slot: it.slot, n: ev.shiftKey ? it.n : 1 }); g.appendChild(c);
+    }
+    show(d);
+  }
+  // 아이템 창에서 끌어 놓기 (원작 0x1001cac0~: 돈 → 자금 칸 0/0/0x43, 아이템 → 창고 0/0/0x44)
+  window.safeDrop = (under, dr) => {
+    const sm = el('arSafeM'), si = el('arSafeI');
+    if (sm && sm.style.display === 'block' && sm.contains(under) && dr.slot === 'money') {
+      const r = sm.getBoundingClientRect(), y = (under.getBoundingClientRect().top - r.top), slot = y < 59 ? 1 : y < 104 ? 2 : 3;
+      UI.askNum(M0(0x43), window.myMoney ? window.myMoney() : 4000000000, n => A({ a: 'safemoneymove', slot, n, put: 1 })); return true;
+    }
+    if (si && si.style.display === 'block' && si.contains(under) && typeof dr.slot === 'number') {
+      UI.askNum(M0(0x44), dr.it.n || 1, n => A({ a: 'safeput', slot: dr.slot, n })); return true;
+    }
+    return false;
+  };
   function handle(m) {
     switch (m.w) {
       case 'computer': computer(); break;
+      case 'selectagit': selectAgit(m); break;
+      case 'agitrent': agitRent(m); break;
+      case 'safe': safe(); break;
+      case 'safemoney': safeMoney(m); break;
+      case 'safemoneyset': safeMoney({ slot: m.slot, money1: m.money }); break;
+      case 'safeitems': safeItems(m); break;
+      case 'agitcomputer': UI.msgBox(M0(0x101), ['ok', 'cancel'], (y, v) => { if (y) A({ a: 'login', password: v }); }, true); break;   // 0x725 (종류 0x19)
+      case 'goagit': UI.msgBox(M0(0x67), ['ok', 'cancel'], (y, v) => { const n = Math.floor(Number(v)); if (y && n >= 0 && n <= 20) A({ a: 'goagit', n }); }, true); break;   // 0x797 (종류 0x26)
       case 'reserves': reserves(m); break;
       case 'reservenew': reserveNew(); break;
       case 'reservemade': hide(el('arResNew')); UI.sysLine(M0(0x199)); break;

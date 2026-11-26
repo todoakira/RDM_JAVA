@@ -102,6 +102,11 @@ wss.on('connection', ws => {
       else if (a === 'invite') A.invite(player, m.name); else if (a === 'inviteans') A.inviteAnswer(player, m.commander, !!m.ok);
       else if (a === 'uninvite') A.removeInit(player, m.name); else if (a === 'form') A.armyForm(player); else if (a === 'cancel') A.armyCancel(player);
       else if (a === 'info') A.info(player); else if (a === 'members') A.memberList(player); else if (a === 'login') A.login(player, m.password);
+      else if (a === 'agitclick') A.agitClick(player, m.n | 0); else if (a === 'agitrent') A.agitRent(player, m.n | 0);
+      else if (a === 'safemoney') A.safeMoney(player); else if (a === 'safeitems') A.safeItems(player);
+      else if (a === 'safemoneymove') A.safeMoneyMove(player, m.slot, m.n, !!m.put);
+      else if (a === 'safeput') A.safeItemPut(player, m.slot, m.n); else if (a === 'safeget') A.safeItemGet(player, m.slot, m.n);
+      else if (a === 'payrent') A.payRent(player); else if (a === 'restoreagit') A.restoreAgit(player); else if (a === 'goagit') A.goAgit(player, m.n); else if (a === 'payactivity') A.payActivity(player);
       else if (a === 'notice') A.notice(player, m.text, m.kind | 0); else if (a === 'hire') A.hire(player, m.name, !!m.fire); else if (a === 'hireans') A.hireAnswer(player, m.commander, !!m.ok);
       else if (a === 'cmdpw') A.cmdPassword(player, m.password); else if (a === 'transfer') A.transfer(player, m.name);
       else if (a === 'transferans') A.transferAnswer(player, m.commander, !!m.ok, m.password); else if (a === 'appoint') A.appoint(player, m.name, !!m.on);

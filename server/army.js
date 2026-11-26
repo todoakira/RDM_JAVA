@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const F = require('./formulas');
+const { sameIIS, iisOf, iisX } = require('./iis');
 
 const ROOT = path.join(__dirname, '..');
 const DAY = 24 * 3600 * 1000;
@@ -16,7 +17,7 @@ class Army {
   constructor(game) {
     this.game = game;
     try { this.db = JSON.parse(fs.readFileSync(path.join(ROOT, 'save', 'army.json'), 'utf8')); } catch (e) { this.db = {}; }
-    this.db.seq ||= 0; this.db.armies ||= {}; this.db.members ||= {}; this.db.sanction ||= {}; this.db.subs ||= {}; this.db.alliance ||= {};
+    this.db.seq ||= 0; this.db.armies ||= {}; this.db.members ||= {}; this.db.sanction ||= {}; this.db.subs ||= {}; this.db.alliance ||= {}; this.db.agits ||= {}; this.db.base ||= { owner: 0, tax: 0, gain: 0 }; this.db.agitLost ||= {};
   }
   save() { try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(path.join(ROOT, 'save', 'army.json'), JSON.stringify(this.db)); } catch (e) { console.log('군단 저장 실패', e.message); } }
   msg(p, code, ...a) { this.game.story.msg(p, code, ...a); }
@@ -43,6 +44,191 @@ class Army {
 
   // ---- 군단 컴퓨터 (이벤트 종류 11 → 패킷 0x709)
   openComputer(p) { if (this.side(p.world)) p.send({ t: 'army', w: 'computer' }); }
+
+  // ---- 아지트 (rmServer.ini [MapServer] AgitBase1=48 AgitBase2=110 AgitCount=20 ArmyBase=131, LoadAgitInfo 0x446420)
+  //   아지트 1~20 은 맵 48~67 (진영 1), 21~40 은 맵 110~129 (진영 2). 군단 기지는 맵 131. 대전장(180~188)에서는 아지트가 아니다
+  agitNo(mapId) {
+    if (mapId >= 0xb4 && mapId <= 0xbc) return -1;
+    const a = mapId - 48 + 1, b = mapId - 110 + 21;
+    if (a > 0 && a <= 20) return a; if (b >= 21 && b <= 40) return b; return -1;
+  }
+  agitMap(n) { return n >= 1 && n <= 20 ? 48 - 1 + n : n >= 21 && n <= 40 ? 110 - 21 + n : -1; }
+  isBase(w) { return w.mapId === 131; }
+  defPos(map) { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'default_pos.json'), 'utf8'))[map]; } catch { return null; } }
+  agitOwner(n) { const g = this.db.agits[n]; return g ? g.army : 0; }
+  isAgitOwner(id, n) { return id > 0 && this.agitOwner(n) === id; }               // CArmy::IsAgitOwner ("ArmyID=%d AND AgitNumber=%d")
+  isBaseOwner(id) { return id > 0 && this.db.base.owner === id; }
+  agitCount(id) { return Object.values(this.db.agits).filter(g => g.army === id).length; }   // GetArmyAgitCount
+  // 진영의 아지트가 상대 진영에게 11 개 넘게 빼앗겼는가 (IsAgitClosureState 0x1000eb60: 진영 1 은 21~40 이 아닌 1~20 중 진영 2 군단 것, 반대도 같다)
+  closed(camp) {
+    const lo = camp === 1 ? 0 : 20, other = camp === 1 ? 2 : 1;
+    return Object.entries(this.db.agits).filter(([n, g]) => n > lo && n <= lo + 20 && this.db.armies[g.army] && this.db.armies[g.army].camp === other).length > 10;
+  }
+  // 아지트 빌리기 가능: 최근 하루 안에 '전쟁에 져서 아지트를 모두 잃음' 기록이 없을 것 (IsRentEmptyAgitAvailable 0x10022000)
+  rentAvailable(id) { const t = this.db.agitLost[id]; return !(t && Date.now() - t < DAY); }
+  // 세율 (GetArmyAgitTax: tblArmyBase.AgitTaxRate). 기지를 같은 진영이 가졌으면 반, 상대 진영이면 두 배 (ProcessClickEmptyAgit 0x418a30)
+  rentCost(camp) {
+    let tax = this.db.base.tax || 0;
+    if (tax > 0) { const o = this.db.armies[this.db.base.owner]; if (o && o.camp) tax = o.camp === camp ? Math.floor(tax / 2) : tax * 2; }
+    const lang1 = this.game.lang === 1 || this.game.lang === undefined;   // rmServer.ini Lang=1
+    const dep = lang1 ? 50000000 : 500000000, rent = lang1 ? 10000000 : 100000000;
+    return { deposit: dep + Math.floor(dep / 100) * tax, rent: rent + Math.floor(rent / 100) * tax, taxPart: Math.floor(dep / 100) * tax + Math.floor(rent / 100) * tax };
+  }
+  // 빈 아지트를 누름 → 비용 알림 0x789 (ProcessClickEmptyAgit) / 빌리기 (ProcessRentEmptyAgit 0x418ca0). 번호는 진영 안 번호 1~20
+  agitCheck(p, local) {
+    const camp = this.side(p.world), n = local - 20 + camp * 20; if (!camp) return null;
+    const id = this.idOf(p.name, true), a = this.db.armies[id];
+    if (!a) { this.msg(p, 0xdb); return null; }
+    if (this.agitOwner(n)) return null;
+    if (a.camp !== camp) { this.msg(p, 0xee); return null; }
+    if (!this.permitted(p.name, id, 0x20)) { this.msg(p, 0x101); return null; }
+    if (this.closed(camp)) { this.msg(p, 0x112); return null; }
+    if (this.agitCount(id) > 0) { this.msg(p, 0x113); return null; }
+    if (!this.rentAvailable(id)) { this.msg(p, 0x17f, 24); return null; }
+    return { id, a, n, cost: this.rentCost(camp) };
+  }
+  agitClick(p, local) { const c = this.agitCheck(p, local); if (c) p.send({ t: 'army', w: 'agitrent', n: local, deposit: c.cost.deposit, rent: c.cost.rent }); }
+  agitRent(p, local) {
+    const c = this.agitCheck(p, local); if (!c) return;
+    const total = c.cost.deposit + c.cost.rent;
+    if (p.money < total) { this.msg(p, 0x30, c.cost.deposit, c.cost.rent); return; }
+    p.money -= total; this.game.sendStat(p); this.game.sendInv(p);
+    const now = Date.now(), exp = new Date(now); exp.setMonth(exp.getMonth() + 1);   // RMS_ARMY_RENTEMPTYAGIT: 만료 = 한 달 뒤
+    this.db.agits[c.n] = { army: c.id, begin: now, exp: exp.getTime(), money: [0, 0, 0], items: {} };
+    if (c.cost.taxPart) this.db.base.gain = (this.db.base.gain || 0) + c.cost.taxPart;   // AddArmyBaseGain
+    this.save(); this.msg(p, 0x31, c.cost.deposit, c.cost.rent, local);
+  }
+  // NPC 종류 12~16 (ProcessEvent 0x420c10~0x420cc5)
+  npc(p, kind) {
+    const id = this.idOf(p.name, true), w = p.world;
+    if (kind === 12) {                                                  // 아지트 고르기 (SendOpenSelectAgit 0x411dc0)
+      const camp = this.side(w); if (!camp) return;
+      const list = [];
+      for (let k = 1; k <= 20; k++) { const n = k - 20 + camp * 20, g = this.db.agits[n], a = g && this.db.armies[g.army]; list.push(a ? { n: k, name: a.name, mark: a.mark, commander: a.commander } : { n: k }); }
+      const bo = this.db.armies[this.db.base.owner];
+      p.send({ t: 'army', w: 'selectagit', list, base: bo ? { name: bo.name, mark: bo.mark, commander: bo.commander } : null }); return;
+    }
+    if (kind >= 13 && kind <= 15) {
+      if (!(id > 0)) { this.msg(p, 0x32); return; }
+      const n = this.agitNo(w.mapId), own = this.isBase(w) ? this.isBaseOwner(id) : n > 0 && this.isAgitOwner(id, n);
+      if (kind === 15) { if (!own) { this.msg(p, 0x32); return; } p.send({ t: 'army', w: 'agitcomputer' }); return; }   // 0x725: 관리 로그인
+      if (kind === 13) { if (n < 0 && !this.isBase(w)) return; if (!own) { this.msg(p, 0x32); return; } this.safeOpen(p); return; }   // 금고 0x767
+      if (kind === 14) { if (!own) { this.msg(p, 0x32); return; } this.game.board.open(p, this.isBase(w) ? 0x33 : n + 10); return; }   // 군단 게시판
+    }
+    if (kind === 16) {                                                  // 아지트로 가기 (+0x4348 ≥ 5000, SendOpenGoAgit 0x797)
+      if (!(id > 0)) { this.msg(p, 0xdb); return; }
+      p.send({ t: 'army', w: 'goagit' });
+    }
+  }
+  safeOpen(p) { p.send({ t: 'army', w: 'safe' }); }                      // 0x767: 금고 메뉴 (ia-z28-ba)
+  // 금고 자리: 아지트 번호, 기지는 100 (ProcessClickArmySafeMoney 0x417620)
+  safeOf(p) {
+    const id = this.idOf(p.name, true); if (!(id > 0)) return null;
+    const w = p.world, n = this.agitNo(w.mapId), k = n >= 1 ? n : this.isBase(w) ? 100 : 0; if (!k) return null;
+    const own = k === 100 ? this.isBaseOwner(id) : this.isAgitOwner(id, k);
+    let g = k === 100 ? (this.db.base.safe ||= { money: [0, 0, 0], items: {} }) : this.db.agits[k];
+    return { id, k, own, g };
+  }
+  safeBusy(p) { if (p.pshop) { this.msg(p, 0xa0); return true; } if (p.growing) { this.msg(p, 0x182); return true; } return false; }
+  safeMoney(p) { const s = this.safeOf(p); if (!s) return; if (!s.own) { this.msg(p, 0xe0); return; } p.send({ t: 'army', w: 'safemoney', money: s.g.money }); }   // 0x769
+  safeItems(p) { const s = this.safeOf(p); if (!s) return; if (!s.own) { this.msg(p, 0xe0); return; } this.sendSafeItems(p, s.g); }        // 0x76b + 0x771
+  sendSafeItems(p, g) {
+    const view = (i, e) => { const f = this.game.itemInfo(e.k, e.i); return { slot: +i, k: e.k, i: e.i, n: e.n, name: f ? f.name : '?', desc: f ? f.desc || '' : '', icon: f ? f.icon : 0 }; };
+    p.send({ t: 'army', w: 'safeitems', items: Object.entries(g.items).map(([i, e]) => view(i, e)) });
+  }
+  // 넣기 (ProcessAddArmySafeMoney 0x417900): 칸 1~3, 칸마다 40억까지 (CArmy::AddAgitSafeMoney). 빼기는 권한 8 (ProcessGetArmySafeMoney 0x417b30)
+  safeMoneyMove(p, slot, n, put) {
+    slot |= 0; n = Math.floor(Number(n)); if (this.safeBusy(p) || slot < 1 || slot > 3 || !(n >= 1)) return;
+    const s = this.safeOf(p); if (!s) return; if (!s.own) { this.msg(p, 0x1e); return; }
+    const M = 4000000000, have = Math.min(p.money, M), m = s.g.money;
+    if (put) { n = Math.min(n, have, M - m[slot - 1]); if (n < 1) return; m[slot - 1] += n; p.money = have - n; }
+    else {
+      if (!this.permitted(p.name, s.id, 8)) { this.msg(p, 0x101); return; }
+      n = Math.min(n, M - have, m[slot - 1]); if (n < 1) return; m[slot - 1] -= n; p.money = have + n;
+    }
+    this.game.sendInv(p); this.game.save(p); this.save();
+    p.send({ t: 'army', w: 'safemoneyset', slot, money: m[slot - 1] });   // 0x76d
+  }
+  // 물건 넣기 (ProcessAddArmySafeItem 0x417d80): 종류 6 은 0x92. 같은 물건이 있으면 그 칸에 더하고, 없으면 빈 칸 (100 칸, GetEmptySafeIndex)
+  safeItemPut(p, slot, n) {
+    n = Math.floor(Number(n)); if (this.safeBusy(p) || !(n >= 1)) return;
+    const s = this.safeOf(p); if (!s) return; if (!s.own) { this.msg(p, 0x1e); return; }
+    const it = p.inv[slot | 0]; if (!it) return;
+    if (it.k === 6) { this.msg(p, 0x92); return; }
+    n = Math.min(n, it.n);
+    let idx = Object.keys(s.g.items).find(i => sameIIS(s.g.items[i], it));
+    if (idx === undefined) { for (let i = 0; i < 100; i++) if (!s.g.items[i]) { idx = i; break; } if (idx === undefined) return; s.g.items[idx] = iisOf(it, 0); }
+    const b = s.g.items[idx]; n = Math.min(n, 4000000000 - b.n); if (n < 1) return;
+    b.n += n; it.n -= n; if (it.n <= 0) p.inv.splice(slot | 0, 1);
+    this.game.sendInv(p); this.game.sendStat(p); this.game.save(p); this.save(); this.sendSafeItems(p, s.g);
+  }
+  // 물건 빼기 (ProcessGetArmySafeItem 0x418040): 권한 4. 들지 못한 만큼은 금고에 남는다
+  safeItemGet(p, idx, n) {
+    n = Math.floor(Number(n)); if (this.safeBusy(p) || !(n >= 1)) return;
+    const s = this.safeOf(p); if (!s) return; if (!s.own) { this.msg(p, 0x1e); return; }
+    if (!this.permitted(p.name, s.id, 4)) { this.msg(p, 0x101); return; }
+    const b = s.g.items[idx | 0]; if (!b) return;
+    const took = this.game.giveItem(p, b.k, b.i, Math.min(n, b.n), iisX(b)); if (!took) return;
+    b.n -= took; if (b.n <= 0) delete s.g.items[idx | 0];
+    this.game.save(p); this.save(); this.sendSafeItems(p, s.g);
+  }
+  // 임대료 내기 (ProcessPayAgitRentCost 0x416c60/0x416df0): 군단장이나 권한 0x20. 만료 5 일 안의 아지트마다
+  //   임대료(+세)를 금고 돈 칸 1→3 순서로 빼고 만료를 한 달 늘린다. 금고 돈이 모자라면 0x107 (금액, 아지트)
+  payRent(p) {
+    const id = this.idOf(p.name, true); if (!(id > 0)) { this.msg(p, 0x101); return; }
+    if (!this.permitted(p.name, id, 0x20)) { this.msg(p, 0x101); return; }
+    const own = Object.keys(this.db.agits).filter(n => this.db.agits[n].army === id).map(Number);
+    if (!own.length) { this.msg(p, 0x101); return; }
+    const a = this.db.armies[id]; let paid = false;
+    for (const n of own) {
+      const g = this.db.agits[n]; if (!(g.exp <= Date.now() + 5 * DAY)) continue;
+      const c = this.rentCost(a.camp), cost = c.rent, taxPart = cost - (this.game.lang === 1 || this.game.lang === undefined ? 10000000 : 100000000);
+      if (g.money[0] + g.money[1] + g.money[2] < cost) { this.msg(p, 0x107, cost, n); continue; }
+      let left = cost; for (let i = 0; i < 3 && left > 0; i++) { const t = Math.min(left, g.money[i]); g.money[i] -= t; left -= t; }
+      const e = new Date(g.exp); e.setMonth(e.getMonth() + 1); g.exp = e.getTime();   // RMS_ARMY_EXTENDAGITEXPIRATION
+      if (taxPart > 0) this.db.base.gain = (this.db.base.gain || 0) + taxPart;
+      this.msg(p, 0x36); this.msg(p, 0x16d, n); paid = true;
+    }
+    this.save(); if (!paid) this.msg(p, 0xed);
+  }
+  // 아지트 돌려주기 (ProcessRestoreAgit 0x416fd0): 아지트 안에서, 전쟁 중이 아닐 것. 보증금 5천만 (Lang=1) 을 돌려받는다.
+  //   RMS_ARMY_REMOVEAGIT Kind=2: 금고까지 지우고 군단 활동 기간을 지금부터 한 달로
+  restoreAgit(p) {
+    const id = this.idOf(p.name, true);
+    if (!(id > 0) || !this.agitCount(id)) { this.msg(p, 0x101); return; }
+    if (!this.permitted(p.name, id, 0x20)) { this.msg(p, 0x101); return; }
+    const n = this.agitNo(p.world.mapId); if (n < 0) { this.msg(p, 0x127); return; }
+    if (!this.isAgitOwner(id, n)) { this.msg(p, 0x101); return; }
+    if (this.atWar && this.atWar(id)) { this.msg(p, 0x3e); return; }
+    delete this.db.agits[n];
+    const a = this.db.armies[id], e = new Date(); e.setMonth(e.getMonth() + 1); a.activity = e.getTime();
+    const back = this.game.lang === 1 || this.game.lang === undefined ? 50000000 : 500000000;
+    p.money = Math.min(4000000000, p.money + back); this.game.sendInv(p); this.game.save(p); this.save();
+    this.msg(p, 0x37, back);
+  }
+  // 자유군 활동비 (ProcessPayArmyActivityCost 0x418fa0): 같은 진영 컴퓨터에서 군단장만. 활동 기간이 5 일 안에 끝날 때
+  //   10만 (Lang=1, 아니면 100만) 을 내고 한 달 늘린다 (RMS_ARMY_EXTENDACTIVITYDURATION). 아니면 0x108, 돈이 모자라면 0x109
+  payActivity(p) {
+    const id = this.idOf(p.name, true); if (!(id > 0)) { this.msg(p, 0xdb); return; }
+    const a = this.db.armies[id]; if (a.camp !== this.side(p.world)) { this.msg(p, 0xee); return; }
+    if (a.commander !== p.name) { this.msg(p, 0x1e); return; }
+    if (!(a.activity < Date.now() + 5 * DAY)) { this.msg(p, 0x108); return; }
+    const cost = this.game.lang === 1 || this.game.lang === undefined ? 100000 : 1000000;
+    if (p.money < cost) { this.msg(p, 0x109); return; }
+    p.money -= cost; const e = new Date(a.activity); e.setMonth(e.getMonth() + 1); a.activity = e.getTime();
+    this.game.sendInv(p); this.game.save(p); this.save(); this.msg(p, 0x10a);
+  }
+  // 아지트로 가기 (ProcessGoArmyAgit 0x41a270): 0 = 기지, 1~20 = 진영 아지트. 들어갈 수 있으면 (13,13), 기지는 기본 자리
+  goAgit(p, k) {
+    k |= 0; if (k < 0 || k > 20) return;
+    const camp = this.side(p.world) || (this.db.armies[this.idOf(p.name, true)] || {}).camp; if (!camp) return;
+    const n = k === 0 ? 100 : k - 20 + camp * 20, map = k === 0 ? 131 : this.agitMap(n), id = this.idOf(p.name, true);
+    const w = p.world; if (w.mapId >= 0xb4 && w.mapId <= 0xbc) return;
+    let can = 0;
+    if (id > 0) can = n === 100 ? (this.isBaseOwner(id) ? 1 : 0) : this.isAgitOwner(id, n) ? 1 : 0;   // 전쟁 중 상대 입장은 전쟁을 옮길 때 (CArmyManager::CanEnterAgit 0x403640)
+    if (can !== 1) { this.msg(p, 0x23); return; }
+    if (n === 100) { const d = this.defPos(map); if (d) this.game.gotoMap(p, map, d[0], d[1]); } else this.game.gotoMap(p, map, 13, 13);
+  }
 
   // ---- 예비 군단 (Free Agent Army)
   reserves(side, like) {

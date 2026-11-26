@@ -1002,6 +1002,8 @@ class World {
     if (kind === 43) { this.game.pk.jailor(p); return; }
     if (kind === 1 || kind === 39) { this.warp(p, e, Date.now()); return; }   // 이동 NPC (ProcessEvent 0x41f239)
     if (kind === 2) { this.game.board.open(p, e[1]); return; }        // 게시판 (ProcessEvent case 2)
+    if (kind === 11) { this.game.army.openComputer(p); return; }
+    if (kind >= 12 && kind <= 16) { this.game.army.npc(p, kind); return; }   // 군단 아지트 NPC (ProcessEvent 0x420c10~)
     // 성장 창 (종류 86, 0x420b9b): 맵 93~108·137~176 에서만 (서버 맵 번호 +0x32c4)
     if (kind === 86) { const id = this.mapId; if ((id >= 0x5d && id <= 0x6c) || (id >= 0x89 && id <= 0xb0)) this.game.growthOpen(p); return; }                // 교도관
     // 그 밖의 종류는 원작도 아무 일 없다 (ProcessEvent 의 기본 갈래 0x421f4b). 4 메일·11~16 군단·45 배틀존은 아직 옮기지 않았다 (docs/unsourced.md)

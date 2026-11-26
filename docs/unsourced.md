@@ -28,8 +28,8 @@
 - 군단 아지트·기지·전쟁 (아래 순서로 옮길 것). NPC 종류 11 공용 컴퓨터 0x709(있음), 12 아지트 고르기 0x787 (SendOpenSelectAgit 0x411dc0),
   13 금고 0x767 (SendOpenAgitSafe 0x411f50), 14 군단 게시판 (SendOpenArmyBulletin 0x411d30, 기지 0x33 / 아지트 번호+10), 15 아지트 컴퓨터 0x725·0x799 (0x411bb0),
   16 아지트로 가기 0x797 (SendOpenGoAgit 0x41b400, 조건 +0x4348 ≥ 5000). 군단 아니면 0x32 / 0xdb.
-  남은 원작 함수: 아지트 빌리기·돌려주기·세금·임대료 (ProcessRentEmptyAgit, ProcessReturnAgit, ProcessClickChangeAgitTaxRate, ProcessPayAgitRentCost, ProcessRestoreAgit),
-  금고 (ProcessAdd/Get/ClickArmySafeItem·Money), 기지 (InitializeArmyBase, ProcessRepairArmyBase, ProcessRestoreArmyBase, ProcessOpenArmyBaseShop, AddBaseGuard, ProcessArmyBaseScore),
+  옮김: 아지트 고르기·빌리기 (ProcessClickEmptyAgit, ProcessRentEmptyAgit), 임대료 (ProcessPayAgitRentCost), 돌려주기 (ProcessRestoreAgit), 금고 돈·물건, 아지트로 가기 (ProcessGoArmyAgit, 전쟁 중 상대 입장은 전쟁과 함께), 활동비 (ProcessPayArmyActivityCost).
+  남은 원작 함수: 세율 (ProcessClickChangeAgitTaxRate), 귀환 (ProcessReturnAgit), 기지 (InitializeArmyBase, ProcessRepairArmyBase, ProcessRestoreArmyBase, ProcessOpenArmyBaseShop, AddBaseGuard, ProcessArmyBaseScore),
   전쟁 (ProcessStartDeclareWar, ProcessDeclareWar, ProcessWarBegin, ProcessEndWar, ProcessEndWarAgreement, ProcessSurrenderOfWar, ChangeWarScore, IncreaseWarScoreIfWar, 아지트 전쟁 코드 DoGenerateAgitWarCode·ProcessAgitCodeEntered),
   군단 이동 (ProcessGoArmyAgit, ProcessWarpToMember, ProcessUseWarpSkill)
 - 배틀 리그 전용 서버 모드 (-BattleArena·-BattleMatch·-BattleServer 로 띄운 서버, BillBattleDB 의 참가비·점수·편·순위·우승 기록). 원작 3944 서버도 이 모드 없이 돌았고, 보통 서버에서는 투기장·대전장에 들어갈 수 없다 (이동 지점은 아무 일 없음, NPC 45 도 아무 일 없음). 이것은 옮겼다.

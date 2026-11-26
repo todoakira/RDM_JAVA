@@ -237,6 +237,7 @@ const UI = (() => {
       removeEventListener('pointermove', move); removeEventListener('pointerup', up);
       if (!drag) return; const d = drag; drag = null; d.g.remove();
       const under = document.elementFromPoint(e.clientX, e.clientY);
+      if (under && window.safeDrop && window.safeDrop(under, d)) return;
       if (under && growth && el('grslot').contains(under) && typeof d.slot === 'number') { growth.slot = d.slot; growth.it = d.it; drawGrowth(); send({ t: 'growthput', slot: d.slot }); return; }   // 성장 창 칸에 놓기 → 0x4be
       if (!under || under.id !== 'cv' || !window.dropTarget) return;
       const at = window.dropTarget(e.clientX, e.clientY); if (!at) return;
@@ -573,5 +574,5 @@ const UI = (() => {
       paint();
     }).catch(() => {});
   }
-  return { growth: growthMsg, web: openWeb, help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  return { cell, dragStart, askNum: ask, growth: growthMsg, web: openWeb, help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();
