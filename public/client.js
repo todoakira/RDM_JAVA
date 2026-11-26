@@ -200,7 +200,7 @@ function drawLabels(e, now) {
     ctx.font = `bold 12px ${FONT}`;
     outlined(e.name, x, y, e.mob ? '#ff9a8a' : e.npc ? '#9fe89f' : FAME_COLOR[e.ft] || '#fff');
   }
-  if (!e.npc && e.hp < e.maxHp && !e.deadAt && (e.mob ? now - e.shownAt < 6000 || focus : e.id !== myId)) {
+  if (!e.npc && !e.obj && e.hp < e.maxHp && !e.deadAt && (e.mob ? now - e.shownAt < 6000 || focus : e.id !== myId)) {
     ctx.fillStyle = '#000'; ctx.fillRect(x - 21, y + 5, 42, 5);
     ctx.fillStyle = e.mob ? '#d33' : '#3c3'; ctx.fillRect(x - 20, y + 6, 40 * e.hp / e.maxHp, 3);
   }
@@ -213,7 +213,7 @@ window.dropTarget = (cx, cy) => {
   const wx = cx / zoom + camX, wy = cy / zoom + camY; let best = null;
   if (cy / zoom >= 568) return null;
   for (const e of ents.values()) {
-    if (e.mob || e.npc || e.id === myId || e.dead || e.deadAt) continue;
+    if (e.mob || e.npc || e.obj || e.id === myId || e.dead || e.deadAt) continue;
     if (Math.abs(wx - e.px) <= 20 && wy >= e.py - 80 && wy <= e.py + 10 && (!best || e.py > best.py)) best = e;
   }
   if (best) return { name: best.name };
@@ -226,7 +226,7 @@ function mobAt(wx, wy, npc) {
   let best = null;
   for (const e of ents.values()) {
     // PK 모드가 켜져 있으면 다른 사람도 고를 수 있다
-    if (npc ? !e.npc : (e.npc || e.deadAt || (!e.mob && (myPk !== 2 || e.id === myId || e.dead)))) continue;
+    if (e.obj || (npc ? !e.npc : (e.npc || e.deadAt || (!e.mob && (myPk !== 2 || e.id === myId || e.dead))))) continue;
     if (Math.abs(wx - e.px) <= 20 && wy >= e.py - 80 && wy <= e.py + 10 && (!best || e.py > best.py)) best = e;
   }
   return best;
@@ -622,12 +622,17 @@ const handlers = {
   cast(m) {
     // 시전자의 동작은 기술 칸 g (+0xc) 의 동작 번호다 (Main.dll 0x10023ce3 → SetAction 0x10032250). 몬스터는 기술 칸이 아니라 공격 동작
     const a = ents.get(m.id), g = !a || a.mob ? 0 : UI.skAct(m.sk); if (a) { a.act = g || 'attack2'; a.actAt = performance.now(); a.moving = false; a.shownAt = a.actAt; }
-    const no = UI.skillBul(m.sk);
+    const no = m.bul !== undefined ? m.bul : UI.skillBul(m.sk);       // bul: 기술이 아닌 맞는 그림 (이노큘레이터 쓰기 0x55~0x5e)
     if (m.r !== undefined) { const [px, py] = cellPx(m.x, m.y, m.z); addBullet(no, null, { px, py }); }   // 범위 기술: 중심 자리
     else if (m.tid) { const d = ents.get(m.tid); if (d) addBullet(no, a, d); }                       // 약화 등 대상 기술
     else if (a) addBullet(no, null, a);                                                              // 자기 기술
   },
   fx(m) { UI.fx(m.fx); },
+  // 물체 (CObjectServer): 꽃·나무 따위. 맞히거나 고를 수 없다
+  oadd(m) { addEnt(m.o); },
+  odel(m) { ents.delete(m.id); },
+  // 원작의 웹 창 (패킷 0x3ef)
+  web(m) { UI.web(m); },
   // PK 모드 (패킷 0x3f7): 켜는 중이면 0/0/208, 켜지면 71, 꺼지면 72
   pkmode(m) { const was = myPk; myPk = m.on ? 2 : m.arming ? 1 : 0; if (myPk !== was) log(esc(UI.M0(myPk === 2 ? 71 : myPk === 1 ? 208 : 72)), 'sys'); },
   pk(m) { const e = ents.get(m.id); if (e) { e.pk = m.s; e.pen = m.pen; } },
@@ -734,6 +739,7 @@ function connect(id, pw, create) {
       for (const p of m.players) addEnt(p);
       for (const q of m.mobs) addEnt(q);
       for (const q of m.npcs || []) addEnt(q);
+      for (const q of m.objs || []) addEnt(q);
       $('dead').style.display = 'none'; iAmDead = false;
       myId = m.id; $('login').style.display = 'none'; UI.show(first);
       log(first ? `${esc(map.name)}에 접속했습니다.` : `${esc(map.name)}(으)로 이동했습니다.`, 'sys');

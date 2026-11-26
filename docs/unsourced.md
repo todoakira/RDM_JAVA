@@ -27,7 +27,11 @@
 
 - NPC 이벤트 11~16 군단(아지트·금고·게시판), 45 배틀존 이동 (ProcessEvent 0x41ee70 의 분기표 0x421f74)
 - 이동 이벤트의 투기장(0x84~0x88)·대전장(0xb4~0xbc) 입장 조건 (GetBattleArenaState / GetBattleMatchState, 메시지 0x139·0x14d)
-- 아이템 사용: 염색(머리 +0x4154·옷 +0x4155)은 서버에 넣었지만 클라이언트가 색을 바꿔 그리는 방식은 아직. 물체 만들기(분류 5 의 104~108·141·142, ProcessUseMakeObjectItem), 위치 알림(5 의 93~103·109·110, 패킷 0x3ef), 복권(6 의 197), 6 의 69~72, 부활 상태의 6 의 200
+- 아이템 사용: 염색(머리 +0x4154·옷 +0x4155)은 서버에 넣었지만 클라이언트가 색을 바꿔 그리는 방식은 아직
 - 몬스터: 모습 95·96 짝 (LoadMop 0x477040 의 '_'·'`' 목록, Dead 0x4786cc 에서 짝의 +0x2d4·자리·다시 나는 시각, CMopAddServer::DoWork 0x474f70 의 다시 나기 조건), 다시 날 때의 외치기 0x2b4·0x127
 - 클라이언트: 첫 화면 Prolog·Credits, 캐릭터 고르기의 정보 고치기(Change User Info), 군단 창의 일부 단추, 염색 색 바꿔 그리기
 - 성장 창(패킷 0x4bd~0x4c1), 중화기 범위 공격(0x1d → DoAttackRange 0x46ccc0), 시그너스 돈(SigMoney)
+
+## 원작 파일에 내용이 없어 우리가 채운 것
+- 위치 알림·보물 쪽지(패킷 0x3ef)가 연 웹 쪽: 원작은 board.redmoon.co.kr 의 쪽이었고 rmServer.ini 의 MINIMAP 도 빈 주소. 위치 알림은 맵을 줄여 그리고 자리를 찍고, 보물 쪽지는 원작 주소만 보인다.
+- 복권 우편 본문: MDF 의 RMS_ITEMLOTTERY_USEITEM 본문 글이 깨져 있어 복권 번호만 넣었다 (보낸이·제목은 읽힘). 경품표는 data/lottery.json (원작 tblItemLotteryList1 도 운영자가 채우는 표).

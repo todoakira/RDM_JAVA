@@ -524,5 +524,29 @@ const UI = (() => {
     box.style.display = 'block';
     box.onclick = e => { const o = e.target.closest('.askopt'); if (!o) return; box.style.display = 'none'; cb(Number(o.dataset.k)); };
   }
-  return { help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
+  // 원작 웹 창 (패킷 0x3ef): 크기는 서버가 준 값. 원작이 띄운 웹 쪽은 받은 파일에 없다.
+  //   minimap: 그 맵을 창 크기로 줄여 그리고, 지금 그 맵에 있으면 내 자리를 찍는다. treasure: 원작 주소만 보인다
+  function openWeb(m) {
+    let d = document.getElementById('winWeb');
+    if (!d) { d = document.createElement('div'); d.id = 'winWeb'; d.style.cssText = 'position:fixed;z-index:23;background:#000;border:1px solid #666;color:#ddd;font:12px var(--uf);pointer-events:auto'; document.body.appendChild(d); }
+    d.style.left = `calc(50% - ${m.w >> 1}px)`; d.style.top = `calc(50% - ${m.h >> 1}px)`; d.style.width = m.w + 'px'; d.style.height = m.h + 'px'; d.style.display = 'block';
+    d.innerHTML = '<div style="position:absolute;right:2px;top:0;cursor:pointer;z-index:1" id="webX">×</div>';
+    document.getElementById('webX').onclick = () => { d.style.display = 'none'; };
+    if (m.page === 'treasure') { const t = document.createElement('div'); t.style.cssText = 'padding:30px 8px;word-break:break-all'; t.textContent = `http://board.redmoon.co.kr/event/treasure/grade${m.grade}.htm`; d.appendChild(t); return; }
+    const cv = document.createElement('canvas'); cv.width = m.w; cv.height = m.h; d.appendChild(cv);
+    const g = cv.getContext('2d');
+    fetch(`assets/maps/${m.map}.json`).then(r => r.json()).then(mp => {
+      const sx = m.w / mp.w, sy = m.h / mp.h, pend = new Map();
+      const paint = () => {
+        for (let y = 0; y < mp.h; y++) for (let x = 0; x < mp.w; x++) {
+          const di = mp.ground[y * mp.w + x]; if (di < 0) continue; const t = mp.tileDefs[di]; if (!t) continue;
+          let im = pend.get(t[0]); if (!im) { im = new Image(); im.src = `assets/tle/${t[0]}.png`; im.onload = paint; pend.set(t[0], im); }
+          if (im.complete && im.naturalWidth) g.drawImage(im, t[1], t[2], t[3], t[4], x * sx, y * sy, Math.ceil(sx), Math.ceil(sy));
+        }
+        if (m.map === m.cur) { g.fillStyle = '#f00'; g.fillRect(m.x * sx - 2, m.y * sy - 2, 5, 5); }
+      };
+      paint();
+    }).catch(() => {});
+  }
+  return { web: openWeb, help: openHelp, msg: (g, sec, c) => (msgs && msgs[g] && msgs[g][sec] && msgs[g][sec][c] || '').replace(/\\n/g, '\n'), trade: setTrade, M0, hist, group: setGroup, groupInvite, msgBox, sysText, quest: setQuest, post, boardText, sysLine: t => { if (t) log(esc(t), 'sys'); }, ask: askChoice, open: openWin, close: closeWin, skillBul: id => (skInfo && skInfo[id] && skInfo[id].e) || 0, skN: id => (skInfo && skInfo[id] ? skInfo[id].n : -1), skAct: id => (skInfo && skInfo[id] && skInfo[id].g) || 0, isAreaSkill, isSelfSkill, fx: drawFx, menu, exch: openExch, closeExch, bank: openBank, closeBank, toggle, show, inv() { drawInvWin(); drawQuick(); drawEq(); drawChr(); if (shop) drawShop(); if (exch) drawExch(); }, stat() { drawChr(); drawSk(); drawQuickSkill(); }, skills() { drawSk(); drawQuickSkill(); }, skText, shop: openShop, closeShop };
 })();

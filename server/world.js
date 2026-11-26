@@ -112,7 +112,7 @@ class World {
     let safe = '';
     for (let i = 0; i < this.w * this.h; i++) { const e = this.ev && this.events[this.ev[i]]; safe += e && e[0] === EV_SAFE ? '1' : '0'; }
     this.safeStr = safe;
-    this.players = new Map(); this.mobs = new Map(); this.npcs = []; this.occ = new Map(); this.timers = []; this.gates = new Map(); this.gateSeq = 0; this.ground = new Map();
+    this.players = new Map(); this.mobs = new Map(); this.npcs = []; this.occ = new Map(); this.timers = []; this.gates = new Map(); this.gateSeq = 0; this.ground = new Map(); this.objs = new Map(); this.objSeq = new Array(12).fill(0); this.objCheckAt = Date.now() + 60000;
     this.mobTickAt = Date.now() + MOB_TICK;
     for (const n of sv.npcs) {
       if (!(spriteOf(n.img) in game.chrIndex)) continue;
@@ -162,6 +162,33 @@ class World {
   eventAt(x, y) { return this.ev && x >= 0 && y >= 0 && x < this.w && y < this.h ? this.events[this.ev[y * this.w + x]] : null; }
   after(ms, fn) { this.timers.push({ at: Date.now() + ms, fn }); }
 
+  // 빈 자리 찾기 (CMapServerServer::FindEmptyPlace 0x4719a0): 맵 밖이면 기본 자리. 그 칸(같은 자리 → 다른 자리)이 안 되면
+  //   반지름 1~5 의 네모 둘레를 왼쪽 세로줄·오른쪽 세로줄(위에서 아래), 위 가로줄·아래 가로줄(왼쪽에서 오른쪽) 순서로, 자리 0 → 1 로 본다.
+  //   이동 이벤트 종류 1·9 가 있는 칸은 건너뛴다. 끝내 없으면 그 자리에 설 수 없을 때만 기본 자리
+  findEmptyPlace(pos) {
+    let { x, y, z } = pos;
+    if (x < 1 || x >= this.w || y < 1 || y >= this.h) { const d = DEFAULT_POS[this.mapId]; if (d) { x = d[0]; y = d[1]; z = 1; } }
+    const free = q => q.x >= 0 && q.y >= 0 && q.x < this.w && q.y < this.h && this.canUser(q) && !this.occ.has(this.key(q));
+    const noWarp = (cx, cy) => { const e = this.eventAt(cx, cy); return !e || (e[0] !== 1 && e[0] !== 9); };
+    if (noWarp(x, y)) { if (free({ x, y, z })) return { x, y, z }; if (free({ x, y, z: z ? 0 : 1 })) return { x, y, z: z ? 0 : 1 }; }
+    const at = (cx, cy) => { if (!noWarp(cx, cy)) return null; for (const zz of [0, 1]) if (free({ x: cx, y: cy, z: zz })) return { x: cx, y: cy, z: zz }; return null; };
+    for (let r = 1; r <= 5; r++) {
+      for (let i = 0; i <= 2 * r; i++) { const q = at(x - r, y - r + i) || at(x + r, y - r + i); if (q) return q; }
+      for (let i = 0; i <= 2 * r; i++) { const q = at(x - r + i, y - r) || at(x - r + i, y + r); if (q) return q; }
+    }
+    if (this.canUser({ x, y, z })) return null;
+    const d = DEFAULT_POS[this.mapId]; return d ? { x: d[0], y: d[1], z: 1 } : null;
+  }
+  // 물체 놓기 (ProcessAddObject 0x473500 → CObjectManager::Add 0x4833d0): 종류 0~11 → 모습 200~209, 10 → 211, 11 → 210, 이름 "*이름#번호"
+  addObject(kind, pos) {
+    const NAMES = ['무궁화', '개나리', '해바라기', '백합', '장미', '튤립', '벚꽃', '선인장', '목련', '야자수', 'XMAS트리', '사슴'];
+    const IMG = [200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 211, 210];
+    if (!(kind >= 0 && kind < 12)) return false;
+    const t = this.findEmptyPlace(pos); if (!t) return false;
+    const o = { id: this.game.nextId++, obj: 1, name: `*${NAMES[kind]}#${++this.objSeq[kind]}`, img: IMG[kind], chr: spriteOf(IMG[kind]), x: t.x, y: t.y, z: t.z, dir: 2, at: Date.now() };
+    this.objs.set(o.id, o); this.take(o); this.broadcast({ t: 'oadd', o });
+    return true;
+  }
   // 영역 안에서 무작위로 열 번(자리 1) 찾아 보고, 없으면 처음부터 훑는다 (CNPCServer::FindFirstEmptyPlace 0x483230, FindEmptyPlace 0x4831b0)
   findFirstEmptyPlace(r, ok) {
     const [l, t, rr, b] = r; if (rr < l || b < t) return null;
@@ -249,7 +276,7 @@ class World {
     p.world = this; p.shop = null; p.bankNpc = 0; p.exchAt = null; p.x = t.x; p.y = t.y; p.z = t.z; p.goal = null; p.target = 0; p.cast = null; p.nextAt = 0;
     this.players.set(p.id, p); this.take(p);
     p.send({ t: 'welcome', id: p.id, map: this.mapId, safe: this.safeStr,
-      players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, ground: [...this.ground.values()] });
+      players: [...this.players.values()].map(pubP), mobs: [...this.mobs.values()].map(pubM), npcs: this.npcs, objs: [...this.objs.values()], ground: [...this.ground.values()] });
     this.game.sendStat(p); this.game.sendInv(p);
     if (Array.isArray(p.inoc) && p.inoc.some(v => v > 0)) p.send({ t: 'inoc', s: INOC.states(p) });   // 이노큘레이터 상태 (패킷 0xf9)
     this.broadcast({ t: 'add', p: pubP(p) }, p.id);
@@ -1786,6 +1813,10 @@ class World {
     for (let i = this.timers.length - 1; i >= 0; i--) if (now >= this.timers[i].at) { const t = this.timers.splice(i, 1)[0]; t.fn(); }
     for (const g of [...this.gates.values()]) if (now >= g.until) { this.gates.delete(g.id); this.broadcast({ t: 'gate', id: g.id, on: 0 }); }
     this.game.ship.tick(this, now);                                     // 우주선 퀘스트 주기 (맵 87~92)
+    if (now >= this.objCheckAt) {                                       // 물체: 60초마다 30분 지난 것을 없앤다 (CObjectServer::OnTimer 0x4839f0, IsValidObject 0x483a30)
+      this.objCheckAt = now + 60000;
+      for (const o of [...this.objs.values()]) if (now - o.at >= 1800000) { this.objs.delete(o.id); this.release(o); this.broadcast({ t: 'odel', id: o.id }); }
+    }
     if (this.mobCS && this.mobCS.length) for (let i = this.mobCS.length - 1; i >= 0; i--) {   // 몬스터 지속 피해 (CMopServer::ProcessCSAttack 0x482a40)
       const c = this.mobCS[i];
       if (c.n < 1) { this.mobCS.splice(i, 1); continue; }
@@ -2357,8 +2388,14 @@ class Game {
     this.sendInv(p);
   }
   useItem(p, slot) {
-    const e = p.inv[slot]; if (!e || p.dead) return;
+    const e = p.inv[slot]; if (!e) return;
     const f = this.itemInfo(e.k, e.i); if (!f) return;
+    if (p.dead) {                                                                  // 죽은 상태 (+0x43a4 == 2, 0x42fdd0)
+      if (e.k === 4 && e.i === 39) { if (--e.n <= 0) p.inv.splice(slot, 1); this.sendInv(p); return; }   // 4/39: 없어지기만 한다
+      if (e.k !== 6 || e.i !== 200) return;
+      if (--e.n <= 0) p.inv.splice(slot, 1); this.sendInv(p);                      // 6/200 부활: 아이템 효과(UseItem) 뒤 ProcessResponseRevival(예), 체력 += 최대 체력(+0x42d8)
+      this.applyItemEffect(p, f); p.revive = { from: p.name, hp: p.maxHp }; this.reviveAnswer(p, true); return;
+    }
     if (!this.itemReqOk(p, e, f)) return;
     if (f.type !== 14) { this.equipItem(p, slot, f); return; }     // 종류가 14 가 아니면 착용 (0x4302f0)
     if (e.k === 6 && (e.i === 66 || e.i === 74 || e.i === 67)) { this.useSpecialItem(p, slot, e); return; }
@@ -2382,6 +2419,18 @@ class Game {
     if (k === 6 && i === 45) { take(); this.gotoMap(p, hospitalMap(p, w.mapId), 8, 14); return; }           // 병원으로 (8,14,1) (0x430f00)
     if (k === 6 && i === 68) { take(); p.fame = p.fame > 0 ? Math.max(0, p.fame - 100) : Math.min(0, p.fame + 100); this.sendStat(p); return; }   // DecreaseAbsFame 100
     if (k === 6 && i === 195) { take(); this.story.msg(p, 0x183); return; }
+    if (k === 5 && ((i > 103 && i < 109) || i === 141 || i === 142)) {                                       // 물체 만들기 (0x4304b0, ProcessUseMakeObjectItem 0x440880)
+      take();
+      if (p.world.battleMatch) { this.story.increaseAbsFame(p, 100); return; }                               // 대전 중에는 명성 100 만
+      const kind = i === 141 ? 10 : i === 142 ? 11 : (i - 104) * 2 + (Math.random() < 0.5 ? 0 : 1);          // 104~108 → 종류 0·1, 2·3, … (rand()%2)
+      if (i === 141 || i === 142) { this.story.increaseAbsFame(p, 100); if (w.userEffect(p, 0x3b, 180, now) !== false) p.fx59Val = 78; }   // DoSkillEffect(0x3b, 180초, 값 0x4e) (0x44098e) else this.story.increaseAbsFame(p, 1);
+      w.addObject(kind, { x: p.x, y: p.y, z: p.z }); return;
+    }
+    if (k === 6 && i === 197) { this.useLottery(p, slot, e); return; }                                       // 복권 (CItemLottery::UseItemLottery)
+    if ((k === 5 && (i === 109 || i === 110)) || (k === 6 && i >= 69 && i <= 72)) {                          // 원작 웹 쪽지 창 (패킷 0x3ef, 220×100): 보물 이벤트 grade1~5 쪽 (0x430fe0, 0x4310cf~0x4311e5)
+      take(); p.send({ t: 'web', w: 220, h: 100, page: 'treasure', grade: k === 5 ? 5 : i - 68 }); return;
+    }
+    if (k === 5 && i >= 93 && i <= 103) { this.useLocation(p, i - 93); return; }                             // 위치 알림 (0x431380~): 아이템은 없어지지 않는다
     if (k === 4 || (k === 5 && i >= 22 && i <= 25)) { take(); this.applyItemEffect(p, f); return; }       // 일반 (CMapServerClient::UseItem 0x432f60)
   }
   // CMapServerClient::UseItem 0x432f60: 체력이 0 이 아니면 체력, 그다음 마력. 19억 이상은 초과분 %, 최대값까지
@@ -2391,12 +2440,39 @@ class Game {
     if (f.mp) p.mp = f.mp < PERCENT_HEAL ? Math.min(p.maxMp, p.mp + f.mp) : Math.min(p.maxMp, p.mp + Math.min(pctOf(f.mp, p.maxMp), p.maxMp - p.mp));
     this.sendStat(p); p.world.near(p, { t: 'hp', id: p.id, hp: p.hp });
   }
+  // 복권 6/197 (0x430f40 → CItemLottery::UseItemLottery, 프로시저 RMS_ITEMLOTTERY_USEITEM): 경품표(tblItemLotteryList1 → data/lottery.json)에서
+  //   아직 안 쓴 첫 줄을 골라 복권을 하나 없애고, 그 경품과 복권 번호를 우편으로 보낸다 (보낸이 "레드문", 제목 "[레드문 복권]").
+  //   경품표가 비어 있으면 복권은 그대로 둔다. 어느 쪽이든 메시지 0x185
+  useLottery(p, slot, e) {
+    const L = this.lottery ||= (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'lottery.json'), 'utf8')); } catch { return []; } })();
+    const row = L.find(r => !r.used);
+    if (row) {
+      if (--e.n <= 0) p.inv.splice(slot, 1);
+      row.used = p.name; row.at = Date.now();
+      try { fs.writeFileSync(path.join(__dirname, '..', 'data', 'lottery.json'), JSON.stringify(L, null, 1)); } catch {}
+      const box = this.mail.list(p.name);
+      box.push({ time: Date.now(), from: '레드문', read: 0, title: '[레드문 복권]', text: `[${row.num || ''}]`, items: [{ k: row.k, i: row.i, n: 1 }] }); this.mail.save();
+    }
+    this.story.msg(p, 0x185); this.sendInv(p);
+  }
+  // 위치 알림 5/93~103 (0x431380~): 원작은 작은 지도 웹 쪽을 열었다 (패킷 0x3ef, 주소 MapNumber=%03d&CurrentMapNumber=%03d&X=%d&Y=%d).
+  //   아이템마다 보여 줄 맵과 창 크기가 정해져 있다. 웹 쪽은 받은 파일에 없으므로 우리 클라이언트가 그 맵을 줄여 그리고 내 자리를 찍는다
+  useLocation(p, n) {
+    const MAP = [1, 0x15, 0x1d, 2, 0, 3, 0x25, 0x26, 0x27, 0x24, 0x47];
+    const W = [0x174, 0x23f, 500, 0x119, 0x174, 0x262, 0x272, 0x26f, 0x26e, 0x262, 0x1fb], H = [0x108, 0x13e, 0x119, 0xe1, 0x108, 0x147, 0x162, 0x15b, 0x159, 0x147, 0x124];
+    if (!(n >= 0 && n <= 10)) return;
+    p.send({ t: 'web', page: 'minimap', w: W[n], h: H[n], map: MAP[n], cur: p.world.mapId, x: p.x, y: p.y });
+  }
   // 이노큘레이터·아이템가드 쓰기 (UseItem 0x4308c3~, 0x42d5f0). 아이템을 하나 없애고 남은 시간을 더한다
   useInoc(p, slot, e, f) {
     const r = INOC.use(p, e.k, e.i);
     if (!r) { this.story.msg(p, 0x184); return; }
     if (--e.n <= 0) p.inv.splice(slot, 1);
-    this.inocChanged(p, [INOC.itemOf(e.k, e.i)[0]]); this.sendInv(p);
+    const t = INOC.itemOf(e.k, e.i)[0];
+    // 쓴 사람 둘레에 맞는 그림 (SendRectHitInfo 0x4703d0, 총알 번호 0x55~0x5e, 0x4309d5~0x430c98). 아이템가드는 그림 없음
+    const BUL = [0x57, 0x55, 0x56, 0x56, 0x56, 0x56, 0x55, 0x55, 0x57, 0x58, 0x56, 0x5e];
+    if (t < 12) p.world.near(p, { t: 'cast', id: p.id, bul: BUL[t], tid: p.id });
+    this.inocChanged(p, [t]); this.sendInv(p);
   }
   // 상태가 바뀌면: 능력치에 닿는 종류(0·3·4·5·10)는 다시 셈하고, 상태를 보낸다 (패킷 0xf9, 0x43a0f0)
   inocChanged(p, types) {
