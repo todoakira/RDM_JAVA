@@ -28,7 +28,7 @@
 - NPC 이벤트 11~16 군단(아지트·금고·게시판), 45 배틀존 이동 (ProcessEvent 0x41ee70 의 분기표 0x421f74)
 - 이동 이벤트의 투기장(0x84~0x88)·대전장(0xb4~0xbc) 입장 조건 (GetBattleArenaState / GetBattleMatchState, 메시지 0x139·0x14d)
 - 클라이언트: 첫 화면 Prolog·Credits, 캐릭터 고르기의 정보 고치기(Change User Info), 군단 창의 일부 단추
-- 중화기 범위 공격(0x1d → DoAttackRange 0x46ccc0), 시그너스 돈(SigMoney)
+- 중화기 범위 공격(0x1d → DoAttackRange 0x46ccc0). 시그너스 돈(SigMoney)은 Tau(5/2)·시그너스 은행·죽을 때 떨어뜨리기로 이미 옮겨져 있음
 
 ## 원작 파일에 내용이 없어 우리가 채운 것
 - 위치 알림·보물 쪽지(패킷 0x3ef)가 연 웹 쪽: 원작은 board.redmoon.co.kr 의 쪽이었고 rmServer.ini 의 MINIMAP 도 빈 주소. 위치 알림은 맵을 줄여 그리고 자리를 찍고, 보물 쪽지는 원작 주소만 보인다.
