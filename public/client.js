@@ -39,6 +39,30 @@ function chrSet(no) {
   }
   return s.def ? s : null;
 }
+// 염색: 겹 속성 0x200 은 +0x4154 색, 0x400 은 +0x4155 색 (Main.dll 0x10031762~0x100317b6, 0x1003007f). 색 번호 30 이상이면 그대로.
+//   칠하기는 DigitalFX 효과 0x80 (Dfx_p5s.dll 0x10004c34): 그림 점의 파랑 5비트를 번호로 색표 32칸에서 고른다.
+//   색표 30줄 × 32칸은 Main.dll 0x1009a6e0 이 만든다 (data/dye.json)
+let DYE = null; fetch('data/dye.json').then(r => r.json()).then(d => { DYE = d.map(row => row.map(h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)])); }).catch(() => {});
+function dyed(s, no, f, fi, hair, cloth) {
+  if (!DYE || !s.def.dye || !(hair < 30 || cloth < 30)) return null;
+  const key = `${fi}/${hair}/${cloth}`; s.dyed ||= new Map();
+  let cv = s.dyed.get(key); if (cv !== undefined) return cv;
+  const img = chrPage(s, no, f[0]); let m = s.pages['m' + f[0]];
+  if (!m) { m = s.pages['m' + f[0]] = { img: new Image(), ok: false }; m.img.onload = () => { m.ok = true; }; m.img.onerror = () => { m.bad = true; }; m.img.src = `assets/chr/${no}_${f[0]}m.png`; }
+  if (m.bad) { s.dyed.set(key, null); return null; }
+  if (!img || !m.ok) return null;
+  const w = f[3], h = f[4]; cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d'); g.drawImage(img, f[1], f[2], w, h, 0, 0, w, h);
+  const t = document.createElement('canvas'); t.width = w; t.height = h; const tg = t.getContext('2d'); tg.drawImage(m.img, f[1], f[2], w, h, 0, 0, w, h);
+  const a = g.getImageData(0, 0, w, h), b = tg.getImageData(0, 0, w, h).data, d = a.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const row = b[i] ? (hair < 30 ? DYE[hair] : null) : b[i + 1] ? (cloth < 30 ? DYE[cloth] : null) : null; if (!row) continue;
+    const q = row[d[i + 2] >> 3]; d[i] = q[0]; d[i + 1] = q[1]; d[i + 2] = q[2];
+  }
+  g.putImageData(a, 0, 0);
+  if (s.dyed.size > 600) s.dyed.clear();
+  s.dyed.set(key, cv); return cv;
+}
 function chrPage(s, no, pg) {
   let e = s.pages[pg];
   if (!e) { e = s.pages[pg] = { img: new Image(), ok: false }; e.img.onload = () => { e.ok = true; }; e.img.src = `assets/chr/${no}_${pg}.png`; }
@@ -153,7 +177,9 @@ function drawEnt(e, now) {
   const fi = seq[Math.max(0, Math.min(i, seq.length - 1))], f = s.def.frames[fi]; if (!f) return;
   const img = chrPage(s, e.chr, f[0]); if (!img) return;
   if (e.deadAt && e.mob) ctx.globalAlpha = Math.max(0, Math.min(1, (e.deadAt + 4000 - now) / 800));
-  if (f[3]) ctx.drawImage(img, f[1], f[2], f[3], f[4], Math.round(e.px) + f[5], Math.round(e.py) + f[6], f[3], f[4]);
+  const dc = f[3] && !e.mob && !e.npc && !e.obj ? dyed(s, e.chr, f, fi, e.hair ?? 30, e.cloth ?? 30) : null;
+  if (dc) ctx.drawImage(dc, Math.round(e.px) + f[5], Math.round(e.py) + f[6]);
+  else if (f[3]) ctx.drawImage(img, f[1], f[2], f[3], f[4], Math.round(e.px) + f[5], Math.round(e.py) + f[6], f[3], f[4]);
   // 밝게 더해 그리는 겹(빛·기술 효과)
   const g = s.def.adds && s.def.adds[fi], gi = g && chrPage(s, e.chr, g[0]);
   if (gi) { ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(gi, g[1], g[2], g[3], g[4], Math.round(e.px) + g[5], Math.round(e.py) + g[6], g[3], g[4]); ctx.globalCompositeOperation = 'source-over'; }
@@ -628,6 +654,7 @@ const handlers = {
     else if (a) addBullet(no, null, a);                                                              // 자기 기술
   },
   fx(m) { UI.fx(m.fx); },
+  look(m) { const e = ents.get(m.id); if (e) { e.hair = m.hair; e.cloth = m.cloth; } },
   // 물체 (CObjectServer): 꽃·나무 따위. 맞히거나 고를 수 없다
   oadd(m) { addEnt(m.o); },
   odel(m) { ents.delete(m.id); },

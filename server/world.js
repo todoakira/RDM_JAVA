@@ -1926,7 +1926,7 @@ class World {
 }
 // 명성 단계 (UpdateCIS 0x463c3d, CIS +0x26): 명성 > 0 이면 ⌊(명성−1)/200⌋+1 (최대 5), < 0 이면 −(⌊(−명성−1)/200⌋+1) (최소 −5)
 const fameTier = f => f > 0 ? Math.min(5, Math.trunc((f - 1) / 200) + 1) : f < 0 ? Math.max(-5, Math.trunc((f + 1) / 200) - 1) : 0;
-const pubP = p => ({ id: p.id, name: p.name, chr: p.chr, x: p.x, y: p.y, z: p.z, dir: p.dir, hp: p.hp, maxHp: p.maxHp, level: p.level, dead: p.dead ? 1 : 0, ft: fameTier(p.fame || 0) });
+const pubP = p => ({ id: p.id, name: p.name, chr: p.chr, x: p.x, y: p.y, z: p.z, dir: p.dir, hp: p.hp, maxHp: p.maxHp, level: p.level, dead: p.dead ? 1 : 0, ft: fameTier(p.fame || 0), hair: p.hairColor ?? 255, cloth: p.clothColor ?? 255 });
 const pubM = m => ({ id: m.id, mob: 1, name: m.name, chr: m.chr, x: m.x, y: m.y, z: m.z, dir: m.dir, hp: m.hp, maxHp: m.maxHp });
 
 // 시그너스 맵 (93~108, 137~176): 상점·은행은 돈 대신 Tau(시그너스 돈, 아이템 5/2, DB 칸 SigMoney)를 쓰고 은행도 따로다
@@ -2047,7 +2047,7 @@ class Game {
   save(p) {
     const d = { auth: p.auth, skills: p.skills, chr: p.chr, level: p.level, exp: p.exp, bonus: p.bonus, base: p.base, inv: p.inv, equip: p.equip, quick: p.quick || null, money: p.money, bank: p.bank, fame: p.fame,
       hp: p.hp, mp: p.mp, sp: p.sp, dp: p.dp, dead: p.dead, map: p.world.mapId, x: p.x, y: p.y, story: p.story || 0, qitems: p.qitems || null, mails: p.mails || [],
-      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, inoc: Array.isArray(p.inoc) && p.inoc.some(v => v > 0) ? p.inoc : null, subq: p.subq && p.subq.state ? p.subq : null, hairColor: p.hairColor || 0, clothColor: p.clothColor || 0 };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
+      bonus2: p.bonus2 || 0, sbonus: p.sbonus || 0, stotal: p.stotal || 0, tau: p.tau || 0, sigBank: p.sigBank || null, qsk: p.qsk || null, pkCount: p.pkCount || 0, pkPen: p.pkPen || 0, pkDecay: p.pkDecay || 0, legal: p.legal || null, inoc: Array.isArray(p.inoc) && p.inoc.some(v => v > 0) ? p.inoc : null, subq: p.subq && p.subq.state ? p.subq : null, hairColor: p.hairColor ?? 255, clothColor: p.clothColor ?? 255, dyeV: 1 };   // 원작 DB 칸 Bonus2·SBonus·STotalBonus·SubQuest*
     try { fs.mkdirSync(path.join(ROOT, 'save'), { recursive: true }); fs.writeFileSync(this.saveFile(p.name), JSON.stringify(d)); } catch (e) { console.log('저장 실패', p.name, e.message); }
   }
   // 비밀번호: 처음 들어온 이름이면 그 비밀번호로 캐릭터를 만들고, 있던 이름이면 맞는지 확인한다.
@@ -2074,6 +2074,7 @@ class Game {
     let d = null; try { if (fs.existsSync(this.saveFile(name))) d = JSON.parse(fs.readFileSync(this.saveFile(name), 'utf8')); } catch (e) { console.log('저장 파일 읽기 실패', name, e.message); }
     if (d) {
       for (const k of ['chr', 'level', 'exp', 'bonus', 'base', 'inv', 'money', 'fame', 'bonus2', 'sbonus', 'stotal', 'tau', 'qsk', 'pkCount', 'pkPen', 'pkDecay', 'legal', 'inoc', 'hairColor', 'clothColor']) if (d[k] !== undefined && d[k] !== null) p[k] = d[k];
+      if (!d.dyeV) { if (!p.hairColor) p.hairColor = 255; if (!p.clothColor) p.clothColor = 255; }   // 예전 저장은 0 이 '염색 안 함'이었다. 원작 기본값은 255 (tblGameID Color1·Color2 DEFAULT 255)
       if (d.sigBank) p.sigBank = d.sigBank;
       if (d.subq && d.subq.state) p.subq = d.subq;
       if (Array.isArray(d.equip)) p.equip = d.equip.concat(new Array(EQUIP_SLOTS).fill(null)).slice(0, EQUIP_SLOTS);
@@ -2404,8 +2405,8 @@ class Game {
     const w = p.world, now = Date.now(), take = () => { if (--e.n <= 0) p.inv.splice(slot, 1); this.sendInv(p); };
     const { k, i } = e;
     if (k === 4 && i === 45) { take(); w.userEffect(p, 38, 300, now); this.story.msg(p, 0xa3); return; }     // 효과 38 300초 (0x430511, DoSkillEffect 0x42c2c0 이 0xa3)
-    if (k === 5 && i > 30 && i < 61) { take(); p.clothColor = i - 31; w.near(p, { t: 'look', id: p.id, hair: p.hairColor || 0, cloth: p.clothColor }); return; }   // 옷 염색 +0x4155 (0x4303d0)
-    if (k === 5 && i > 60 && i < 91) { take(); p.hairColor = i - 61; w.near(p, { t: 'look', id: p.id, hair: p.hairColor, cloth: p.clothColor || 0 }); return; }  // 머리 염색 +0x4154
+    if (k === 5 && i > 30 && i < 61) { take(); p.clothColor = i - 31; w.near(p, { t: 'look', id: p.id, hair: p.hairColor ?? 255, cloth: p.clothColor }); return; }   // 옷 염색 +0x4155 (0x4303d0)
+    if (k === 5 && i > 60 && i < 91) { take(); p.hairColor = i - 61; w.near(p, { t: 'look', id: p.id, hair: p.hairColor, cloth: p.clothColor ?? 255 }); return; }  // 머리 염색 +0x4154
     if (k === 5 && i === 91) { take(); p.hairColor = p.clothColor = 30; w.near(p, { t: 'look', id: p.id, hair: 30, cloth: 30 }); return; }   // 원색약: 둘 다 30
     if (k === 5 && i > 142 && i < 148) { take(); this.giveItem(p, 5, 0, (i - 142) * 1000000); return; }     // 돈 100만~500만 (0x430460)
     if (k === 4 && i === 37) { take(); w.userEffect(p, 1, 30, now); p.fx1Val = 1000; return; }               // 효과 1 30초, 값 1000 (0x430723)

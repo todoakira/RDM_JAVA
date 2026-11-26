@@ -165,7 +165,12 @@ function convertSprite(kind, no, lstName, folder, outName, quiet) {
   const out = path.join(OUT, outName); mk(out);
   const frames = [], index = new Map(), pages = [];
   let page = null, x = 0, y = 0, rowH = 0, missing = 0;
-  const flush = () => { if (page) { fs.writeFileSync(path.join(out, `${no}_${pages.length}.png`), encodePng(PAGE, Math.max(1, page.h), page.buf.subarray(0, Math.max(1, page.h) * PAGE * 4))); pages.push(page.h); page = null; } };
+  let anyDye = false;
+  const flush = () => { if (page) {
+    const h = Math.max(1, page.h);
+    fs.writeFileSync(path.join(out, `${no}_${pages.length}.png`), encodePng(PAGE, h, page.buf.subarray(0, h * PAGE * 4)));
+    if (page.dye) fs.writeFileSync(path.join(out, `${no}_${pages.length}m.png`), encodePng(PAGE, h, page.mbuf.subarray(0, h * PAGE * 4)));
+    pages.push(page.h); page = null; } };
   // 한 장면을 쪽에 붙인다. 겹마다 정해진 섞는 방식을 따른다 (원작 ExStage.dll CxDDGround::Draw 0x10009090 의 표):
   //   0 그대로, 1·2·3 그림 75·50·25% 로 반투명, 4·5·6 그림 100·150·200% 를 더하기.
   // 더하는 겹은 따로 한 장면으로 모아 두고(adds), 클라이언트가 밝게 더해 그린다.
@@ -174,8 +179,8 @@ function convertSprite(kind, no, lstName, folder, outName, quiet) {
     const x2 = Math.max(...parts.map(p => p.x + p.im.w)), y2 = Math.max(...parts.map(p => p.y + p.im.h));
     const w = x2 - x1, h = y2 - y1; if (w > PAGE || h > PAGE) return null;
     if (x + w + 1 > PAGE) { x = 0; y += rowH + 1; rowH = 0; }
-    if (!page || y + h > PAGE) { flush(); page = { buf: Buffer.alloc(PAGE * PAGE * 4), h: 0 }; x = 0; y = 0; rowH = 0; }
-    const buf = page.buf;
+    if (!page || y + h > PAGE) { flush(); page = { buf: Buffer.alloc(PAGE * PAGE * 4), mbuf: Buffer.alloc(PAGE * PAGE * 4), h: 0, dye: false }; x = 0; y = 0; rowH = 0; }
+    const buf = page.buf, mb = page.mbuf;
     for (const p of parts) {
       const sw = p.im.w, sr = p.im.rgba, bx = x + p.x - x1, by = y + p.y - y1, fx = p.fx;
       const a = fx === 1 ? 0.75 : fx === 2 ? 0.5 : fx === 3 ? 0.25 : 1, gain = fx === 5 ? 1.5 : fx === 6 ? 2 : 1;
@@ -184,7 +189,13 @@ function convertSprite(kind, no, lstName, folder, outName, quiet) {
         for (let xx = 0; xx < sw; xx++, q += 4, t += 4) {
           if (!sr[q + 3]) continue;
           if (fx >= 4) { for (let c = 0; c < 3; c++) buf[t + c] = Math.min(255, buf[t + c] + sr[q + c] * gain); buf[t + 3] = 255; }
-          else if (a === 1) { buf[t] = sr[q]; buf[t + 1] = sr[q + 1]; buf[t + 2] = sr[q + 2]; buf[t + 3] = 255; }
+          else if (a === 1) {
+            buf[t] = sr[q]; buf[t + 1] = sr[q + 1]; buf[t + 2] = sr[q + 2]; buf[t + 3] = 255;
+            // 염색 겹 (속성 0x200 → 첫째 색표, 0x400 → 둘째 색표, Main.dll 0x1003007f·0x1003009a): 덮개 그림에 R·G 로 표시. 다른 겹이 덮으면 지운다
+            const d = p.rt & 0x200 ? 1 : p.rt & 0x400 ? 2 : 0;
+            mb[t] = d === 1 ? 255 : 0; mb[t + 1] = d === 2 ? 255 : 0; mb[t + 2] = 0; mb[t + 3] = d ? 255 : 0;
+            if (d) { page.dye = true; anyDye = true; }
+          }
           else {            // 반투명 겹을 아래 것 위에 얹는다
             const da = buf[t + 3] / 255, oa = a + da * (1 - a);
             for (let c = 0; c < 3; c++) buf[t + c] = Math.round((sr[q + c] * a + buf[t + c] * da * (1 - a)) / oa);
@@ -208,7 +219,7 @@ function convertSprite(kind, no, lstName, folder, outName, quiet) {
       const px = L.dx + im.ox, py = L.dy + im.oy;
       if (px < -600 || py < -600 || px + im.w > 600 || py + im.h > 600) continue;
       if (L.z > 6) continue;          // 254 등: 원작도 그리지 않는 겹
-      parts.push({ im, x: px, y: py, fx: L.z });
+      parts.push({ im, x: px, y: py, fx: L.z, rt: L.rt });
     }
     if (!parts.length) continue;
     const base = parts.filter(p => p.fx < 4), glow = parts.filter(p => p.fx >= 4);
@@ -227,6 +238,7 @@ function convertSprite(kind, no, lstName, folder, outName, quiet) {
   });
   const json = { id: no, name: def.name, pages: pages.length, frames, anims };
   if (Object.keys(adds).length) json.adds = adds;      // 장면 번호 → 밝게 더해 그릴 그림
+  if (anyDye) json.dye = 1;                            // 쪽마다 <번호>_<쪽>m.png 염색 덮개가 있다
   if (kind !== 'Chr') json.entries = def.ents.map((_, e) => index.has(e) ? index.get(e) : -1);   // 항목 번호 → 장면 번호
   if (Object.keys(def.sounds || {}).length) json.snd = def.sounds;   // 동작 번호 → [소리 번호, 장면]
   fs.writeFileSync(path.join(out, no + '.json'), JSON.stringify(json));
